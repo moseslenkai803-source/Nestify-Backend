@@ -1,7 +1,10 @@
 from fastapi import APIRouter
 
+from app.api.v1.properties import router as properties_router
+
 
 router = APIRouter()
+
 
 @router.get("/health")
 def api_health_check():
@@ -9,3 +12,8 @@ def api_health_check():
         "status": "ok",
         "api_version": "v1",
     }
+
+
+router.include_router(
+    properties_router,
+)
