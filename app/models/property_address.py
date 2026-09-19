@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 
 from geoalchemy2 import Geometry
-from sqlalchemy import DateTime, ForeignKey, String, Uuid
+from sqlalchemy import DateTime, ForeignKey, Index, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -10,6 +10,10 @@ from app.models.base import Base
 
 class PropertyAddress(Base):
     __tablename__ = "property_addresses"
+
+    __table_args__ = (
+        Index("idx_property_addresses_location", "location", postgresql_using="gist"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
@@ -57,7 +61,7 @@ class PropertyAddress(Base):
         Geometry(
             geometry_type="POINT",
             srid=4326,
-            spatial_index=True,
+            spatial_index=False,
         ),
         nullable=True,
     )
