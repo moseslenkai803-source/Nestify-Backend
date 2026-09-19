@@ -1,3 +1,4 @@
+import pytest
 import uuid
 
 from app.models.landlord import Landlord
@@ -37,3 +38,14 @@ def test_create_property_creates_draft_property(db_session):
     assert property.property_type == "residential"
     assert property.status == "draft"
     assert property.property_code.startswith("NEST-")
+
+
+def test_create_property_raises_when_landlord_does_not_exist(db_session):
+    service = PropertyService(db_session)
+
+    with pytest.raises(ValueError, match="Landlord not found"):
+        service.create_property(
+            landlord_id=uuid.uuid4(),
+            name="Invalid Landlord Property",
+            property_type="residential",
+        )
