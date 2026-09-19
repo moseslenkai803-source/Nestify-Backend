@@ -109,3 +109,66 @@ def test_get_unactivated_returns_only_unactivated_plates(db_session):
     assert result[0].id == unactivated_plate.id
     assert result[0].plate_code == "NEST-PLATE-003"
     assert result[0].status == "unactivated"
+
+
+def test_get_active_by_property_id_returns_only_active_plate(db_session):
+    user = User(
+        id=uuid.uuid4(),
+        email="active-plate-property@example.com",
+        password_hash="hashed-password",
+        role="landlord",
+        is_active=True,
+    )
+
+    landlord = Landlord(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        display_name="Active Plate Landlord",
+        phone="+254700000003",
+        landlord_type="individual",
+    )
+
+    property_record = Property(
+        id=uuid.uuid4(),
+        landlord_id=landlord.id,
+        property_code="NEST-ACTIVE-PLATE-PROP-001",
+        name="Active Plate Property",
+        property_type="residential",
+        status="active",
+    )
+
+    active_plate = AddressPlate(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_code="NEST-ACTIVE-PLATE-001",
+        status="active",
+    )
+
+    unactivated_plate = AddressPlate(
+        id=uuid.uuid4(),
+        plate_code="NEST-ACTIVE-PLATE-002",
+        status="unactivated",
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    db_session.add(landlord)
+    db_session.flush()
+
+    db_session.add(property_record)
+    db_session.flush()
+
+    db_session.add(active_plate)
+    db_session.add(unactivated_plate)
+    db_session.flush()
+
+    repository = AddressPlateRepository(db_session)
+
+    result = repository.get_active_by_property_id(property_record.id)
+
+    assert result is not None
+    assert result.id == active_plate.id
+    assert result.property_id == property_record.id
+    assert result.plate_code == "NEST-ACTIVE-PLATE-001"
+    assert result.status == "active"

@@ -29,3 +29,16 @@ class AddressPlateRepository:
             .filter(AddressPlate.status == "unactivated")
             .all()
         )
+
+    def get_active_by_property_id(
+        self,
+        property_id: UUID,
+    ) -> AddressPlate | None:
+        return (
+            self.db.query(AddressPlate)
+            .filter(
+                AddressPlate.property_id == property_id,
+                AddressPlate.status == "active",
+            )
+            .first()
+        )
