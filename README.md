@@ -156,8 +156,8 @@ The addressing layer separates three identities:
 | Identity type | Purpose | Example |
 | --- | --- | --- |
 | Database identity | Internal backend identifier | property_id |
-| Nestify property identity | Public-facing identity | NEST-PROP-XXXXXXXX |
-| Physical plate identity | Physical plate identity | NEST-PLATE-XXXXXXXX |
+| Nestify property identity | Public-facing platform identity | NEST-PROP-XXXXXXXX |
+| Physical plate identity | Physical address plate identifier | NEST-PLATE-XXXXXXXX |
 
 These identities are related, but they are not the same thing.
 
@@ -828,7 +828,7 @@ The backend should avoid inconsistent states.
 
 Examples of operations requiring careful handling include:
 
-### Address Plate Activation
+#### Address Plate Activation
 
 ```text
 Validate
@@ -838,7 +838,7 @@ Validate
 → Record event
 ```
 
-### Property Registration
+#### Property Registration
 
 ```text
 Authenticate
@@ -849,7 +849,7 @@ Authenticate
 → Record ownership/management relationship
 ```
 
-### Plate Replacement
+#### Plate Replacement
 
 ```text
 Identify existing plate
@@ -945,7 +945,7 @@ without rebuilding the core property identity system.
 
 Future domains may include:
 
-### Property management
+#### Property management
 
 - Tenant management
 - Maintenance
@@ -953,7 +953,7 @@ Future domains may include:
 - Rent management
 - Owner dashboards
 
-### Consumer marketplace
+#### Consumer marketplace
 
 - Property discovery
 - Reservations
@@ -961,7 +961,7 @@ Future domains may include:
 - Short stays
 - Long-term rentals
 
-### Location intelligence
+#### Location intelligence
 
 - Geographic analytics
 - Property density
