@@ -3,12 +3,14 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.models.property import Property
+from app.repositories.landlord_repository import LandlordRepository
 from app.repositories.property_repository import PropertyRepository
 
 
 class PropertyService:
     def __init__(self, db: Session):
-        self.repository = PropertyRepository(db)
+        self.property_repository = PropertyRepository(db)
+        self.landlord_repository = LandlordRepository(db)
 
     def create_property(
         self,
@@ -16,6 +18,11 @@ class PropertyService:
         name: str,
         property_type: str,
     ) -> Property:
+        landlord = self.landlord_repository.get_by_id(landlord_id)
+
+        if landlord is None:
+            raise ValueError("Landlord not found")
+
         property_code = f"NEST-{uuid.uuid4().hex[:12].upper()}"
 
         property = Property(
@@ -26,4 +33,4 @@ class PropertyService:
             status="draft",
         )
 
-        return self.repository.add(property)
+        return self.property_repository.add(property)
