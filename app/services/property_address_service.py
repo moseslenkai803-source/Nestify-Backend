@@ -4,12 +4,14 @@ from geoalchemy2.elements import WKTElement
 from sqlalchemy.orm import Session
 
 from app.models.property_address import PropertyAddress
+from app.repositories.property_address_repository import PropertyAddressRepository
 from app.repositories.property_repository import PropertyRepository
 
 
 class PropertyAddressService:
     def __init__(self, db: Session):
         self.property_repository = PropertyRepository(db)
+        self.property_address_repository = PropertyAddressRepository(db)
         self.db = db
 
     def create_address(
@@ -26,6 +28,15 @@ class PropertyAddressService:
 
         if property is None:
             raise ValueError("Property not found")
+
+        existing_address = self.property_address_repository.get_by_property_id(
+            property_id
+        )
+
+        if existing_address is not None:
+            raise ValueError(
+                "Property already has an address"
+            )
 
         location = None
 
