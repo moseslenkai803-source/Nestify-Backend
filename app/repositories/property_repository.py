@@ -11,3 +11,10 @@ class PropertyRepository:
 
     def get_by_id(self, property_id: UUID) -> Property | None:
         return self.db.get(Property, property_id)
+
+    def get_by_landlord_id(self, landlord_id: UUID) -> list[Property]:
+        return (
+            self.db.query(Property)
+            .filter(Property.landlord_id == landlord_id)
+            .all()
+        )
