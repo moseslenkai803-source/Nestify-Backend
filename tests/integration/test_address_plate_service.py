@@ -26,3 +26,17 @@ def test_get_plate_by_code_returns_existing_plate(db_session):
     assert found_plate is not None
     assert found_plate.id == created_plate.id
     assert found_plate.plate_code == created_plate.plate_code
+
+
+def test_verify_plate_changes_status_and_sets_verified_at(db_session):
+    service = AddressPlateService(db_session)
+
+    plate = service.create_plate()
+
+    verified_plate = service.verify_plate(
+        plate.plate_code
+    )
+
+    assert verified_plate.id == plate.id
+    assert verified_plate.status == "verified"
+    assert verified_plate.verified_at is not None
