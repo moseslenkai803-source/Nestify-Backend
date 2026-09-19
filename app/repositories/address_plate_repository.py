@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy.orm import Session
 
 from app.models.address_plate import AddressPlate
@@ -11,5 +13,12 @@ class AddressPlateRepository:
         return (
             self.db.query(AddressPlate)
             .filter(AddressPlate.plate_code == plate_code)
+            .first()
+        )
+
+    def get_by_property_id(self, property_id: UUID) -> AddressPlate | None:
+        return (
+            self.db.query(AddressPlate)
+            .filter(AddressPlate.property_id == property_id)
             .first()
         )
