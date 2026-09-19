@@ -37,3 +37,22 @@ def create_property(
             status_code=404,
             detail=str(exc),
         ) from exc
+
+
+@router.get(
+    "/{property_id}",
+    response_model=PropertyResponse,
+)
+def get_property(
+    property_id: UUID,
+    db: Session = Depends(get_db),
+):
+    service = PropertyService(db)
+
+    try:
+        return service.get_property(property_id)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=str(exc),
+        ) from exc
