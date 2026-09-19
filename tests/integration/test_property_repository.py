@@ -107,3 +107,50 @@ def test_get_by_landlord_id_returns_landlord_properties(db_session):
         property_one.id,
         property_two.id,
     }
+
+
+def test_add_persists_property(db_session):
+    user = User(
+        id=uuid.uuid4(),
+        email="property-add-test@example.com",
+        password_hash="hashed-password",
+        role="landlord",
+        is_active=True,
+    )
+
+    landlord = Landlord(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        display_name="Property Add Landlord",
+        phone="+254700000003",
+        landlord_type="individual",
+    )
+
+    property_record = Property(
+        landlord_id=landlord.id,
+        property_code="NEST-TEST-004",
+        name="Added Property",
+        property_type="residential",
+        status="draft",
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    db_session.add(landlord)
+    db_session.flush()
+
+    repository = PropertyRepository(db_session)
+
+    result = repository.add(property_record)
+
+    assert result is property_record
+    assert result.id is not None
+    assert result.property_code == "NEST-TEST-004"
+
+    stored_property = repository.get_by_id(result.id)
+
+    assert stored_property is not None
+    assert stored_property.id == result.id
+    assert stored_property.landlord_id == landlord.id
+    assert stored_property.name == "Added Property"

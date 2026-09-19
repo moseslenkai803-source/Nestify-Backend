@@ -18,3 +18,9 @@ class PropertyRepository:
             .filter(Property.landlord_id == landlord_id)
             .all()
         )
+
+    def add(self, property: Property) -> Property:
+        self.db.add(property)
+        self.db.flush()
+
+        return property
