@@ -19,7 +19,9 @@ def test_get_by_plate_code_returns_address_plate(db_session):
 
     repository = AddressPlateRepository(db_session)
 
+
     result = repository.get_by_plate_code("NEST-PLATE-001")
+
 
     assert result is not None
     assert result.id == plate.id
@@ -172,3 +174,21 @@ def test_get_active_by_property_id_returns_only_active_plate(db_session):
     assert result.property_id == property_record.id
     assert result.plate_code == "NEST-ACTIVE-PLATE-001"
     assert result.status == "active"
+
+
+def test_get_by_id_returns_address_plate(db_session):
+    plate = AddressPlate(
+        plate_code="NEST-PLATE-ID-001",
+        status="unactivated",
+    )
+
+    db_session.add(plate)
+    db_session.flush()
+
+    repository = AddressPlateRepository(db_session)
+
+    result = repository.get_by_id(plate.id)
+
+    assert result is not None
+    assert result.id == plate.id
+    assert result.plate_code == "NEST-PLATE-ID-001"

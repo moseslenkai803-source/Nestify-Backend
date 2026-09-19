@@ -9,6 +9,9 @@ class AddressPlateRepository:
     def __init__(self, db: Session):
         self.db = db
 
+    def get_by_id(self, plate_id: UUID) -> AddressPlate | None:
+        return self.db.get(AddressPlate, plate_id)
+
     def get_by_plate_code(self, plate_code: str) -> AddressPlate | None:
         return (
             self.db.query(AddressPlate)
