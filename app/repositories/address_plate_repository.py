@@ -22,3 +22,10 @@ class AddressPlateRepository:
             .filter(AddressPlate.property_id == property_id)
             .first()
         )
+
+    def get_unactivated(self) -> list[AddressPlate]:
+        return (
+            self.db.query(AddressPlate)
+            .filter(AddressPlate.status == "unactivated")
+            .all()
+        )

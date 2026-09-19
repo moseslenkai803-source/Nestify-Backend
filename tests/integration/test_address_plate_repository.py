@@ -82,3 +82,30 @@ def test_get_by_property_id_returns_address_plate(db_session):
     assert result.property_id == property_record.id
     assert result.plate_code == "NEST-PLATE-002"
     assert result.status == "active"
+
+
+def test_get_unactivated_returns_only_unactivated_plates(db_session):
+    unactivated_plate = AddressPlate(
+        id=uuid.uuid4(),
+        plate_code="NEST-PLATE-003",
+        status="unactivated",
+    )
+
+    active_plate = AddressPlate(
+        id=uuid.uuid4(),
+        plate_code="NEST-PLATE-004",
+        status="active",
+    )
+
+    db_session.add(unactivated_plate)
+    db_session.add(active_plate)
+    db_session.flush()
+
+    repository = AddressPlateRepository(db_session)
+
+    result = repository.get_unactivated()
+
+    assert len(result) == 1
+    assert result[0].id == unactivated_plate.id
+    assert result[0].plate_code == "NEST-PLATE-003"
+    assert result[0].status == "unactivated"
