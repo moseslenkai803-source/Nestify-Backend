@@ -243,3 +243,66 @@ def test_login_rejects_unknown_email(client, db_session):
 
     finally:
         app.dependency_overrides.clear()
+
+
+def test_register_landlord_rolls_back_user_when_landlord_creation_fails(
+    db_session,
+    monkeypatch,
+):
+    def transactional_db():
+        try:
+            yield db_session
+        except Exception:
+            db_session.rollback()
+            raise
+        else:
+            db_session.commit()
+
+    app.dependency_overrides[get_db] = transactional_db
+
+    try:
+        from app.services.registration_service import RegistrationService
+
+        original_add = RegistrationService.__init__
+
+        def failing_init(self, db):
+            original_add(self, db)
+
+            def failing_landlord_add(landlord):
+                raise ValueError("Simulated landlord creation failure")
+
+            self.landlord_repository.add = failing_landlord_add
+
+        monkeypatch.setattr(
+            RegistrationService,
+            "__init__",
+            failing_init,
+        )
+
+        email = "rollback@example.com"
+
+        response = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": email,
+                "password": "password123",
+                "display_name": "Rollback Landlord",
+                "phone": "0712345678",
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == (
+            "Simulated landlord creation failure"
+        )
+
+        user = (
+            db_session.query(User)
+            .filter(User.email == email)
+            .first()
+        )
+
+        assert user is None
+
+    finally:
+        app.dependency_overrides.clear()
