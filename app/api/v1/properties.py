@@ -4,12 +4,15 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.schemas.address_plate import AddressPlateResponse
 from app.schemas.property import PropertyCreate, PropertyResponse
+from app.schemas.property_activation import PropertyActivationRequest
 from app.schemas.property_address import (
     PropertyAddressCreate,
     PropertyAddressResponse,
 )
 from app.services.property_address_service import PropertyAddressService
+from app.services.property_activation_service import PropertyActivationService
 from app.services.property_service import PropertyService
 
 
@@ -40,6 +43,39 @@ def create_property(
     except ValueError as exc:
         raise HTTPException(
             status_code=404,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/{property_id}/activate",
+    response_model=AddressPlateResponse,
+)
+def activate_property(
+    property_id: UUID,
+    activation_data: PropertyActivationRequest,
+    db: Session = Depends(get_db),
+):
+    service = PropertyActivationService(db)
+
+    try:
+        return service.activate_property(
+            property_id=property_id,
+            plate_code=activation_data.plate_code,
+        )
+
+    except ValueError as exc:
+        status_code = (
+            404
+            if str(exc) in {
+                "Property not found",
+                "Plate not found",
+            }
+            else 400
+        )
+
+        raise HTTPException(
+            status_code=status_code,
             detail=str(exc),
         ) from exc
 
