@@ -182,15 +182,10 @@ def get_property(
     service = PropertyService(db)
 
     try:
-        property = service.get_property(property_id)
-
-        if property.landlord_id != current_landlord.id:
-            raise HTTPException(
-                status_code=404,
-                detail="Property not found",
-            )
-
-        return property
+        return service.get_property_for_landlord(
+            property_id=property_id,
+            landlord_id=current_landlord.id,
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=404,
