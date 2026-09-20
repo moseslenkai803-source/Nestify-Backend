@@ -130,3 +130,125 @@ def test_get_property_api_returns_404_for_missing_property(db_session):
 
     finally:
         app.dependency_overrides.clear()
+
+
+def test_list_properties_api_returns_landlord_properties(db_session):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        user = User(
+            email=f"list-api-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=user.id,
+            display_name="List API Test Landlord",
+            phone="+254700000000",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        first_response = client.post(
+            f"/api/v1/properties?landlord_id={landlord.id}",
+            json={
+                "name": "First Property",
+                "property_type": "residential",
+            },
+        )
+
+        second_response = client.post(
+            f"/api/v1/properties?landlord_id={landlord.id}",
+            json={
+                "name": "Second Property",
+                "property_type": "commercial",
+            },
+        )
+
+        assert first_response.status_code == 201
+        assert second_response.status_code == 201
+
+        response = client.get(
+            f"/api/v1/properties?landlord_id={landlord.id}"
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert len(data) == 2
+        assert data[0]["landlord_id"] == str(landlord.id)
+        assert data[1]["landlord_id"] == str(landlord.id)
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_properties_api_returns_empty_list_for_landlord_with_no_properties(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        user = User(
+            email=f"empty-list-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=user.id,
+            display_name="Empty List Landlord",
+            phone="+254700000000",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        response = client.get(
+            f"/api/v1/properties?landlord_id={landlord.id}"
+        )
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_properties_api_returns_404_for_missing_landlord(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        response = client.get(
+            f"/api/v1/properties?landlord_id={uuid.uuid4()}"
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Landlord not found"
+
+    finally:
+        app.dependency_overrides.clear()
