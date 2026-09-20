@@ -2,7 +2,6 @@ import uuid
 
 import pytest
 
-from app.models.address_plate import AddressPlate
 from app.models.landlord import Landlord
 from app.models.property_address import PropertyAddress
 from app.models.user import User
@@ -63,6 +62,7 @@ def test_activate_property_links_verified_plate_to_property(db_session):
     assert activated_plate.property_id == property.id
     assert activated_plate.status == "active"
     assert activated_plate.activated_at is not None
+    assert property.status == "active"
 
 
 def test_activate_property_requires_address(db_session):
