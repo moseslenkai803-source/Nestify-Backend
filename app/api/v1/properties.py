@@ -105,19 +105,10 @@ def create_property_address(
     service = PropertyAddressService(db)
 
     try:
-        property = service.property_repository.get_by_id(property_id)
-
-        if property is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Property not found",
-            )
-
-        if property.landlord_id != current_landlord.id:
-            raise HTTPException(
-                status_code=404,
-                detail="Property not found",
-            )
+        service.get_property_for_landlord(
+            property_id=property_id,
+            landlord_id=current_landlord.id,
+        )
 
         return service.create_address(
             property_id=property_id,
