@@ -3,8 +3,12 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_current_user
+from app.api.dependencies import (
+    get_current_landlord,
+    get_current_user,
+)
 from app.db.session import get_db
+from app.models.landlord import Landlord
 from app.models.user import User
 from app.repositories.landlord_repository import LandlordRepository
 from app.schemas.address_plate import AddressPlateResponse
@@ -69,11 +73,20 @@ def create_property(
 def activate_property(
     property_id: UUID,
     activation_data: PropertyActivationRequest,
+    current_landlord: Landlord = Depends(get_current_landlord),
     db: Session = Depends(get_db),
 ):
     service = PropertyActivationService(db)
 
     try:
+        property = service.property_service.get_property(property_id)
+
+        if property.landlord_id != current_landlord.id:
+            raise HTTPException(
+                status_code=404,
+                detail="Property not found",
+            )
+
         return service.activate_property(
             property_id=property_id,
             plate_code=activation_data.plate_code,
@@ -103,11 +116,26 @@ def activate_property(
 def create_property_address(
     property_id: UUID,
     address_data: PropertyAddressCreate,
+    current_landlord: Landlord = Depends(get_current_landlord),
     db: Session = Depends(get_db),
 ):
     service = PropertyAddressService(db)
 
     try:
+        property = service.property_repository.get_by_id(property_id)
+
+        if property is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Property not found",
+            )
+
+        if property.landlord_id != current_landlord.id:
+            raise HTTPException(
+                status_code=404,
+                detail="Property not found",
+            )
+
         return service.create_address(
             property_id=property_id,
             formatted_address=address_data.formatted_address,
@@ -130,11 +158,26 @@ def create_property_address(
 )
 def get_property_address(
     property_id: UUID,
+    current_landlord: Landlord = Depends(get_current_landlord),
     db: Session = Depends(get_db),
 ):
     service = PropertyAddressService(db)
 
     try:
+        property = service.property_repository.get_by_id(property_id)
+
+        if property is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Property not found",
+            )
+
+        if property.landlord_id != current_landlord.id:
+            raise HTTPException(
+                status_code=404,
+                detail="Property not found",
+            )
+
         address = service.property_address_repository.get_by_property_id(
             property_id
         )
@@ -156,13 +199,15 @@ def get_property_address(
     response_model=list[PropertyResponse],
 )
 def list_properties(
-    landlord_id: UUID,
+    current_landlord: Landlord = Depends(get_current_landlord),
     db: Session = Depends(get_db),
 ):
     service = PropertyService(db)
 
     try:
-        return service.list_properties(landlord_id)
+        return service.list_properties(
+            current_landlord.id
+        )
     except ValueError as exc:
         raise HTTPException(
             status_code=404,
@@ -176,12 +221,21 @@ def list_properties(
 )
 def get_property(
     property_id: UUID,
+    current_landlord: Landlord = Depends(get_current_landlord),
     db: Session = Depends(get_db),
 ):
     service = PropertyService(db)
 
     try:
-        return service.get_property(property_id)
+        property = service.get_property(property_id)
+
+        if property.landlord_id != current_landlord.id:
+            raise HTTPException(
+                status_code=404,
+                detail="Property not found",
+            )
+
+        return property
     except ValueError as exc:
         raise HTTPException(
             status_code=404,

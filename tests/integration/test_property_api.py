@@ -6,6 +6,7 @@ from app.core.security import create_access_token
 from app.db.session import get_db
 from app.main import app
 from app.models.landlord import Landlord
+from app.models.property import Property
 from app.models.property_address import PropertyAddress
 from app.models.user import User
 from app.services.property_service import PropertyService
@@ -66,6 +67,165 @@ def test_create_property_api(db_session):
         app.dependency_overrides.clear()
 
 
+def test_create_property_address_api_denies_another_landlord(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        owner_user = User(
+            email=f"address-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        owner_landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Address Owner",
+            phone="+254700000001",
+            landlord_type="individual",
+        )
+        db_session.add(owner_landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=owner_landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Protected Address Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        other_user = User(
+            email=f"address-other-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(other_user)
+        db_session.flush()
+
+        other_landlord = Landlord(
+            user_id=other_user.id,
+            display_name="Other Address Landlord",
+            phone="+254700000002",
+            landlord_type="individual",
+        )
+        db_session.add(other_landlord)
+        db_session.flush()
+
+        other_token = create_access_token(
+            subject=str(other_user.id),
+        )
+
+        response = client.post(
+            f"/api/v1/properties/{property.id}/address",
+            headers={
+                "Authorization": f"Bearer {other_token}",
+            },
+            json={
+                "formatted_address": "Unauthorized Address",
+                "county": "Nairobi",
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Property not found"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_property_address_api_denies_another_landlord(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        owner_user = User(
+            email=f"address-read-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        owner_landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Address Read Owner",
+            phone="+254700000001",
+            landlord_type="individual",
+        )
+        db_session.add(owner_landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=owner_landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Protected Read Address Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        address = PropertyAddress(
+            property_id=property.id,
+            formatted_address="Private Address, Nairobi",
+            county="Nairobi",
+            locality="Nairobi",
+        )
+        db_session.add(address)
+        db_session.flush()
+
+        other_user = User(
+            email=f"address-read-other-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(other_user)
+        db_session.flush()
+
+        other_landlord = Landlord(
+            user_id=other_user.id,
+            display_name="Other Read Landlord",
+            phone="+254700000002",
+            landlord_type="individual",
+        )
+        db_session.add(other_landlord)
+        db_session.flush()
+
+        other_token = create_access_token(
+            subject=str(other_user.id),
+        )
+
+        response = client.get(
+            f"/api/v1/properties/{property.id}/address",
+            headers={
+                "Authorization": f"Bearer {other_token}",
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Property not found"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_get_property_api(db_session):
     def override_get_db():
         yield db_session
@@ -112,7 +272,10 @@ def test_get_property_api(db_session):
         property_id = create_response.json()["id"]
 
         response = client.get(
-            f"/api/v1/properties/{property_id}"
+            f"/api/v1/properties/{property_id}",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
         )
 
         assert response.status_code == 200
@@ -129,6 +292,88 @@ def test_get_property_api(db_session):
         app.dependency_overrides.clear()
 
 
+def test_get_property_api_denies_access_to_another_landlords_property(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        owner_user = User(
+            email=f"owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        owner_landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Owner Landlord",
+            phone="+254700000001",
+            landlord_type="individual",
+        )
+        db_session.add(owner_landlord)
+        db_session.flush()
+
+        owner_token = create_access_token(
+            subject=str(owner_user.id),
+        )
+
+        create_response = client.post(
+            "/api/v1/properties",
+            headers={
+                "Authorization": f"Bearer {owner_token}",
+            },
+            json={
+                "name": "Private Owner Property",
+                "property_type": "residential",
+            },
+        )
+
+        assert create_response.status_code == 201
+
+        property_id = create_response.json()["id"]
+
+        other_user = User(
+            email=f"other-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(other_user)
+        db_session.flush()
+
+        other_landlord = Landlord(
+            user_id=other_user.id,
+            display_name="Other Landlord",
+            phone="+254700000002",
+            landlord_type="individual",
+        )
+        db_session.add(other_landlord)
+        db_session.flush()
+
+        other_token = create_access_token(
+            subject=str(other_user.id),
+        )
+
+        response = client.get(
+            f"/api/v1/properties/{property_id}",
+            headers={
+                "Authorization": f"Bearer {other_token}",
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Property not found"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_get_property_api_returns_404_for_missing_property(db_session):
     def override_get_db():
         yield db_session
@@ -138,8 +383,32 @@ def test_get_property_api_returns_404_for_missing_property(db_session):
     try:
         client = TestClient(app)
 
+        user = User(
+            email=f"missing-property-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=user.id,
+            display_name="Missing Property Landlord",
+            phone="+254700000000",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
         response = client.get(
-            f"/api/v1/properties/{uuid.uuid4()}"
+            f"/api/v1/properties/{uuid.uuid4()}",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
         )
 
         assert response.status_code == 404
@@ -205,7 +474,10 @@ def test_list_properties_api_returns_landlord_properties(db_session):
         assert second_response.status_code == 201
 
         response = client.get(
-            f"/api/v1/properties?landlord_id={landlord.id}"
+            "/api/v1/properties",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
         )
 
         assert response.status_code == 200
@@ -248,34 +520,19 @@ def test_list_properties_api_returns_empty_list_for_landlord_with_no_properties(
         db_session.add(landlord)
         db_session.flush()
 
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
         response = client.get(
-            f"/api/v1/properties?landlord_id={landlord.id}"
+            "/api/v1/properties",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
         )
 
         assert response.status_code == 200
         assert response.json() == []
-
-    finally:
-        app.dependency_overrides.clear()
-
-
-def test_list_properties_api_returns_404_for_missing_landlord(
-    db_session,
-):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
-
-    try:
-        client = TestClient(app)
-
-        response = client.get(
-            f"/api/v1/properties?landlord_id={uuid.uuid4()}"
-        )
-
-        assert response.status_code == 404
-        assert response.json()["detail"] == "Landlord not found"
 
     finally:
         app.dependency_overrides.clear()
@@ -315,8 +572,15 @@ def test_create_property_address_api(db_session):
             property_type="residential",
         )
 
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
         response = client.post(
             f"/api/v1/properties/{property.id}/address",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
             json={
                 "formatted_address": "Karen, Nairobi, Kenya",
                 "county": "Nairobi",
@@ -390,8 +654,15 @@ def test_get_property_address_api(db_session):
         db_session.add(address)
         db_session.flush()
 
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
         response = client.get(
-            f"/api/v1/properties/{property.id}/address"
+            f"/api/v1/properties/{property.id}/address",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
         )
 
         assert response.status_code == 200
@@ -443,8 +714,15 @@ def test_get_property_address_api_returns_404_when_missing(
             property_type="residential",
         )
 
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
         response = client.get(
-            f"/api/v1/properties/{property.id}/address"
+            f"/api/v1/properties/{property.id}/address",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
         )
 
         assert response.status_code == 404

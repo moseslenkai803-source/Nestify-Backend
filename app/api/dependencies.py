@@ -6,8 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.core.security import decode_access_token
 from app.db.session import get_db
+from app.models.landlord import Landlord
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
+from app.repositories.landlord_repository import LandlordRepository
 
 
 bearer_scheme = HTTPBearer()
@@ -62,3 +64,22 @@ def get_current_user(
         )
 
     return user
+
+
+def get_current_landlord(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> Landlord:
+    landlord_repository = LandlordRepository(db)
+
+    landlord = landlord_repository.get_by_user_id(
+        current_user.id
+    )
+
+    if landlord is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Landlord profile not found",
+        )
+
+    return landlord
