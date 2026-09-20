@@ -1,7 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.dependencies import get_current_landlord
 from app.db.session import get_db
+from app.models.landlord import Landlord
+from app.repositories.property_repository import PropertyRepository
 from app.schemas.address_plate import (
     AddressPlateLinkRequest,
     AddressPlateResponse,
@@ -76,8 +79,27 @@ def verify_address_plate(
 def link_address_plate(
     plate_code: str,
     link_data: AddressPlateLinkRequest,
+    current_landlord: Landlord = Depends(get_current_landlord),
     db: Session = Depends(get_db),
 ):
+    property_repository = PropertyRepository(db)
+
+    property = property_repository.get_by_id(
+        link_data.property_id
+    )
+
+    if property is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Property not found",
+        )
+
+    if property.landlord_id != current_landlord.id:
+        raise HTTPException(
+            status_code=404,
+            detail="Property not found",
+        )
+
     service = AddressPlateService(db)
 
     try:
