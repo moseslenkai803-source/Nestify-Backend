@@ -62,13 +62,10 @@ def activate_property(
     service = PropertyActivationService(db)
 
     try:
-        property = service.property_service.get_property(property_id)
-
-        if property.landlord_id != current_landlord.id:
-            raise HTTPException(
-                status_code=404,
-                detail="Property not found",
-            )
+        service.get_property_for_landlord(
+            property_id=property_id,
+            landlord_id=current_landlord.id,
+        )
 
         return service.activate_property(
             property_id=property_id,
