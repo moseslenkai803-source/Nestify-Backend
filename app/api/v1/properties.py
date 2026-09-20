@@ -138,28 +138,12 @@ def get_property_address(
     service = PropertyAddressService(db)
 
     try:
-        property = service.property_repository.get_by_id(property_id)
-
-        if property is None:
-            raise HTTPException(
-                status_code=404,
-                detail="Property not found",
-            )
-
-        if property.landlord_id != current_landlord.id:
-            raise HTTPException(
-                status_code=404,
-                detail="Property not found",
-            )
-
-        address = service.property_address_repository.get_by_property_id(
-            property_id
+        service.get_property_for_landlord(
+            property_id=property_id,
+            landlord_id=current_landlord.id,
         )
 
-        if address is None:
-            raise ValueError("Property address not found")
-
-        return address
+        return service.get_address(property_id)
 
     except ValueError as exc:
         raise HTTPException(

@@ -29,6 +29,19 @@ class PropertyAddressService:
 
         return property
 
+    def get_address(
+        self,
+        property_id: uuid.UUID,
+    ) -> PropertyAddress:
+        address = self.property_address_repository.get_by_property_id(
+            property_id
+        )
+
+        if address is None:
+            raise ValueError("Property address not found")
+
+        return address
+
     def create_address(
         self,
         property_id: uuid.UUID,
