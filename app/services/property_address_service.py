@@ -3,6 +3,7 @@ import uuid
 from geoalchemy2.elements import WKTElement
 from sqlalchemy.orm import Session
 
+from app.models.property import Property
 from app.models.property_address import PropertyAddress
 from app.repositories.property_address_repository import PropertyAddressRepository
 from app.repositories.property_repository import PropertyRepository
@@ -18,7 +19,7 @@ class PropertyAddressService:
         self,
         property_id: uuid.UUID,
         landlord_id: uuid.UUID,
-    ):
+    ) -> Property:
         property = self.property_repository.get_by_id_for_landlord(
             property_id=property_id,
             landlord_id=landlord_id,
