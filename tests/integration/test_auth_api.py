@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+import pytest
 
 from app.db.session import get_db
 from app.main import app
@@ -6,6 +7,12 @@ from app.models.landlord import Landlord
 from app.models.user import User
 
 client = TestClient(app)
+
+
+@pytest.fixture(name="client")
+def client_fixture():
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 def test_register_landlord_success(db_session):
@@ -147,6 +154,92 @@ def test_register_landlord_persists_user_and_landlord(db_session):
 
         assert str(user.id) == data["user_id"]
         assert str(landlord.id) == data["landlord_id"]
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_login_success(client, db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        registration_response = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "login@example.com",
+                "password": "StrongPassword123!",
+                "display_name": "Login Landlord",
+                "phone": "+254700000000",
+            },
+        )
+
+        assert registration_response.status_code == 201
+
+        response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "login@example.com",
+                "password": "StrongPassword123!",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert "access_token" in data
+        assert data["access_token"]
+        assert data["token_type"] == "bearer"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_login_rejects_wrong_password(client, db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        registration_response = client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "wrong-password@example.com",
+                "password": "CorrectPassword123!",
+                "display_name": "Test Landlord",
+                "phone": "+254711111111",
+            },
+        )
+
+        assert registration_response.status_code == 201
+
+        response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "wrong-password@example.com",
+                "password": "WrongPassword123!",
+            },
+        )
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid email or password"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_login_rejects_unknown_email(client, db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        response = client.post(
+            "/api/v1/auth/login",
+            json={
+                "email": "does-not-exist@example.com",
+                "password": "SomePassword123!",
+            },
+        )
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Invalid email or password"
 
     finally:
         app.dependency_overrides.clear()

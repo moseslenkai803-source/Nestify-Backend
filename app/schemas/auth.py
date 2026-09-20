@@ -20,3 +20,13 @@ class LandlordRegistrationResponse(BaseModel):
     display_name: str
     phone: str
     landlord_type: str
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"

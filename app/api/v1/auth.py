@@ -1,12 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.security import create_access_token
 from app.db.session import get_db
 from app.schemas.auth import (
     LandlordRegistrationRequest,
     LandlordRegistrationResponse,
+    LoginRequest,
+    TokenResponse,
 )
 from app.services.registration_service import RegistrationService
+from app.services.user_service import UserService
 
 
 router = APIRouter(
@@ -47,5 +51,36 @@ def register_landlord(
     except ValueError as exc:
         raise HTTPException(
             status_code=400,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+)
+def login(
+    login_data: LoginRequest,
+    db: Session = Depends(get_db),
+):
+    service = UserService(db)
+
+    try:
+        user = service.authenticate_user(
+            email=login_data.email,
+            password=login_data.password,
+        )
+
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
+        return TokenResponse(
+            access_token=access_token,
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=401,
             detail=str(exc),
         ) from exc

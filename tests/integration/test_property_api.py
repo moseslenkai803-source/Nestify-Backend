@@ -2,6 +2,7 @@ import uuid
 
 from fastapi.testclient import TestClient
 
+from app.core.security import create_access_token
 from app.db.session import get_db
 from app.main import app
 from app.models.landlord import Landlord
@@ -36,8 +37,15 @@ def test_create_property_api(db_session):
         db_session.add(landlord)
         db_session.flush()
 
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
         response = client.post(
-            f"/api/v1/properties?landlord_id={landlord.id}",
+            "/api/v1/properties",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
             json={
                 "name": "API Test Property",
                 "property_type": "residential",
@@ -84,8 +92,15 @@ def test_get_property_api(db_session):
         db_session.add(landlord)
         db_session.flush()
 
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
         create_response = client.post(
-            f"/api/v1/properties?landlord_id={landlord.id}",
+            "/api/v1/properties",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
             json={
                 "name": "Retrieval Test Property",
                 "property_type": "residential",
@@ -160,8 +175,15 @@ def test_list_properties_api_returns_landlord_properties(db_session):
         db_session.add(landlord)
         db_session.flush()
 
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
         first_response = client.post(
-            f"/api/v1/properties?landlord_id={landlord.id}",
+            "/api/v1/properties",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
             json={
                 "name": "First Property",
                 "property_type": "residential",
@@ -169,7 +191,10 @@ def test_list_properties_api_returns_landlord_properties(db_session):
         )
 
         second_response = client.post(
-            f"/api/v1/properties?landlord_id={landlord.id}",
+            "/api/v1/properties",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
             json={
                 "name": "Second Property",
                 "property_type": "commercial",

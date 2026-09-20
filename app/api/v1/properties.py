@@ -3,7 +3,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.api.dependencies import get_current_user
 from app.db.session import get_db
+from app.models.user import User
+from app.repositories.landlord_repository import LandlordRepository
 from app.schemas.address_plate import AddressPlateResponse
 from app.schemas.property import PropertyCreate, PropertyResponse
 from app.schemas.property_activation import PropertyActivationRequest
@@ -29,14 +32,26 @@ router = APIRouter(
 )
 def create_property(
     property_data: PropertyCreate,
-    landlord_id: UUID,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    landlord_repository = LandlordRepository(db)
+
+    landlord = landlord_repository.get_by_user_id(
+        current_user.id
+    )
+
+    if landlord is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Landlord profile not found",
+        )
+
     service = PropertyService(db)
 
     try:
         return service.create_property(
-            landlord_id=landlord_id,
+            landlord_id=landlord.id,
             name=property_data.name,
             property_type=property_data.property_type,
         )
