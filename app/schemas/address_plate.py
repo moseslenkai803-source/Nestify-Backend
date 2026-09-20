@@ -13,3 +13,7 @@ class AddressPlateResponse(BaseModel):
     status: str
     activated_at: datetime | None
     verified_at: datetime | None
+
+
+class AddressPlateLinkRequest(BaseModel):
+    property_id: UUID

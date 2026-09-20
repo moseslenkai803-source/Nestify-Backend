@@ -2,7 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.schemas.address_plate import AddressPlateResponse
+from app.schemas.address_plate import (
+    AddressPlateLinkRequest,
+    AddressPlateResponse,
+)
 from app.services.address_plate_service import AddressPlateService
 
 
@@ -62,5 +65,38 @@ def verify_address_plate(
     except ValueError as exc:
         raise HTTPException(
             status_code=404 if str(exc) == "Plate not found" else 400,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/{plate_code}/link",
+    response_model=AddressPlateResponse,
+)
+def link_address_plate(
+    plate_code: str,
+    link_data: AddressPlateLinkRequest,
+    db: Session = Depends(get_db),
+):
+    service = AddressPlateService(db)
+
+    try:
+        return service.link_plate_to_property(
+            plate_code=plate_code,
+            property_id=link_data.property_id,
+        )
+
+    except ValueError as exc:
+        status_code = (
+            404
+            if str(exc) in {
+                "Plate not found",
+                "Property not found",
+            }
+            else 400
+        )
+
+        raise HTTPException(
+            status_code=status_code,
             detail=str(exc),
         ) from exc
