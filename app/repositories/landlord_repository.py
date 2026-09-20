@@ -16,3 +16,9 @@ class LandlordRepository:
         return self.db.query(Landlord).filter(
             Landlord.user_id == user_id
         ).first()
+
+    def add(self, landlord: Landlord) -> Landlord:
+        self.db.add(landlord)
+        self.db.flush()
+
+        return landlord
