@@ -55,6 +55,7 @@ def test_activate_property_links_verified_plate_to_property(db_session):
 
     activated_plate = activation_service.activate_property(
         property_id=property.id,
+        landlord_id=landlord.id,
         plate_code=plate.plate_code,
     )
 
@@ -107,5 +108,6 @@ def test_activate_property_requires_address(db_session):
     ):
         activation_service.activate_property(
             property_id=property.id,
+            landlord_id=landlord.id,
             plate_code=plate.plate_code,
         )

@@ -62,13 +62,9 @@ def activate_property(
     service = PropertyActivationService(db)
 
     try:
-        service.get_property_for_landlord(
-            property_id=property_id,
-            landlord_id=current_landlord.id,
-        )
-
         return service.activate_property(
             property_id=property_id,
+            landlord_id=current_landlord.id,
             plate_code=activation_data.plate_code,
         )
 
