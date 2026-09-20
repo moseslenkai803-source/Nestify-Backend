@@ -5,7 +5,9 @@ from fastapi.testclient import TestClient
 from app.db.session import get_db
 from app.main import app
 from app.models.landlord import Landlord
+from app.models.property_address import PropertyAddress
 from app.models.user import User
+from app.services.property_service import PropertyService
 
 
 def test_create_property_api(db_session):
@@ -249,6 +251,179 @@ def test_list_properties_api_returns_404_for_missing_landlord(
 
         assert response.status_code == 404
         assert response.json()["detail"] == "Landlord not found"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_property_address_api(db_session):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        user = User(
+            email=f"address-api-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=user.id,
+            display_name="Address API Landlord",
+            phone="+254700000000",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        service = PropertyService(db_session)
+
+        property = service.create_property(
+            landlord_id=landlord.id,
+            name="Address API Property",
+            property_type="residential",
+        )
+
+        response = client.post(
+            f"/api/v1/properties/{property.id}/address",
+            json={
+                "formatted_address": "Karen, Nairobi, Kenya",
+                "county": "Nairobi",
+                "sub_county": "Dagoretti South",
+                "locality": "Karen",
+                "latitude": -1.3197,
+                "longitude": 36.7073,
+            },
+        )
+
+        assert response.status_code == 201
+
+        data = response.json()
+
+        assert data["property_id"] == str(property.id)
+        assert data["formatted_address"] == "Karen, Nairobi, Kenya"
+        assert data["county"] == "Nairobi"
+        assert data["sub_county"] == "Dagoretti South"
+        assert data["locality"] == "Karen"
+        assert data["latitude"] == -1.3197
+        assert data["longitude"] == 36.7073
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_property_address_api(db_session):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        user = User(
+            email=f"get-address-api-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=user.id,
+            display_name="Get Address API Landlord",
+            phone="+254700000000",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        service = PropertyService(db_session)
+
+        property = service.create_property(
+            landlord_id=landlord.id,
+            name="Get Address Property",
+            property_type="residential",
+        )
+
+        address = PropertyAddress(
+            property_id=property.id,
+            formatted_address="Westlands, Nairobi, Kenya",
+            county="Nairobi",
+            sub_county="Westlands",
+            locality="Westlands",
+            latitude=-1.2676,
+            longitude=36.8108,
+        )
+
+        db_session.add(address)
+        db_session.flush()
+
+        response = client.get(
+            f"/api/v1/properties/{property.id}/address"
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert data["property_id"] == str(property.id)
+        assert data["formatted_address"] == "Westlands, Nairobi, Kenya"
+        assert data["county"] == "Nairobi"
+        assert data["locality"] == "Westlands"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_property_address_api_returns_404_when_missing(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        user = User(
+            email=f"missing-address-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=user.id,
+            display_name="Missing Address Landlord",
+            phone="+254700000000",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        service = PropertyService(db_session)
+
+        property = service.create_property(
+            landlord_id=landlord.id,
+            name="Missing Address Property",
+            property_type="residential",
+        )
+
+        response = client.get(
+            f"/api/v1/properties/{property.id}/address"
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Property address not found"
 
     finally:
         app.dependency_overrides.clear()
