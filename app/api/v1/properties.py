@@ -3,6 +3,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.property_actions import PropertyAction
+
 from app.api.dependencies import (
     get_current_landlord,
     get_current_user,
@@ -119,7 +121,7 @@ def create_property_address(
         authorization_service.authorize(
             user=current_user,
             property_id=property_id,
-            action="property_management",
+            action=PropertyAction.PROPERTY_MANAGEMENT,
         )
 
         return service.create_address(
@@ -159,7 +161,7 @@ def get_property_address(
         authorization_service.authorize(
             user=current_user,
             property_id=property_id,
-            action="property_management",
+            action=PropertyAction.PROPERTY_MANAGEMENT,
         )
 
         return service.get_address(property_id)

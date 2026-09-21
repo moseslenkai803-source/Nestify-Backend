@@ -2,6 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.core.property_actions import PropertyAction
 from app.models.property import Property
 from app.models.user import User
 from app.repositories.landlord_repository import LandlordRepository
@@ -19,13 +20,13 @@ class PropertyAuthorizationService:
         self,
         user: User,
         property_id: UUID,
-        action: str,
+        action: PropertyAction,
     ) -> Property:
         if not user.is_active:
             raise ValueError("User account is inactive")
 
-        if not action.strip():
-            raise ValueError("Authorization action is required")
+        if not isinstance(action, PropertyAction):
+            raise ValueError("Invalid property action")
 
         property = self.property_repository.get_by_id(property_id)
 
@@ -40,7 +41,7 @@ class PropertyAuthorizationService:
         access = self.property_access_repository.get_active_access(
             user_id=user.id,
             property_id=property.id,
-            access_type=action,
+            access_type=action.value,
         )
 
         if access is not None:

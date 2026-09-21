@@ -2,6 +2,7 @@ import uuid
 
 import pytest
 
+from app.core.property_actions import PropertyAction
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_access import PropertyAccess
@@ -57,7 +58,7 @@ def grant_property_access(
     db_session,
     user,
     property,
-    action="plate_operations",
+    action=PropertyAction.PLATE_OPERATIONS,
 ):
     access = PropertyAccess(
         user_id=user.id,
@@ -80,7 +81,7 @@ def test_property_owner_can_authorize_own_property(db_session):
     authorized_property = service.authorize(
         user=user,
         property_id=property.id,
-        action="property_management",
+        action=PropertyAction.PROPERTY_MANAGEMENT,
     )
 
     assert authorized_property.id == property.id
@@ -103,7 +104,7 @@ def test_landlord_cannot_authorize_another_landlords_property(db_session):
         service.authorize(
             user=other_user,
             property_id=property.id,
-            action="property_management",
+            action=PropertyAction.PROPERTY_MANAGEMENT,
         )
 
 
@@ -123,7 +124,7 @@ def test_user_with_active_property_access_can_authorize_property(
         db_session,
         employee,
         property,
-        action="plate_operations",
+        action=PropertyAction.PLATE_OPERATIONS,
     )
 
     service = PropertyAuthorizationService(db_session)
@@ -131,7 +132,7 @@ def test_user_with_active_property_access_can_authorize_property(
     authorized_property = service.authorize(
         user=employee,
         property_id=property.id,
-        action="plate_operations",
+        action=PropertyAction.PLATE_OPERATIONS,
     )
 
     assert authorized_property.id == property.id
@@ -158,7 +159,7 @@ def test_user_without_property_access_cannot_authorize_property(
         service.authorize(
             user=employee,
             property_id=property.id,
-            action="plate_operations",
+            action=PropertyAction.PLATE_OPERATIONS,
         )
 
 
@@ -178,7 +179,7 @@ def test_revoked_property_access_cannot_authorize_property(
         db_session,
         employee,
         property,
-        action="plate_operations",
+        action=PropertyAction.PLATE_OPERATIONS,
     )
     access.is_active = False
     db_session.flush()
@@ -192,7 +193,7 @@ def test_revoked_property_access_cannot_authorize_property(
         service.authorize(
             user=employee,
             property_id=property.id,
-            action="plate_operations",
+            action=PropertyAction.PLATE_OPERATIONS,
         )
 
 
@@ -211,7 +212,7 @@ def test_inactive_user_cannot_authorize_property(db_session):
         service.authorize(
             user=user,
             property_id=uuid.uuid4(),
-            action="property_management",
+            action=PropertyAction.PROPERTY_MANAGEMENT,
         )
 
 
@@ -227,21 +228,21 @@ def test_nonexistent_property_cannot_be_authorized(db_session):
         service.authorize(
             user=user,
             property_id=uuid.uuid4(),
-            action="property_management",
+            action=PropertyAction.PROPERTY_MANAGEMENT,
         )
 
 
-def test_blank_action_is_rejected(db_session):
+def test_invalid_property_action_is_rejected(db_session):
     user = create_user(db_session)
 
     service = PropertyAuthorizationService(db_session)
 
     with pytest.raises(
         ValueError,
-        match="Authorization action is required",
+        match="Invalid property action",
     ):
         service.authorize(
             user=user,
             property_id=uuid.uuid4(),
-            action="   ",
+            action="unsupported_action",
         )
