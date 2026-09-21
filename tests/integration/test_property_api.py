@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token
 from app.db.session import get_db
@@ -12,7 +13,7 @@ from app.models.user import User
 from app.services.property_service import PropertyService
 
 
-def test_create_property_api(db_session):
+def test_create_property_api(db_session: Session):
     def override_get_db():
         yield db_session
 
@@ -68,7 +69,7 @@ def test_create_property_api(db_session):
 
 
 def test_create_property_address_api_denies_another_landlord(
-    db_session,
+    db_session: Session,
 ):
     def override_get_db():
         yield db_session
@@ -145,7 +146,7 @@ def test_create_property_address_api_denies_another_landlord(
 
 
 def test_get_property_address_api_denies_another_landlord(
-    db_session,
+    db_session: Session,
 ):
     def override_get_db():
         yield db_session
@@ -226,7 +227,7 @@ def test_get_property_address_api_denies_another_landlord(
         app.dependency_overrides.clear()
 
 
-def test_get_property_api(db_session):
+def test_get_property_api(db_session: Session):
     def override_get_db():
         yield db_session
 
@@ -293,7 +294,7 @@ def test_get_property_api(db_session):
 
 
 def test_get_property_api_denies_access_to_another_landlords_property(
-    db_session,
+    db_session: Session,
 ):
     def override_get_db():
         yield db_session
@@ -374,7 +375,7 @@ def test_get_property_api_denies_access_to_another_landlords_property(
         app.dependency_overrides.clear()
 
 
-def test_get_property_api_returns_404_for_missing_property(db_session):
+def test_get_property_api_returns_404_for_missing_property(db_session: Session):
     def override_get_db():
         yield db_session
 
@@ -418,7 +419,7 @@ def test_get_property_api_returns_404_for_missing_property(db_session):
         app.dependency_overrides.clear()
 
 
-def test_list_properties_api_returns_landlord_properties(db_session):
+def test_list_properties_api_returns_landlord_properties(db_session: Session):
     def override_get_db():
         yield db_session
 
@@ -493,7 +494,7 @@ def test_list_properties_api_returns_landlord_properties(db_session):
 
 
 def test_list_properties_api_returns_empty_list_for_landlord_with_no_properties(
-    db_session,
+    db_session: Session,
 ):
     def override_get_db():
         yield db_session
@@ -538,7 +539,7 @@ def test_list_properties_api_returns_empty_list_for_landlord_with_no_properties(
         app.dependency_overrides.clear()
 
 
-def test_create_property_address_api(db_session):
+def test_create_property_address_api(db_session: Session):
     def override_get_db():
         yield db_session
 
@@ -607,7 +608,7 @@ def test_create_property_address_api(db_session):
         app.dependency_overrides.clear()
 
 
-def test_get_property_address_api(db_session):
+def test_get_property_address_api(db_session: Session):
     def override_get_db():
         yield db_session
 
@@ -679,7 +680,7 @@ def test_get_property_address_api(db_session):
 
 
 def test_get_property_address_api_returns_404_when_missing(
-    db_session,
+    db_session: Session,
 ):
     def override_get_db():
         yield db_session
@@ -727,6 +728,92 @@ def test_get_property_address_api_returns_404_when_missing(
 
         assert response.status_code == 404
         assert response.json()["detail"] == "Property address not found"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_activate_property_api(db_session: Session):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        user = User(
+            email=f"activate-api-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=user.id,
+            display_name="Activation API Landlord",
+            phone="+254700000000",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property_service = PropertyService(db_session)
+
+        property = property_service.create_property(
+            landlord_id=landlord.id,
+            name="Activation API Property",
+            property_type="residential",
+        )
+
+        address = PropertyAddress(
+            property_id=property.id,
+            formatted_address="Karen, Nairobi, Kenya",
+            county="Nairobi",
+            sub_county="Dagoretti South",
+            locality="Karen",
+            latitude=-1.3197,
+            longitude=36.7073,
+        )
+        db_session.add(address)
+        db_session.flush()
+
+        from app.services.address_plate_service import AddressPlateService
+
+        plate_service = AddressPlateService(db_session)
+
+        plate = plate_service.create_plate()
+        plate_service.verify_plate(plate.plate_code)
+
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
+        response = client.post(
+            f"/api/v1/properties/{property.id}/activate",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+            json={
+                "plate_code": plate.plate_code,
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert data["id"] == str(plate.id)
+        assert data["property_id"] == str(property.id)
+        assert data["plate_code"] == plate.plate_code
+        assert data["status"] == "active"
+        assert data["verified_at"] is not None
+        assert data["activated_at"] is not None
+
+        db_session.refresh(property)
+
+        assert property.status == "active"
 
     finally:
         app.dependency_overrides.clear()
