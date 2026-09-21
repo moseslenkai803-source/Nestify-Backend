@@ -19,6 +19,7 @@ from app.schemas.property_address import (
 )
 from app.services.property_address_service import PropertyAddressService
 from app.services.property_activation_service import PropertyActivationService
+from app.services.property_access_service import PropertyAccessService
 from app.services.property_service import PropertyService
 
 
@@ -65,9 +66,16 @@ def activate_property(
     ),
     db: Session = Depends(get_db),
 ):
+    property_access_service = PropertyAccessService(db)
     service = PropertyActivationService(db)
 
     try:
+        property_access_service.authorize(
+            user_id=current_employee.id,
+            property_id=property_id,
+            access_type="plate_operations",
+        )
+
         return service.activate_property(
             property_id=property_id,
             plate_code=activation_data.plate_code,
@@ -80,6 +88,8 @@ def activate_property(
                 "Property not found",
                 "Plate not found",
             }
+            else 403
+            if str(exc) == "Employee does not have access to this property"
             else 400
         )
 
