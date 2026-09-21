@@ -6,11 +6,13 @@ from app.models.property_access import PropertyAccess
 from app.repositories.property_access_repository import (
     PropertyAccessRepository,
 )
+from app.repositories.property_repository import PropertyRepository
 
 
 class PropertyAccessService:
     def __init__(self, db: Session):
         self.property_access_repository = PropertyAccessRepository(db)
+        self.property_repository = PropertyRepository(db)
 
     def grant_access(
         self,
@@ -58,6 +60,11 @@ class PropertyAccessService:
         )
 
         if property_access is None:
+            property = self.property_repository.get_by_id(property_id)
+
+            if property is None:
+                raise ValueError("Property not found")
+
             raise ValueError(
                 "Employee does not have access to this property"
             )

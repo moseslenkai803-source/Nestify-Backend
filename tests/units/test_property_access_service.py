@@ -146,6 +146,22 @@ def test_authorize_rejects_missing_access(db_session):
         )
 
 
+def test_authorize_rejects_missing_property(db_session):
+    employee = create_user(db_session)
+
+    service = PropertyAccessService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Property not found",
+    ):
+        service.authorize(
+            user_id=employee.id,
+            property_id=uuid.uuid4(),
+            access_type="plate_operations",
+        )
+
+
 def test_authorize_rejects_inactive_access(db_session):
     employee = create_user(db_session)
     property = create_property(db_session)
