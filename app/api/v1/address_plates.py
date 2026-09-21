@@ -9,6 +9,7 @@ from app.schemas.address_plate import (
     AddressPlateResponse,
 )
 from app.services.address_plate_service import AddressPlateService
+from app.services.property_access_service import PropertyAccessService
 
 
 router = APIRouter(
@@ -89,9 +90,17 @@ def link_address_plate(
     ),
     db: Session = Depends(get_db),
 ):
-    service = AddressPlateService(db)
+    property_access_service = PropertyAccessService(db)
 
     try:
+        property_access_service.authorize(
+            user_id=current_employee.id,
+            property_id=link_data.property_id,
+            access_type="plate_operations",
+        )
+
+        service = AddressPlateService(db)
+
         return service.link_plate_to_property(
             plate_code=plate_code,
             property_id=link_data.property_id,
@@ -104,6 +113,8 @@ def link_address_plate(
                 "Plate not found",
                 "Property not found",
             }
+            else 403
+            if str(exc) == "Employee does not have access to this property"
             else 400
         )
 

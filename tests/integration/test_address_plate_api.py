@@ -67,6 +67,23 @@ def test_create_address_plate_api(db_session):
         app.dependency_overrides.clear()
 
 
+def create_plate_operations_employee_with_id(db_session):
+    employee = User(
+        email=f"plate-employee-access-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="employee",
+        clearance="plate_operations",
+        is_active=True,
+    )
+
+    db_session.add(employee)
+    db_session.flush()
+
+    return employee.id, create_access_token(
+        subject=str(employee.id),
+    )
+
+
 def create_user_access_token(
     db_session,
     *,
@@ -369,14 +386,25 @@ def test_link_address_plate_api(client, db_session):
     app.dependency_overrides[get_db] = lambda: db_session
 
     try:
-        access_token = create_plate_operations_employee(
-            db_session
-        )
-
         from app.models.landlord import Landlord
         from app.models.property import Property
         from app.models.user import User
         from app.services.address_plate_service import AddressPlateService
+        from app.services.property_access_service import PropertyAccessService
+
+        employee = User(
+            email=f"link-employee-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
 
         landlord_user = User(
             email=f"link-landlord-{uuid.uuid4()}@example.com",
@@ -405,6 +433,12 @@ def test_link_address_plate_api(client, db_session):
 
         db_session.add(property)
         db_session.flush()
+
+        PropertyAccessService(db_session).grant_access(
+            user_id=employee.id,
+            property_id=property.id,
+            access_type="plate_operations",
+        )
 
         service = AddressPlateService(db_session)
 
@@ -435,6 +469,77 @@ def test_link_address_plate_api(client, db_session):
         app.dependency_overrides.clear()
 
 
+def test_link_address_plate_api_requires_property_access(
+    client,
+    db_session,
+):
+    from app.models.landlord import Landlord
+    from app.models.property import Property
+    from app.services.address_plate_service import AddressPlateService
+
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        employee = User(
+            email=f"property-access-employee-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
+
+        landlord = db_session.query(Landlord).first()
+
+        if landlord is None:
+            raise AssertionError(
+                "Expected a landlord for the test property"
+            )
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Unauthorized Link Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        service = AddressPlateService(db_session)
+        plate = service.create_plate()
+        service.verify_plate(plate.plate_code)
+
+        response = client.post(
+            f"/api/v1/address-plates/{plate.plate_code}/link",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+            json={
+                "property_id": str(property.id),
+            },
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == (
+            "Employee does not have access to this property"
+        )
+
+        db_session.refresh(plate)
+
+        assert plate.property_id is None
+        assert plate.status == "verified"
+        assert plate.activated_at is None
+
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_link_unverified_address_plate_api(
     client,
     db_session,
@@ -443,6 +548,7 @@ def test_link_unverified_address_plate_api(
     from app.models.property import Property
     from app.models.user import User
     from app.services.address_plate_service import AddressPlateService
+    from app.services.property_access_service import PropertyAccessService
 
     def override_get_db():
         yield db_session
@@ -450,8 +556,10 @@ def test_link_unverified_address_plate_api(
     app.dependency_overrides[get_db] = override_get_db
 
     try:
-        access_token = create_plate_operations_employee(
-            db_session
+        employee_id, access_token = (
+            create_plate_operations_employee_with_id(
+                db_session
+            )
         )
 
         landlord = db_session.query(Landlord).first()
@@ -468,6 +576,14 @@ def test_link_unverified_address_plate_api(
         )
         db_session.add(property)
         db_session.flush()
+
+        property_access_service = PropertyAccessService(db_session)
+
+        property_access_service.grant_access(
+            user_id=employee_id,
+            property_id=property.id,
+            access_type="plate_operations",
+        )
 
         service = AddressPlateService(db_session)
         plate = service.create_plate()
@@ -536,6 +652,7 @@ def test_link_address_plate_api_rejects_property_with_existing_plate(
     from app.models.landlord import Landlord
     from app.models.property import Property
     from app.services.address_plate_service import AddressPlateService
+    from app.services.property_access_service import PropertyAccessService
 
     def override_get_db():
         yield db_session
@@ -543,8 +660,10 @@ def test_link_address_plate_api_rejects_property_with_existing_plate(
     app.dependency_overrides[get_db] = override_get_db
 
     try:
-        access_token = create_plate_operations_employee(
-            db_session
+        employee_id, access_token = (
+            create_plate_operations_employee_with_id(
+                db_session
+            )
         )
 
         landlord = db_session.query(Landlord).first()
@@ -561,6 +680,14 @@ def test_link_address_plate_api_rejects_property_with_existing_plate(
         )
         db_session.add(property)
         db_session.flush()
+
+        property_access_service = PropertyAccessService(db_session)
+
+        property_access_service.grant_access(
+            user_id=employee_id,
+            property_id=property.id,
+            access_type="plate_operations",
+        )
 
         service = AddressPlateService(db_session)
 
@@ -672,6 +799,7 @@ def test_link_address_plate_api_allows_employee_across_landlord_ownership(
     from app.models.property import Property
     from app.models.user import User
     from app.services.address_plate_service import AddressPlateService
+    from app.services.property_access_service import PropertyAccessService
 
     def override_get_db():
         yield db_session
@@ -679,8 +807,10 @@ def test_link_address_plate_api_allows_employee_across_landlord_ownership(
     app.dependency_overrides[get_db] = override_get_db
 
     try:
-        access_token = create_plate_operations_employee(
-            db_session
+        employee_id, access_token = (
+            create_plate_operations_employee_with_id(
+                db_session
+            )
         )
 
         landlord_user = User(
@@ -709,6 +839,14 @@ def test_link_address_plate_api_allows_employee_across_landlord_ownership(
         )
         db_session.add(property)
         db_session.flush()
+
+        property_access_service = PropertyAccessService(db_session)
+
+        property_access_service.grant_access(
+            user_id=employee_id,
+            property_id=property.id,
+            access_type="plate_operations",
+        )
 
         service = AddressPlateService(db_session)
 
