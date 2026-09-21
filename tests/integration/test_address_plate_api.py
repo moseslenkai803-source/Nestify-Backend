@@ -609,3 +609,74 @@ def test_link_address_plate_api_rejects_property_owned_by_another_landlord(
 
     finally:
         app.dependency_overrides.clear()
+
+
+def test_verify_active_address_plate_api_rejects_reverification(
+    client,
+    db_session,
+):
+    from app.models.landlord import Landlord
+    from app.models.property import Property
+    from app.models.user import User
+    from app.services.address_plate_service import AddressPlateService
+
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        user = User(
+            email=f"active-reverify-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=user.id,
+            display_name="Active Reverify Landlord",
+            phone="+254700000000",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Active Reverify Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        service = AddressPlateService(db_session)
+
+        plate = service.create_plate()
+        service.verify_plate(plate.plate_code)
+        service.link_plate_to_property(
+            plate_code=plate.plate_code,
+            property_id=property.id,
+        )
+
+        response = client.post(
+            f"/api/v1/address-plates/{plate.plate_code}/verify"
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == (
+            "Plate cannot be verified in its current status"
+        )
+
+        db_session.refresh(plate)
+
+        assert plate.status == "active"
+        assert plate.property_id == property.id
+        assert plate.verified_at is not None
+        assert plate.activated_at is not None
+
+    finally:
+        app.dependency_overrides.clear()
