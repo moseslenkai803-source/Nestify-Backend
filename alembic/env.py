@@ -12,6 +12,7 @@ from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_address import PropertyAddress
 from app.models.address_plate import AddressPlate
+from app.models.property_verification import PropertyVerification
 
 # this is the Alembic Config object, which provides
 
