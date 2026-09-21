@@ -3,7 +3,6 @@ import uuid
 from sqlalchemy.orm import Session
 
 from app.models.address_plate import AddressPlate
-from app.models.property import Property
 from app.repositories.property_address_repository import PropertyAddressRepository
 from app.services.address_plate_service import AddressPlateService
 from app.services.property_service import PropertyService
@@ -15,18 +14,6 @@ class PropertyActivationService:
         self.address_plate_service = AddressPlateService(db)
         self.property_service = PropertyService(db)
         self.property_address_repository = PropertyAddressRepository(db)
-
-    def get_property_for_landlord(
-        self,
-        property_id: uuid.UUID,
-        landlord_id: uuid.UUID,
-    ) -> Property:
-        property = self.property_service.get_property_for_landlord(
-            property_id=property_id,
-            landlord_id=landlord_id,
-        )
-
-        return property
 
     def activate_property(
         self,

@@ -36,17 +36,6 @@ class PropertyService:
         return self.property_repository.add(property)
 
 
-    def get_property(
-        self,
-        property_id: uuid.UUID,
-    ) -> Property:
-        property = self.property_repository.get_by_id(property_id)
-
-        if property is None:
-            raise ValueError("Property not found")
-
-        return property
-
     def get_property_for_landlord(
         self,
         property_id: uuid.UUID,
