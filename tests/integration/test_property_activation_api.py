@@ -35,7 +35,7 @@ def test_activate_property_api(db_session):
                 property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
                 name="Activation API Property",
                 property_type="residential",
-                status="draft",
+                status="verified",
         )
         db_session.add(property)
         db_session.flush()
@@ -127,7 +127,7 @@ def test_activate_property_api_allows_employee_across_landlord_ownership(
         property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
         name="Employee Activation Property",
         property_type="residential",
-        status="draft",
+        status="verified",
     )
     db_session.add(property)
     db_session.flush()
@@ -216,7 +216,7 @@ def test_activate_property_api_requires_address(db_session):
                 property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
                 name="No Address Property",
                 property_type="residential",
-                status="draft",
+                status="verified",
         )
         db_session.add(property)
         db_session.flush()
@@ -264,7 +264,7 @@ def test_activate_property_api_requires_address(db_session):
                         "Property must have an address before activation"
                 )
 
-                assert property.status == "draft"
+                assert property.status == "verified"
 
         finally:
                 app.dependency_overrides.clear()
@@ -295,7 +295,7 @@ def test_activate_property_api_returns_404_for_missing_plate(
         property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
         name="Missing Plate Property",
         property_type="residential",
-        status="draft",
+        status="verified",
     )
     db_session.add(property)
     db_session.flush()
@@ -345,7 +345,7 @@ def test_activate_property_api_returns_404_for_missing_plate(
 
         db_session.refresh(property)
 
-        assert property.status == "draft"
+        assert property.status == "verified"
 
     finally:
         app.dependency_overrides.clear()
@@ -376,7 +376,7 @@ def test_activate_property_api_rejects_unverified_plate(
         property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
         name="Unverified Plate Property",
         property_type="residential",
-        status="draft",
+        status="verified",
     )
     db_session.add(property)
     db_session.flush()
@@ -436,7 +436,7 @@ def test_activate_property_api_rejects_unverified_plate(
         db_session.refresh(property)
         db_session.refresh(plate)
 
-        assert property.status == "draft"
+        assert property.status == "verified"
         assert plate.property_id is None
         assert plate.status == "unactivated"
         assert plate.activated_at is None
@@ -470,7 +470,7 @@ def test_activate_property_api_rejects_already_active_plate(
         property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
         name="Already Active Property",
         property_type="residential",
-        status="draft",
+        status="verified",
     )
     db_session.add(property)
     db_session.flush()
@@ -536,7 +536,7 @@ def test_activate_property_api_rejects_already_active_plate(
 
         assert second_response.status_code == 400
         assert second_response.json()["detail"] == (
-            "Plate is already linked to a property"
+            "Property is already active"
         )
 
         db_session.refresh(property)

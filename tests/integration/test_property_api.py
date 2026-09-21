@@ -767,6 +767,9 @@ def test_activate_property_api(db_session: Session):
             property_type="residential",
         )
 
+        property.status = "verified"
+        db_session.flush()
+
         address = PropertyAddress(
             property_id=property.id,
             formatted_address="Karen, Nairobi, Kenya",
