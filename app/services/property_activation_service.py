@@ -27,6 +27,14 @@ class PropertyActivationService:
         if property is None:
             raise ValueError("Property not found")
 
+        if property.status == "active":
+            raise ValueError("Property is already active")
+
+        if property.status != "verified":
+            raise ValueError(
+                "Only verified properties can be activated"
+            )
+
         address = self.property_address_repository.get_by_property_id(
             property.id
         )

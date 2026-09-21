@@ -51,6 +51,9 @@ def test_activate_property_links_verified_plate_to_property(db_session):
         plate_code=plate.plate_code,
     )
 
+    property.status = "verified"
+    db_session.flush()
+
     activation_service = PropertyActivationService(db_session)
 
     activated_plate = activation_service.activate_property(
@@ -90,6 +93,9 @@ def test_activate_property_requires_address(db_session):
         name="Property Without Address",
         property_type="residential",
     )
+
+    property.status = "verified"
+    db_session.flush()
 
     plate_service = AddressPlateService(db_session)
 
@@ -139,3 +145,109 @@ def test_activate_property_rejects_missing_property(db_session):
     assert plate.property_id is None
     assert plate.status == "verified"
     assert plate.activated_at is None
+
+
+def test_activate_property_requires_verified_property(db_session):
+    user = User(
+        email=f"activation-unverified-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="landlord",
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    landlord = Landlord(
+        user_id=user.id,
+        display_name="Unverified Activation Landlord",
+        phone="+254700000001",
+        landlord_type="individual",
+    )
+    db_session.add(landlord)
+    db_session.flush()
+
+    property_service = PropertyService(db_session)
+
+    property = property_service.create_property(
+        landlord_id=landlord.id,
+        name="Unverified Activation Property",
+        property_type="residential",
+    )
+
+    address = PropertyAddress(
+        property_id=property.id,
+        formatted_address="Unverified Activation Address",
+    )
+    db_session.add(address)
+    db_session.flush()
+
+    plate_service = AddressPlateService(db_session)
+
+    plate = plate_service.create_plate()
+
+    plate_service.verify_plate(
+        plate_code=plate.plate_code,
+    )
+
+    activation_service = PropertyActivationService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Only verified properties can be activated",
+    ):
+        activation_service.activate_property(
+            property_id=property.id,
+            plate_code=plate.plate_code,
+        )
+
+    db_session.refresh(property)
+    db_session.refresh(plate)
+
+    assert property.status == "draft"
+    assert plate.property_id is None
+    assert plate.status == "verified"
+    assert plate.activated_at is None
+
+
+def test_activate_property_rejects_already_active_property(db_session):
+    user = User(
+        email=f"activation-active-property-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="landlord",
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    landlord = Landlord(
+        user_id=user.id,
+        display_name="Already Active Property Landlord",
+        phone="+254700000002",
+        landlord_type="individual",
+    )
+    db_session.add(landlord)
+    db_session.flush()
+
+    property_service = PropertyService(db_session)
+
+    property = property_service.create_property(
+        landlord_id=landlord.id,
+        name="Already Active Property",
+        property_type="residential",
+    )
+
+    property.status = "active"
+    db_session.flush()
+
+    activation_service = PropertyActivationService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Property is already active",
+    ):
+        activation_service.activate_property(
+            property_id=property.id,
+            plate_code="PLATE-DOES-NOT-MATTER",
+        )
+
+    db_session.refresh(property)
+
+    assert property.status == "active"
