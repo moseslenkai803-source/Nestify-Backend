@@ -3,9 +3,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_current_landlord
+from app.api.dependencies import (
+    get_current_landlord,
+    require_employee_clearance,
+)
 from app.db.session import get_db
 from app.models.landlord import Landlord
+from app.models.user import User
 from app.schemas.address_plate import AddressPlateResponse
 from app.schemas.property import PropertyCreate, PropertyResponse
 from app.schemas.property_activation import PropertyActivationRequest
@@ -56,7 +60,9 @@ def create_property(
 def activate_property(
     property_id: UUID,
     activation_data: PropertyActivationRequest,
-    current_landlord: Landlord = Depends(get_current_landlord),
+    current_employee: User = Depends(
+        require_employee_clearance("plate_operations")
+    ),
     db: Session = Depends(get_db),
 ):
     service = PropertyActivationService(db)
@@ -64,7 +70,6 @@ def activate_property(
     try:
         return service.activate_property(
             property_id=property_id,
-            landlord_id=current_landlord.id,
             plate_code=activation_data.plate_code,
         )
 

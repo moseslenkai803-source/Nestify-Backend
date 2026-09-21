@@ -1,15 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_current_landlord
+from app.api.dependencies import require_employee_clearance
 from app.db.session import get_db
-from app.models.landlord import Landlord
+from app.models.user import User
 from app.schemas.address_plate import (
     AddressPlateLinkRequest,
     AddressPlateResponse,
 )
 from app.services.address_plate_service import AddressPlateService
-from app.services.property_service import PropertyService
 
 
 router = APIRouter(
@@ -24,6 +23,9 @@ router = APIRouter(
     status_code=201,
 )
 def create_address_plate(
+    current_employee: User = Depends(
+        require_employee_clearance("plate_operations")
+    ),
     db: Session = Depends(get_db),
 ):
     service = AddressPlateService(db)
@@ -58,6 +60,9 @@ def get_address_plate(
 )
 def verify_address_plate(
     plate_code: str,
+    current_employee: User = Depends(
+        require_employee_clearance("plate_operations")
+    ),
     db: Session = Depends(get_db),
 ):
     service = AddressPlateService(db)
@@ -79,22 +84,11 @@ def verify_address_plate(
 def link_address_plate(
     plate_code: str,
     link_data: AddressPlateLinkRequest,
-    current_landlord: Landlord = Depends(get_current_landlord),
+    current_employee: User = Depends(
+        require_employee_clearance("plate_operations")
+    ),
     db: Session = Depends(get_db),
 ):
-    property_service = PropertyService(db)
-
-    try:
-        property_service.get_property_for_landlord(
-            property_id=link_data.property_id,
-            landlord_id=current_landlord.id,
-        )
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=404,
-            detail=str(exc),
-        ) from exc
-
     service = AddressPlateService(db)
 
     try:

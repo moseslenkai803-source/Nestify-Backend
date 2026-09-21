@@ -786,8 +786,18 @@ def test_activate_property_api(db_session: Session):
         plate = plate_service.create_plate()
         plate_service.verify_plate(plate.plate_code)
 
+        employee = User(
+            email=f"activate-employee-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
         access_token = create_access_token(
-            subject=str(user.id),
+            subject=str(employee.id),
         )
 
         response = client.post(

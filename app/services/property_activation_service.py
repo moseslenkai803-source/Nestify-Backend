@@ -18,13 +18,14 @@ class PropertyActivationService:
     def activate_property(
         self,
         property_id: uuid.UUID,
-        landlord_id: uuid.UUID,
         plate_code: str,
     ) -> AddressPlate:
-        property = self.property_service.get_property_for_landlord(
-            property_id=property_id,
-            landlord_id=landlord_id,
+        property = self.property_service.property_repository.get_by_id(
+            property_id
         )
+
+        if property is None:
+            raise ValueError("Property not found")
 
         address = self.property_address_repository.get_by_property_id(
             property.id

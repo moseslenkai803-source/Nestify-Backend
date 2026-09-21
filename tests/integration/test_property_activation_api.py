@@ -2,7 +2,6 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-from app.api.v1.properties import router
 from app.core.security import create_access_token
 from app.main import app
 from app.db.session import get_db
@@ -65,8 +64,17 @@ def test_activate_property_api(db_session):
         try:
                 client = TestClient(app)
 
+                employee = User(
+                    email=f"activation-employee-{uuid.uuid4()}@example.com",
+                    password_hash="test-hash",
+                    role="employee",
+                    clearance="plate_operations",
+                )
+                db_session.add(employee)
+                db_session.flush()
+
                 access_token = create_access_token(
-                        subject=str(user.id),
+                    subject=str(employee.id),
                 )
 
                 response = client.post(
@@ -94,100 +102,95 @@ def test_activate_property_api(db_session):
                 app.dependency_overrides.clear()
 
 
-def test_activate_property_api_denies_another_landlord(
-        db_session,
+def test_activate_property_api_allows_employee_across_landlord_ownership(
+    db_session,
 ):
-        def override_get_db():
-                yield db_session
+    owner_user = User(
+        email=f"activation-owner-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="landlord",
+    )
+    db_session.add(owner_user)
+    db_session.flush()
 
-        app.dependency_overrides[get_db] = override_get_db
+    owner_landlord = Landlord(
+        user_id=owner_user.id,
+        display_name="Activation Owner",
+        phone="+254700000001",
+        landlord_type="individual",
+    )
+    db_session.add(owner_landlord)
+    db_session.flush()
 
-        try:
-                client = TestClient(app)
+    property = Property(
+        landlord_id=owner_landlord.id,
+        property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+        name="Employee Activation Property",
+        property_type="residential",
+        status="draft",
+    )
+    db_session.add(property)
+    db_session.flush()
 
-                owner_user = User(
-                        email=f"activation-owner-{uuid.uuid4()}@example.com",
-                        password_hash="test-hash",
-                        role="landlord",
-                )
-                db_session.add(owner_user)
-                db_session.flush()
+    address = PropertyAddress(
+        property_id=property.id,
+        formatted_address="Employee Activation Address",
+        county="Nairobi",
+        locality="Nairobi",
+    )
+    db_session.add(address)
+    db_session.flush()
 
-                owner_landlord = Landlord(
-                        user_id=owner_user.id,
-                        display_name="Activation Owner",
-                        phone="+254700000001",
-                        landlord_type="individual",
-                )
-                db_session.add(owner_landlord)
-                db_session.flush()
+    plate = AddressPlate(
+        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+        status="verified",
+    )
+    db_session.add(plate)
+    db_session.flush()
 
-                property = Property(
-                        landlord_id=owner_landlord.id,
-                        property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
-                        name="Protected Activation Property",
-                        property_type="residential",
-                        status="draft",
-                )
-                db_session.add(property)
-                db_session.flush()
+    employee = User(
+        email=f"activation-employee-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="employee",
+        clearance="plate_operations",
+    )
+    db_session.add(employee)
+    db_session.flush()
 
-                address = PropertyAddress(
-                        property_id=property.id,
-                        formatted_address="Protected Activation Address",
-                        county="Nairobi",
-                        locality="Nairobi",
-                )
-                db_session.add(address)
-                db_session.flush()
+    def override_get_db():
+        yield db_session
 
-                plate = AddressPlate(
-                        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
-                        status="verified",
-                )
-                db_session.add(plate)
-                db_session.flush()
+    app.dependency_overrides[get_db] = override_get_db
 
-                other_user = User(
-                        email=f"activation-other-{uuid.uuid4()}@example.com",
-                        password_hash="test-hash",
-                        role="landlord",
-                )
-                db_session.add(other_user)
-                db_session.flush()
+    try:
+        client = TestClient(app)
 
-                other_landlord = Landlord(
-                        user_id=other_user.id,
-                        display_name="Other Activation Landlord",
-                        phone="+254700000002",
-                        landlord_type="individual",
-                )
-                db_session.add(other_landlord)
-                db_session.flush()
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
 
-                other_token = create_access_token(
-                        subject=str(other_user.id),
-                )
+        response = client.post(
+            f"/api/v1/properties/{property.id}/activate",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+            json={
+                "plate_code": plate.plate_code,
+            },
+        )
 
-                response = client.post(
-                        f"/api/v1/properties/{property.id}/activate",
-                        headers={
-                                "Authorization": f"Bearer {other_token}",
-                        },
-                        json={
-                                "plate_code": plate.plate_code,
-                        },
-                )
+        assert response.status_code == 200
+        assert response.json()["status"] == "active"
 
-                assert response.status_code == 404
-                assert response.json()["detail"] == "Property not found"
+        db_session.refresh(property)
+        db_session.refresh(plate)
 
-                assert property.status == "draft"
-                assert plate.property_id is None
-                assert plate.status == "verified"
+        assert property.status == "active"
+        assert plate.property_id == property.id
+        assert plate.status == "active"
 
-        finally:
-                app.dependency_overrides.clear()
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_activate_property_api_requires_address(db_session):
@@ -233,8 +236,17 @@ def test_activate_property_api_requires_address(db_session):
         try:
                 client = TestClient(app)
 
+                employee = User(
+                    email=f"activation-employee-{uuid.uuid4()}@example.com",
+                    password_hash="test-hash",
+                    role="employee",
+                    clearance="plate_operations",
+                )
+                db_session.add(employee)
+                db_session.flush()
+
                 access_token = create_access_token(
-                        subject=str(user.id),
+                    subject=str(employee.id),
                 )
 
                 response = client.post(
@@ -305,8 +317,17 @@ def test_activate_property_api_returns_404_for_missing_plate(
     try:
         client = TestClient(app)
 
+        employee = User(
+            email=f"activation-employee-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="plate_operations",
+        )
+        db_session.add(employee)
+        db_session.flush()
+
         access_token = create_access_token(
-            subject=str(user.id),
+            subject=str(employee.id),
         )
 
         response = client.post(
@@ -384,8 +405,17 @@ def test_activate_property_api_rejects_unverified_plate(
     try:
         client = TestClient(app)
 
+        employee = User(
+            email=f"activation-employee-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="plate_operations",
+        )
+        db_session.add(employee)
+        db_session.flush()
+
         access_token = create_access_token(
-            subject=str(user.id),
+            subject=str(employee.id),
         )
 
         response = client.post(
@@ -469,8 +499,17 @@ def test_activate_property_api_rejects_already_active_plate(
     try:
         client = TestClient(app)
 
+        employee = User(
+            email=f"activation-employee-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="plate_operations",
+        )
+        db_session.add(employee)
+        db_session.flush()
+
         access_token = create_access_token(
-            subject=str(user.id),
+            subject=str(employee.id),
         )
 
         first_response = client.post(

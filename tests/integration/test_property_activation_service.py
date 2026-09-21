@@ -55,7 +55,6 @@ def test_activate_property_links_verified_plate_to_property(db_session):
 
     activated_plate = activation_service.activate_property(
         property_id=property.id,
-        landlord_id=landlord.id,
         plate_code=plate.plate_code,
     )
 
@@ -108,63 +107,12 @@ def test_activate_property_requires_address(db_session):
     ):
         activation_service.activate_property(
             property_id=property.id,
-            landlord_id=landlord.id,
             plate_code=plate.plate_code,
         )
 
 
-def test_activate_property_rejects_wrong_landlord(
-    db_session,
-):
-    owner_user = User(
-        email=f"activation-owner-{uuid.uuid4()}@example.com",
-        password_hash="test-hash",
-        role="landlord",
-    )
-    db_session.add(owner_user)
-    db_session.flush()
 
-    owner_landlord = Landlord(
-        user_id=owner_user.id,
-        display_name="Property Owner",
-        phone="+254700000001",
-        landlord_type="individual",
-    )
-    db_session.add(owner_landlord)
-    db_session.flush()
-
-    other_user = User(
-        email=f"activation-other-{uuid.uuid4()}@example.com",
-        password_hash="test-hash",
-        role="landlord",
-    )
-    db_session.add(other_user)
-    db_session.flush()
-
-    other_landlord = Landlord(
-        user_id=other_user.id,
-        display_name="Other Landlord",
-        phone="+254700000002",
-        landlord_type="individual",
-    )
-    db_session.add(other_landlord)
-    db_session.flush()
-
-    property_service = PropertyService(db_session)
-
-    property = property_service.create_property(
-        landlord_id=owner_landlord.id,
-        name="Protected Activation Property",
-        property_type="residential",
-    )
-
-    address = PropertyAddress(
-        property_id=property.id,
-        formatted_address="Protected Activation Address",
-    )
-    db_session.add(address)
-    db_session.flush()
-
+def test_activate_property_rejects_missing_property(db_session):
     plate_service = AddressPlateService(db_session)
 
     plate = plate_service.create_plate()
@@ -175,20 +123,19 @@ def test_activate_property_rejects_wrong_landlord(
 
     activation_service = PropertyActivationService(db_session)
 
+    missing_property_id = uuid.uuid4()
+
     with pytest.raises(
         ValueError,
         match="Property not found",
     ):
         activation_service.activate_property(
-            property_id=property.id,
-            landlord_id=other_landlord.id,
+            property_id=missing_property_id,
             plate_code=plate.plate_code,
         )
 
-    db_session.refresh(property)
     db_session.refresh(plate)
 
-    assert property.status == "draft"
     assert plate.property_id is None
     assert plate.status == "verified"
     assert plate.activated_at is None

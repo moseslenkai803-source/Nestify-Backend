@@ -34,6 +34,11 @@ class User(Base):
         default="landlord",
     )
 
+    clearance: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
     is_active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

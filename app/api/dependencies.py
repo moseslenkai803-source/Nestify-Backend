@@ -66,6 +66,29 @@ def get_current_user(
     return user
 
 
+def require_employee_clearance(
+    required_clearance: str,
+):
+    def dependency(
+        current_user: User = Depends(get_current_user),
+    ) -> User:
+        if current_user.role != "employee":
+            raise HTTPException(
+                status_code=403,
+                detail="Employee access required",
+            )
+
+        if current_user.clearance != required_clearance:
+            raise HTTPException(
+                status_code=403,
+                detail="Insufficient employee clearance",
+            )
+
+        return current_user
+
+    return dependency
+
+
 def get_current_landlord(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
