@@ -283,7 +283,7 @@ def test_activate_property_api_requires_property_access(db_session):
 
         assert response.status_code == 403
         assert response.json()["detail"] == (
-            "Employee does not have access to this property"
+            "User is not authorized for this property"
         )
 
         db_session.refresh(property)
