@@ -10,6 +10,7 @@ from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_address import PropertyAddress
 from app.models.user import User
+from app.services.property_access_service import PropertyAccessService
 from app.services.property_service import PropertyService
 
 
@@ -798,6 +799,12 @@ def test_activate_property_api(db_session: Session):
         )
         db_session.add(employee)
         db_session.flush()
+
+        PropertyAccessService(db_session).grant_access(
+            user_id=employee.id,
+            property_id=property.id,
+            access_type="plate_operations",
+        )
 
         access_token = create_access_token(
             subject=str(employee.id),
