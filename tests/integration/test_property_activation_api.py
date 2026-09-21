@@ -256,3 +256,257 @@ def test_activate_property_api_requires_address(db_session):
 
         finally:
                 app.dependency_overrides.clear()
+
+
+def test_activate_property_api_returns_404_for_missing_plate(
+    db_session,
+):
+    user = User(
+        email=f"activation-missing-plate-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="landlord",
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    landlord = Landlord(
+        user_id=user.id,
+        display_name="Missing Plate Landlord",
+        phone="+254700000000",
+        landlord_type="individual",
+    )
+    db_session.add(landlord)
+    db_session.flush()
+
+    property = Property(
+        landlord_id=landlord.id,
+        property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+        name="Missing Plate Property",
+        property_type="residential",
+        status="draft",
+    )
+    db_session.add(property)
+    db_session.flush()
+
+    address = PropertyAddress(
+        property_id=property.id,
+        formatted_address="Missing Plate Address",
+        county="Nairobi",
+        locality="Nairobi",
+    )
+    db_session.add(address)
+    db_session.flush()
+
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
+        response = client.post(
+            f"/api/v1/properties/{property.id}/activate",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+            json={
+                "plate_code": "PLATE-DOES-NOT-EXIST",
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Plate not found"
+
+        db_session.refresh(property)
+
+        assert property.status == "draft"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_activate_property_api_rejects_unverified_plate(
+    db_session,
+):
+    user = User(
+        email=f"activation-unverified-plate-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="landlord",
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    landlord = Landlord(
+        user_id=user.id,
+        display_name="Unverified Plate Landlord",
+        phone="+254700000000",
+        landlord_type="individual",
+    )
+    db_session.add(landlord)
+    db_session.flush()
+
+    property = Property(
+        landlord_id=landlord.id,
+        property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+        name="Unverified Plate Property",
+        property_type="residential",
+        status="draft",
+    )
+    db_session.add(property)
+    db_session.flush()
+
+    address = PropertyAddress(
+        property_id=property.id,
+        formatted_address="Unverified Plate Address",
+        county="Nairobi",
+        locality="Nairobi",
+    )
+    db_session.add(address)
+    db_session.flush()
+
+    plate = AddressPlate(
+        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+        status="unactivated",
+    )
+    db_session.add(plate)
+    db_session.flush()
+
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
+        response = client.post(
+            f"/api/v1/properties/{property.id}/activate",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+            json={
+                "plate_code": plate.plate_code,
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == (
+            "Only verified plates can be linked to a property"
+        )
+
+        db_session.refresh(property)
+        db_session.refresh(plate)
+
+        assert property.status == "draft"
+        assert plate.property_id is None
+        assert plate.status == "unactivated"
+        assert plate.activated_at is None
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_activate_property_api_rejects_already_active_plate(
+    db_session,
+):
+    user = User(
+        email=f"activation-active-plate-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="landlord",
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    landlord = Landlord(
+        user_id=user.id,
+        display_name="Active Plate Landlord",
+        phone="+254700000000",
+        landlord_type="individual",
+    )
+    db_session.add(landlord)
+    db_session.flush()
+
+    property = Property(
+        landlord_id=landlord.id,
+        property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+        name="Already Active Property",
+        property_type="residential",
+        status="draft",
+    )
+    db_session.add(property)
+    db_session.flush()
+
+    address = PropertyAddress(
+        property_id=property.id,
+        formatted_address="Already Active Address",
+        county="Nairobi",
+        locality="Nairobi",
+    )
+    db_session.add(address)
+    db_session.flush()
+
+    plate = AddressPlate(
+        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+        status="verified",
+    )
+    db_session.add(plate)
+    db_session.flush()
+
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
+        first_response = client.post(
+            f"/api/v1/properties/{property.id}/activate",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+            json={
+                "plate_code": plate.plate_code,
+            },
+        )
+
+        assert first_response.status_code == 200
+
+        second_response = client.post(
+            f"/api/v1/properties/{property.id}/activate",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+            json={
+                "plate_code": plate.plate_code,
+            },
+        )
+
+        assert second_response.status_code == 400
+        assert second_response.json()["detail"] == (
+            "Plate is already linked to a property"
+        )
+
+        db_session.refresh(property)
+        db_session.refresh(plate)
+
+        assert property.status == "active"
+        assert plate.property_id == property.id
+        assert plate.status == "active"
+        assert plate.activated_at is not None
+
+    finally:
+        app.dependency_overrides.clear()
