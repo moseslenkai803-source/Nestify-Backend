@@ -205,18 +205,28 @@ def list_properties(
 )
 def get_property(
     property_id: UUID,
-    current_landlord: Landlord = Depends(get_current_landlord),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     service = PropertyService(db)
+    authorization_service = PropertyAuthorizationService(db)
 
     try:
-        return service.get_property_for_landlord(
+        authorization_service.authorize(
+            user=current_user,
             property_id=property_id,
-            landlord_id=current_landlord.id,
+            action=PropertyAction.PROPERTY_MANAGEMENT,
         )
+
+        return service.get_property(property_id)
+
     except ValueError as exc:
+        detail = (
+            "Property not found"
+            if str(exc) == "User is not authorized for this property"
+            else str(exc)
+        )
         raise HTTPException(
             status_code=404,
-            detail=str(exc),
+            detail=detail,
         ) from exc

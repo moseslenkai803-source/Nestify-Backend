@@ -1,3 +1,4 @@
+from uuid import UUID
 import uuid
 
 from fastapi.testclient import TestClient
@@ -456,6 +457,91 @@ def test_get_property_api_denies_access_to_another_landlords_property(
 
         assert response.status_code == 404
         assert response.json()["detail"] == "Property not found"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_property_api_allows_authorized_user(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        owner_user = User(
+            email=f"property-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        owner_landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Property Owner",
+            phone="+254700000003",
+            landlord_type="individual",
+        )
+        db_session.add(owner_landlord)
+        db_session.flush()
+
+        owner_token = create_access_token(
+            subject=str(owner_user.id),
+        )
+
+        create_response = client.post(
+            "/api/v1/properties",
+            headers={
+                "Authorization": f"Bearer {owner_token}",
+            },
+            json={
+                "name": "Delegated Retrieval Property",
+                "property_type": "residential",
+            },
+        )
+
+        assert create_response.status_code == 201
+
+        property_id = create_response.json()["id"]
+
+        authorized_user = User(
+            email=f"property-manager-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+        )
+        db_session.add(authorized_user)
+        db_session.flush()
+
+        PropertyAccessService(db_session).grant_access(
+            user_id=authorized_user.id,
+            property_id=UUID(property_id),
+            access_type="property_management",
+        )
+
+        authorized_token = create_access_token(
+            subject=str(authorized_user.id),
+        )
+
+        response = client.get(
+            f"/api/v1/properties/{property_id}",
+            headers={
+                "Authorization": f"Bearer {authorized_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert data["id"] == property_id
+        assert data["landlord_id"] == str(owner_landlord.id)
+        assert data["name"] == "Delegated Retrieval Property"
+        assert data["property_type"] == "residential"
 
     finally:
         app.dependency_overrides.clear()
