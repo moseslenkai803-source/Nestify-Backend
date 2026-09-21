@@ -228,6 +228,91 @@ def test_get_property_address_api_denies_another_landlord(
         app.dependency_overrides.clear()
 
 
+def test_get_property_address_api_allows_authorized_user(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        owner_user = User(
+            email=f"address-authorized-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        owner_landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Address Authorized Owner",
+            phone="+254700000001",
+            landlord_type="individual",
+        )
+        db_session.add(owner_landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=owner_landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Delegated Address Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        address = PropertyAddress(
+            property_id=property.id,
+            formatted_address="Delegated Address, Nairobi",
+            county="Nairobi",
+            locality="Nairobi",
+        )
+        db_session.add(address)
+        db_session.flush()
+
+        authorized_user = User(
+            email=f"address-authorized-user-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+        )
+        db_session.add(authorized_user)
+        db_session.flush()
+
+        PropertyAccessService(db_session).grant_access(
+            user_id=authorized_user.id,
+            property_id=property.id,
+            access_type="property_management",
+        )
+
+        access_token = create_access_token(
+            subject=str(authorized_user.id),
+        )
+
+        response = client.get(
+            f"/api/v1/properties/{property.id}/address",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert data["property_id"] == str(property.id)
+        assert data["formatted_address"] == "Delegated Address, Nairobi"
+        assert data["county"] == "Nairobi"
+        assert data["locality"] == "Nairobi"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_get_property_api(db_session: Session):
     def override_get_db():
         yield db_session

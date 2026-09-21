@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import (
     get_current_landlord,
+    get_current_user,
     require_employee_clearance,
 )
 from app.db.session import get_db
@@ -20,6 +21,7 @@ from app.schemas.property_address import (
 from app.services.property_address_service import PropertyAddressService
 from app.services.property_activation_service import PropertyActivationService
 from app.services.property_access_service import PropertyAccessService
+from app.services.property_authorization_service import PropertyAuthorizationService
 from app.services.property_service import PropertyService
 
 
@@ -107,15 +109,17 @@ def activate_property(
 def create_property_address(
     property_id: UUID,
     address_data: PropertyAddressCreate,
-    current_landlord: Landlord = Depends(get_current_landlord),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     service = PropertyAddressService(db)
+    authorization_service = PropertyAuthorizationService(db)
 
     try:
-        service.get_property_for_landlord(
+        authorization_service.authorize(
+            user=current_user,
             property_id=property_id,
-            landlord_id=current_landlord.id,
+            action="property_management",
         )
 
         return service.create_address(
@@ -128,9 +132,14 @@ def create_property_address(
             longitude=address_data.longitude,
         )
     except ValueError as exc:
+        detail = (
+            "Property not found"
+            if str(exc) == "User is not authorized for this property"
+            else str(exc)
+        )
         raise HTTPException(
             status_code=404,
-            detail=str(exc),
+            detail=detail,
         ) from exc
 
 
@@ -140,23 +149,30 @@ def create_property_address(
 )
 def get_property_address(
     property_id: UUID,
-    current_landlord: Landlord = Depends(get_current_landlord),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     service = PropertyAddressService(db)
+    authorization_service = PropertyAuthorizationService(db)
 
     try:
-        service.get_property_for_landlord(
+        authorization_service.authorize(
+            user=current_user,
             property_id=property_id,
-            landlord_id=current_landlord.id,
+            action="property_management",
         )
 
         return service.get_address(property_id)
 
     except ValueError as exc:
+        detail = (
+            "Property not found"
+            if str(exc) == "User is not authorized for this property"
+            else str(exc)
+        )
         raise HTTPException(
             status_code=404,
-            detail=str(exc),
+            detail=detail,
         ) from exc
 
 
