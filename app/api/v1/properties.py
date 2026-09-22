@@ -13,13 +13,17 @@ from app.api.dependencies import (
 from app.db.session import get_db
 from app.models.landlord import Landlord
 from app.models.user import User
-from app.schemas.address_plate import AddressPlateResponse
+from app.schemas.address_plate import (
+    AddressPlateRequestResponse,
+    AddressPlateResponse,
+)
 from app.schemas.property import PropertyCreate, PropertyResponse
 from app.schemas.property_activation import PropertyActivationRequest
 from app.schemas.property_address import (
     PropertyAddressCreate,
     PropertyAddressResponse,
 )
+from app.services.address_plate_request_service import AddressPlateRequestService
 from app.services.property_address_service import PropertyAddressService
 from app.services.property_activation_service import PropertyActivationService
 from app.services.property_authorization_service import PropertyAuthorizationService
@@ -228,4 +232,44 @@ def get_property(
         raise HTTPException(
             status_code=404,
             detail=detail,
+        ) from exc
+
+
+@router.post(
+    "/{property_id}/address-plate-requests",
+    response_model=AddressPlateRequestResponse,
+    status_code=201,
+)
+def create_address_plate_request(
+    property_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    authorization_service = PropertyAuthorizationService(db)
+    service = AddressPlateRequestService(db)
+
+    try:
+        authorization_service.authorize(
+            user=current_user,
+            property_id=property_id,
+            action=PropertyAction.PLATE_OPERATIONS,
+        )
+
+        return service.create_request(
+            property_id=property_id,
+            requested_by=current_user.id,
+        )
+
+    except ValueError as exc:
+        status_code = (
+            404
+            if str(exc) == "Property not found"
+            else 403
+            if str(exc) == "User is not authorized for this property"
+            else 400
+        )
+
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
         ) from exc
