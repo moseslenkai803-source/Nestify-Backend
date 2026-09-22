@@ -2,7 +2,6 @@ import uuid
 
 import pytest
 
-from app.models.address_plate import AddressPlate
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_address import PropertyAddress
@@ -46,13 +45,6 @@ def create_verified_property(db_session):
         status="draft",
     )
 
-    plate = AddressPlate(
-        id=uuid.uuid4(),
-        property_id=property_record.id,
-        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
-        status="active",
-    )
-
     db_session.add(employee)
     db_session.add(landlord_user)
     db_session.flush()
@@ -63,10 +55,7 @@ def create_verified_property(db_session):
     db_session.add(property_record)
     db_session.flush()
 
-    db_session.add(plate)
-    db_session.flush()
-
-    return employee, property_record, plate
+    return employee, property_record
 
 
 def add_property_address(db_session, property_id):
@@ -89,7 +78,7 @@ def add_property_address(db_session, property_id):
 def test_verify_property_creates_verified_record_and_updates_property(
     db_session,
 ):
-    employee, property_record, _ = create_verified_property(db_session)
+    employee, property_record = create_verified_property(db_session)
     add_property_address(db_session, property_record.id)
 
     service = PropertyVerificationService(db_session)
@@ -112,7 +101,7 @@ def test_verify_property_creates_verified_record_and_updates_property(
 def test_rejected_property_verification_preserves_property_status(
     db_session,
 ):
-    employee, property_record, _ = create_verified_property(db_session)
+    employee, property_record = create_verified_property(db_session)
     add_property_address(db_session, property_record.id)
 
     service = PropertyVerificationService(db_session)
@@ -153,7 +142,7 @@ def test_verify_property_requires_existing_property(db_session):
 
 
 def test_verify_property_requires_address(db_session):
-    employee, property_record, _ = create_verified_property(db_session)
+    employee, property_record = create_verified_property(db_session)
 
     service = PropertyVerificationService(db_session)
 
@@ -168,28 +157,27 @@ def test_verify_property_requires_address(db_session):
         )
 
 
-def test_verify_property_requires_active_address_plate(db_session):
-    employee, property_record, plate = create_verified_property(db_session)
+def test_verify_property_does_not_require_active_address_plate(
+    db_session,
+):
+    employee, property_record = create_verified_property(db_session)
     add_property_address(db_session, property_record.id)
-
-    plate.status = "verified"
-    db_session.flush()
 
     service = PropertyVerificationService(db_session)
 
-    with pytest.raises(
-        ValueError,
-        match="Property must have an active address plate before verification",
-    ):
-        service.verify_property(
-            property_id=property_record.id,
-            verified_by=employee.id,
-            status="verified",
-        )
+    result = service.verify_property(
+        property_id=property_record.id,
+        verified_by=employee.id,
+        status="verified",
+    )
+
+    assert result.property_id == property_record.id
+    assert result.status == "verified"
+    assert property_record.status == "verified"
 
 
 def test_verify_property_rejects_invalid_status(db_session):
-    employee, property_record, _ = create_verified_property(db_session)
+    employee, property_record = create_verified_property(db_session)
     add_property_address(db_session, property_record.id)
 
     service = PropertyVerificationService(db_session)
