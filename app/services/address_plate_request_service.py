@@ -30,15 +30,20 @@ class AddressPlateRequestService:
         if property is None:
             raise ValueError("Property not found")
 
-        active_plate = (
-            self.address_plate_repository.get_active_by_property_id(
+        existing_plate = (
+            self.address_plate_repository.get_by_property_id(
                 property_id
             )
         )
 
-        if active_plate is not None:
+        if existing_plate is not None:
+            if existing_plate.status == "active":
+                raise ValueError(
+                    "Property already has an active address plate"
+                )
+
             raise ValueError(
-                "Property already has an active address plate"
+                "Property already has an address plate"
             )
 
         pending_request = (
