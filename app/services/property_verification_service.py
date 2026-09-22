@@ -7,7 +7,6 @@ from app.models.property_verification import PropertyVerification
 from app.repositories.property_verification_repository import (
     PropertyVerificationRepository,
 )
-from app.repositories.address_plate_repository import AddressPlateRepository
 from app.repositories.property_address_repository import PropertyAddressRepository
 from app.repositories.property_repository import PropertyRepository
 
@@ -20,7 +19,6 @@ class PropertyVerificationService:
         self.property_verification_repository = (
             PropertyVerificationRepository(db)
         )
-        self.address_plate_repository = AddressPlateRepository(db)
 
     def verify_property(
         self,
@@ -46,15 +44,6 @@ class PropertyVerificationService:
         if address is None:
             raise ValueError(
                 "Property must have an address before verification"
-            )
-
-        plate = self.address_plate_repository.get_active_by_property_id(
-            property_id
-        )
-
-        if plate is None:
-            raise ValueError(
-                "Property must have an active address plate before verification"
             )
 
         verification = PropertyVerification(
