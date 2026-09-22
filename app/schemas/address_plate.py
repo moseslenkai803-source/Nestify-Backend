@@ -17,3 +17,15 @@ class AddressPlateResponse(BaseModel):
 
 class AddressPlateLinkRequest(BaseModel):
     property_id: UUID
+
+
+class AddressPlateRequestResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    property_id: UUID
+    requested_by: UUID
+    status: str
+    requested_at: datetime
+    created_at: datetime
+    updated_at: datetime
