@@ -60,3 +60,41 @@ class AddressPlateRequestService:
         )
 
         return self.address_plate_request_repository.add(request)
+
+    def approve_request(
+        self,
+        request_id: uuid.UUID,
+    ) -> AddressPlateRequest:
+        request = self.address_plate_request_repository.get_by_id(
+            request_id
+        )
+
+        if request is None:
+            raise ValueError("Address plate request not found")
+
+        if request.status != "pending":
+            raise ValueError("Address plate request is not pending")
+
+        request.status = "approved"
+        self.db.flush()
+
+        return request
+
+    def reject_request(
+        self,
+        request_id: uuid.UUID,
+    ) -> AddressPlateRequest:
+        request = self.address_plate_request_repository.get_by_id(
+            request_id
+        )
+
+        if request is None:
+            raise ValueError("Address plate request not found")
+
+        if request.status != "pending":
+            raise ValueError("Address plate request is not pending")
+
+        request.status = "rejected"
+        self.db.flush()
+
+        return request
