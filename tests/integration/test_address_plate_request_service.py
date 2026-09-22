@@ -348,3 +348,51 @@ def test_reject_request_raises_when_request_is_not_pending(db_session):
         match="Address plate request is not pending",
     ):
         service.reject_request(request.id)
+
+
+def test_create_request_raises_when_property_has_allocated_plate(db_session):
+    user = User(
+        email=f"allocated-plate-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="landlord",
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    landlord = Landlord(
+        user_id=user.id,
+        display_name="Allocated Plate Landlord",
+        phone="+254700000000",
+        landlord_type="individual",
+    )
+    db_session.add(landlord)
+    db_session.flush()
+
+    property = Property(
+        landlord_id=landlord.id,
+        property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+        name="Allocated Plate Property",
+        property_type="residential",
+        status="draft",
+    )
+    db_session.add(property)
+    db_session.flush()
+
+    plate = AddressPlate(
+        property_id=property.id,
+        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+        status="unactivated",
+    )
+    db_session.add(plate)
+    db_session.flush()
+
+    service = AddressPlateRequestService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Property already has an address plate",
+    ):
+        service.create_request(
+            property_id=property.id,
+            requested_by=user.id,
+        )

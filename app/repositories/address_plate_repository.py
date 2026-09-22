@@ -33,6 +33,16 @@ class AddressPlateRepository:
             .all()
         )
 
+    def get_available_for_allocation(self) -> AddressPlate | None:
+        return (
+            self.db.query(AddressPlate)
+            .filter(
+                AddressPlate.status == "unactivated",
+                AddressPlate.property_id.is_(None),
+            )
+            .first()
+        )
+
     def get_active_by_property_id(
         self,
         property_id: UUID,

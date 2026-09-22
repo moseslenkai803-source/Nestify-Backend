@@ -74,6 +74,26 @@ class AddressPlateLifecycleService:
 
         return event
 
+    def record_allocation(
+        self,
+        plate_id: uuid.UUID,
+        performed_by: uuid.UUID,
+        notes: str | None = None,
+    ) -> AddressPlateLifecycleEvent:
+        plate = self.address_plate_repository.get_by_id(plate_id)
+
+        if plate is None:
+            raise ValueError("Plate not found")
+
+        event = AddressPlateLifecycleEvent(
+            plate_id=plate_id,
+            event_type="allocated",
+            performed_by=performed_by,
+            notes=notes,
+        )
+
+        return self.lifecycle_event_repository.add(event)
+
     def get_history(
         self,
         plate_id: uuid.UUID,
