@@ -118,6 +118,19 @@ class ManufacturingOrderService:
 
         return order
 
+    def get_order(
+        self,
+        order_code: str,
+    ) -> ManufacturingOrder:
+        order = self.manufacturing_order_repository.get_by_order_code(
+            order_code
+        )
+
+        if order is None:
+            raise ValueError("Manufacturing order not found")
+
+        return order
+
     def get_order_plates(
         self,
         order_code: str,
