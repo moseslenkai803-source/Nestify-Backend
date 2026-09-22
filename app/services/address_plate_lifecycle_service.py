@@ -53,7 +53,7 @@ class AddressPlateLifecycleService:
         )
 
         if latest_event is None:
-            if event_type != "requested":
+            if event_type not in {"requested", "manufactured"}:
                 raise ValueError("Invalid lifecycle transition")
         else:
             expected_event = self.LIFECYCLE_TRANSITIONS.get(
