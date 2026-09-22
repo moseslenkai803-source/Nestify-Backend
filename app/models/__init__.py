@@ -8,6 +8,8 @@ from app.models.address_plate_lifecycle_event import AddressPlateLifecycleEvent
 from app.models.address_plate_request import AddressPlateRequest
 from app.models.manufacturing_order import ManufacturingOrder
 from app.models.property_access import PropertyAccess
+from app.models.dispatch import Dispatch
+from app.models.dispatch_item import DispatchItem
 
 __all__ = [
     "Base",
@@ -20,4 +22,6 @@ __all__ = [
     "AddressPlateRequest",
     "ManufacturingOrder",
     "PropertyAccess",
+    "Dispatch",
+    "DispatchItem",
 ]
