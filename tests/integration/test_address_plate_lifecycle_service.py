@@ -183,3 +183,22 @@ def test_get_latest_event_returns_latest_lifecycle_event(db_session):
 
     assert result is not None
     assert result.event_type == "approved"
+
+def test_record_event_allows_manufactured_as_first_event(db_session):
+    employee = create_employee(db_session)
+    plate = create_plate(db_session)
+    service = AddressPlateLifecycleService(db_session)
+
+    result = service.record_event(
+        plate_id=plate.id,
+        event_type="manufactured",
+        performed_by=employee.id,
+        notes="Plate produced from manufacturing order",
+    )
+
+    assert isinstance(result, AddressPlateLifecycleEvent)
+    assert result.plate_id == plate.id
+    assert result.event_type == "manufactured"
+    assert result.performed_by == employee.id
+    assert result.notes == "Plate produced from manufacturing order"
+    assert result.occurred_at is not None
