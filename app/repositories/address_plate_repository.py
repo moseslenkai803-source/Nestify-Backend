@@ -43,6 +43,21 @@ class AddressPlateRepository:
             .first()
         )
 
+    def get_by_manufacturing_order_id(
+        self,
+        manufacturing_order_id: UUID,
+    ) -> list[AddressPlate]:
+        return (
+            self.db.query(AddressPlate)
+            .filter(
+                AddressPlate.manufacturing_order_id == manufacturing_order_id,
+            )
+            .order_by(
+                AddressPlate.created_at.asc(),
+            )
+            .all()
+        )
+
     def get_active_by_property_id(
         self,
         property_id: UUID,

@@ -14,12 +14,16 @@ class AddressPlateService:
         self.address_plate_repository = AddressPlateRepository(db)
         self.property_repository = PropertyRepository(db)
 
-    def create_plate(self) -> AddressPlate:
+    def create_plate(
+        self,
+        manufacturing_order_id: uuid.UUID | None = None,
+    ) -> AddressPlate:
         plate_code = f"PLATE-{uuid.uuid4().hex[:12].upper()}"
 
         plate = AddressPlate(
             plate_code=plate_code,
             status="unactivated",
+            manufacturing_order_id=manufacturing_order_id,
         )
 
         self.db.add(plate)

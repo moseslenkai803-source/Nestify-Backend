@@ -2,6 +2,7 @@ import uuid
 
 from app.models.address_plate import AddressPlate
 from app.models.landlord import Landlord
+from app.models.manufacturing_order import ManufacturingOrder
 from app.models.property import Property
 from app.models.user import User
 from app.repositories.address_plate_repository import AddressPlateRepository
@@ -192,3 +193,80 @@ def test_get_by_id_returns_address_plate(db_session):
     assert result is not None
     assert result.id == plate.id
     assert result.plate_code == "NEST-PLATE-ID-001"
+
+
+def test_get_by_manufacturing_order_id_returns_only_matching_plates(
+    db_session,
+):
+    user = User(
+        id=uuid.uuid4(),
+        email="manufacturing-repository-test@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        clearance="plate_operations",
+        is_active=True,
+    )
+
+    first_order = ManufacturingOrder(
+        id=uuid.uuid4(),
+        order_code="MO-REPO-001",
+        quantity=2,
+        status="completed",
+        created_by=user.id,
+    )
+
+    second_order = ManufacturingOrder(
+        id=uuid.uuid4(),
+        order_code="MO-REPO-002",
+        quantity=1,
+        status="completed",
+        created_by=user.id,
+    )
+
+    first_plate = AddressPlate(
+        id=uuid.uuid4(),
+        manufacturing_order_id=first_order.id,
+        plate_code="NEST-MO-PLATE-001",
+        status="unactivated",
+    )
+
+    second_plate = AddressPlate(
+        id=uuid.uuid4(),
+        manufacturing_order_id=first_order.id,
+        plate_code="NEST-MO-PLATE-002",
+        status="unactivated",
+    )
+
+    unrelated_plate = AddressPlate(
+        id=uuid.uuid4(),
+        manufacturing_order_id=second_order.id,
+        plate_code="NEST-MO-PLATE-003",
+        status="unactivated",
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    db_session.add(first_order)
+    db_session.add(second_order)
+    db_session.flush()
+
+    db_session.add(first_plate)
+    db_session.add(second_plate)
+    db_session.add(unrelated_plate)
+    db_session.flush()
+
+    repository = AddressPlateRepository(db_session)
+
+    result = repository.get_by_manufacturing_order_id(
+        first_order.id
+    )
+
+    assert len(result) == 2
+    assert {plate.id for plate in result} == {
+        first_plate.id,
+        second_plate.id,
+    }
+    assert unrelated_plate.id not in {
+        plate.id for plate in result
+    }
