@@ -12,6 +12,7 @@ from app.models.property_access import PropertyAccess
 from app.models.dispatch import Dispatch
 from app.models.dispatch_item import DispatchItem
 from app.models.property_installation import PropertyInstallation
+from app.models.property_installation_verification import PropertyInstallationVerification
 
 __all__ = [
     "Base",
@@ -28,4 +29,5 @@ __all__ = [
     "Dispatch",
     "DispatchItem",
     "PropertyInstallation",
+    "PropertyInstallationVerification",
 ]
