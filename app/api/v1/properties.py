@@ -27,9 +27,14 @@ from app.schemas.property_location import (
     PropertyLocationCreate,
     PropertyLocationResponse,
 )
+from app.schemas.property_installation import (
+    PropertyInstallationCreate,
+    PropertyInstallationResponse,
+)
 from app.services.address_plate_request_service import AddressPlateRequestService
 from app.services.property_address_service import PropertyAddressService
 from app.services.property_location_service import PropertyLocationService
+from app.services.property_installation_service import PropertyInstallationService
 from app.services.property_activation_service import PropertyActivationService
 from app.services.property_authorization_service import PropertyAuthorizationService
 from app.services.property_service import PropertyService
@@ -283,6 +288,62 @@ def list_properties(
     except ValueError as exc:
         raise HTTPException(
             status_code=404,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/{property_id}/installations",
+    response_model=PropertyInstallationResponse,
+    status_code=201,
+)
+def create_property_installation(
+    property_id: UUID,
+    installation_data: PropertyInstallationCreate,
+    current_employee: User = Depends(
+        require_employee_clearance("plate_operations")
+    ),
+    db: Session = Depends(get_db),
+):
+    authorization_service = PropertyAuthorizationService(db)
+    service = PropertyInstallationService(db)
+
+    try:
+        authorization_service.authorize(
+            user=current_employee,
+            property_id=property_id,
+            action=PropertyAction.PLATE_OPERATIONS,
+        )
+
+        return service.create_installation(
+            property_id=property_id,
+            plate_id=installation_data.plate_id,
+            installer_id=current_employee.id,
+            latitude=installation_data.latitude,
+            longitude=installation_data.longitude,
+            accuracy_meters=installation_data.accuracy_meters,
+            captured_at=installation_data.captured_at,
+            notes=installation_data.notes,
+        )
+
+    except ValueError as exc:
+        status_code = (
+            404
+            if str(exc) in {
+                "Property not found",
+                "Address plate not found",
+                "Installer not found",
+            }
+            else 403
+            if str(exc) in {
+                "User is not authorized for this property",
+                "Installer is inactive",
+            }
+            else 400
+        )
+
+        raise HTTPException(
+            status_code=status_code,
             detail=str(exc),
         ) from exc
 
