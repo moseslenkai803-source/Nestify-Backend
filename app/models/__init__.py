@@ -11,6 +11,7 @@ from app.models.manufacturing_order import ManufacturingOrder
 from app.models.property_access import PropertyAccess
 from app.models.dispatch import Dispatch
 from app.models.dispatch_item import DispatchItem
+from app.models.property_installation import PropertyInstallation
 
 __all__ = [
     "Base",
@@ -26,4 +27,5 @@ __all__ = [
     "PropertyAccess",
     "Dispatch",
     "DispatchItem",
+    "PropertyInstallation",
 ]
