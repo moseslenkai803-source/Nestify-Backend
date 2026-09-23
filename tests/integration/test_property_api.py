@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 import uuid
 
@@ -13,6 +14,7 @@ from app.models.property_address import PropertyAddress
 from app.models.user import User
 from app.services.property_access_service import PropertyAccessService
 from app.services.property_service import PropertyService
+from app.services.property_location_service import PropertyLocationService
 
 
 def test_create_property_api(db_session: Session):
@@ -1005,6 +1007,440 @@ def test_activate_property_api(db_session: Session):
         db_session.refresh(property)
 
         assert property.status == "active"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_property_location_api(db_session: Session):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        user = User(
+            email=f"location-api-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=user.id,
+            display_name="Location API Landlord",
+            phone="+254700000000",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="API Location Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
+        response = client.post(
+            f"/api/v1/properties/{property.id}/location",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+            json={
+                "latitude": -1.2921,
+                "longitude": 36.8219,
+                "source": "device_gps",
+                "capture_method": "user_confirmed_device_location",
+                "accuracy_meters": 12.5,
+                "captured_at": "2026-09-23T08:00:00Z",
+            },
+        )
+
+        assert response.status_code == 201
+
+        data = response.json()
+
+        assert data["property_id"] == str(property.id)
+        assert data["latitude"] == -1.2921
+        assert data["longitude"] == 36.8219
+        assert data["source"] == "device_gps"
+        assert data["capture_method"] == "user_confirmed_device_location"
+        assert data["accuracy_meters"] == 12.5
+        assert data["status"] == "unverified"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_property_location_api_denies_another_landlord(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        owner_user = User(
+            email=f"location-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        owner_landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Location Owner",
+            phone="+254700000001",
+            landlord_type="individual",
+        )
+        db_session.add(owner_landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=owner_landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Protected Location Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        other_user = User(
+            email=f"location-other-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(other_user)
+        db_session.flush()
+
+        other_landlord = Landlord(
+            user_id=other_user.id,
+            display_name="Other Location Landlord",
+            phone="+254700000002",
+            landlord_type="individual",
+        )
+        db_session.add(other_landlord)
+        db_session.flush()
+
+        other_token = create_access_token(
+            subject=str(other_user.id),
+        )
+
+        response = client.post(
+            f"/api/v1/properties/{property.id}/location",
+            headers={
+                "Authorization": f"Bearer {other_token}",
+            },
+            json={
+                "latitude": -1.2921,
+                "longitude": 36.8219,
+                "source": "device_gps",
+                "capture_method": "user_confirmed_device_location",
+                "captured_at": "2026-09-23T08:00:00Z",
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Property not found"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_create_property_location_api_rejects_invalid_coordinates(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        user = User(
+            email=f"location-invalid-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=user.id,
+            display_name="Invalid Location Landlord",
+            phone="+254700000000",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Invalid Location Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
+        response = client.post(
+            f"/api/v1/properties/{property.id}/location",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+            json={
+                "latitude": 91,
+                "longitude": 36.8219,
+                "source": "device_gps",
+                "capture_method": "user_confirmed_device_location",
+                "captured_at": "2026-09-23T08:00:00Z",
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == (
+            "Latitude must be between -90 and 90"
+        )
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_property_location_api_denies_another_landlord(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        owner_user = User(
+            email=f"location-get-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        owner_landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="GET Location Owner",
+            phone="+254700000005",
+            landlord_type="individual",
+        )
+        db_session.add(owner_landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=owner_landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Protected GET Location Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        location_service = PropertyLocationService(db_session)
+        location_service.create_location(
+            property_id=property.id,
+            latitude=-1.2921,
+            longitude=36.8219,
+            source="device_gps",
+            capture_method="user_confirmed_device_location",
+            accuracy_meters=12.5,
+            captured_at=datetime.fromisoformat(
+                "2026-09-23T08:00:00+00:00"
+            ),
+        )
+
+        other_user = User(
+            email=f"location-get-other-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(other_user)
+        db_session.flush()
+
+        other_landlord = Landlord(
+            user_id=other_user.id,
+            display_name="Other GET Location Landlord",
+            phone="+254700000006",
+            landlord_type="individual",
+        )
+        db_session.add(other_landlord)
+        db_session.flush()
+
+        other_token = create_access_token(
+            subject=str(other_user.id),
+        )
+
+        response = client.get(
+            f"/api/v1/properties/{property.id}/location",
+            headers={
+                "Authorization": f"Bearer {other_token}",
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Property not found"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_property_location_api(db_session: Session):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        user = User(
+            email=f"location-get-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=user.id,
+            display_name="Location GET Landlord",
+            phone="+254700000003",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="GET Location Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        location_service = PropertyLocationService(db_session)
+        location_service.create_location(
+            property_id=property.id,
+            latitude=-1.2921,
+            longitude=36.8219,
+            source="device_gps",
+            capture_method="user_confirmed_device_location",
+            accuracy_meters=12.5,
+            captured_at=datetime.fromisoformat(
+                "2026-09-23T08:00:00+00:00"
+            ),
+        )
+
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
+        response = client.get(
+            f"/api/v1/properties/{property.id}/location",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert data["property_id"] == str(property.id)
+        assert data["latitude"] == -1.2921
+        assert data["longitude"] == 36.8219
+        assert data["source"] == "device_gps"
+        assert data["capture_method"] == "user_confirmed_device_location"
+        assert data["accuracy_meters"] == 12.5
+        assert data["status"] == "unverified"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_property_location_api_returns_not_found_when_missing(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        user = User(
+            email=f"location-missing-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=user.id,
+            display_name="Missing Location Landlord",
+            phone="+254700000004",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Missing Location Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
+        response = client.get(
+            f"/api/v1/properties/{property.id}/location",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Property location not found"
 
     finally:
         app.dependency_overrides.clear()
