@@ -31,10 +31,15 @@ from app.schemas.property_installation import (
     PropertyInstallationCreate,
     PropertyInstallationResponse,
 )
+from app.schemas.property_installation_verification import (
+    PropertyInstallationVerificationCreate,
+    PropertyInstallationVerificationResponse,
+)
 from app.services.address_plate_request_service import AddressPlateRequestService
 from app.services.property_address_service import PropertyAddressService
 from app.services.property_location_service import PropertyLocationService
 from app.services.property_installation_service import PropertyInstallationService
+from app.services.property_installation_verification_service import PropertyInstallationVerificationService
 from app.services.property_activation_service import PropertyActivationService
 from app.services.property_authorization_service import PropertyAuthorizationService
 from app.services.property_service import PropertyService
@@ -412,6 +417,59 @@ def create_address_plate_request(
             if str(exc) == "Property not found"
             else 403
             if str(exc) == "User is not authorized for this property"
+            else 400
+        )
+
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/{property_id}/installations/{installation_id}/verify",
+    response_model=PropertyInstallationVerificationResponse,
+)
+def verify_property_installation(
+    property_id: UUID,
+    installation_id: UUID,
+    verification_data: PropertyInstallationVerificationCreate,
+    current_employee: User = Depends(
+        require_employee_clearance("installation_verification")
+    ),
+    db: Session = Depends(get_db),
+):
+    authorization_service = PropertyAuthorizationService(db)
+    service = PropertyInstallationVerificationService(db)
+
+    try:
+        authorization_service.authorize(
+            user=current_employee,
+            property_id=property_id,
+            action=PropertyAction.INSTALLATION_VERIFICATION,
+        )
+
+        return service.verify_installation(
+            property_id=property_id,
+            installation_id=installation_id,
+            verified_by=current_employee.id,
+            status=verification_data.status,
+            notes=verification_data.notes,
+        )
+
+    except ValueError as exc:
+        status_code = (
+            404
+            if str(exc) in {
+                "Property not found",
+                "Installation not found",
+                "Verifier not found",
+            }
+            else 403
+            if str(exc) in {
+                "User is not authorized for this property",
+                "Verifier is inactive",
+            }
             else 400
         )
 
