@@ -6,6 +6,7 @@ from app.api.v1.auth import router as auth_router
 from app.api.v1.properties import router as properties_router
 from app.api.v1.buildings import router as buildings_router
 from app.api.v1.floors import router as floors_router
+from app.api.v1.spaces import router as spaces_router
 from app.api.v1.manufacturing_orders import router as manufacturing_orders_router
 
 
@@ -28,6 +29,9 @@ router.include_router(
 )
 router.include_router(
     floors_router,
+)
+router.include_router(
+    spaces_router,
 )
 router.include_router(
     address_plates_router,
