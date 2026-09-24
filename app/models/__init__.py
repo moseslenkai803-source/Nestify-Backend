@@ -16,6 +16,7 @@ from app.models.property_installation_verification import PropertyInstallationVe
 from app.models.property_verification import PropertyVerification
 from app.models.building import Building
 from app.models.floor import Floor
+from app.models.space import Space
 
 __all__ = [
     "Base",
@@ -36,4 +37,5 @@ __all__ = [
     "PropertyVerification",
     "Building",
     "Floor",
+    "Space",
 ]
