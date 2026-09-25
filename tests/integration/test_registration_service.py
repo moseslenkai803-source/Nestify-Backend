@@ -91,3 +91,70 @@ def test_register_landlord_rejects_duplicate_email(db_session):
         assert False, "Expected duplicate email error"
     except ValueError as exc:
         assert str(exc) == "User with this email already exists"
+
+
+def test_onboard_existing_user_success(db_session):
+    # 1. Arrange: Create a pre-existing basic user record
+    from app.services.user_service import UserService
+    user_service = UserService(db_session)
+    email = f"existing-user-{uuid.uuid4()}@example.com"
+    user = user_service.create_user(
+        email=email,
+        password="secure-password-123",
+        role="customer"
+    )
+    
+    # 2. Act: Execute onboarding workflow for this active user
+    registration_service = RegistrationService(db_session)
+    landlord = registration_service.onboard_existing_user(
+        user_id=user.id,
+        display_name="Onboarded Corporate Landlord",
+        phone="+254755000000",
+        landlord_type="corporate"
+    )
+    
+    # 3. Assert: Verify profile integration and privilege scaling
+    assert landlord.id is not None
+    assert landlord.user_id == user.id
+    assert landlord.display_name == "Onboarded Corporate Landlord"
+    assert landlord.phone == "+254755000000"
+    assert landlord.landlord_type == "corporate"
+    assert user.role == "landlord"
+
+
+def test_onboard_existing_user_rejects_if_already_landlord(db_session):
+    # 1. Arrange: Create a new landlord account natively
+    email = f"already-landlord-{uuid.uuid4()}@example.com"
+    service = RegistrationService(db_session)
+    user, _ = service.register_landlord(
+        email=email,
+        password="secure-password-123",
+        display_name="Original Landlord Profile",
+        phone="+254766000000"
+    )
+    
+    # 2. Act & Assert: Verify system blocks duplicate baseline generation
+    try:
+        service.onboard_existing_user(
+            user_id=user.id,
+            display_name="Duplicate Profile Attempt",
+            phone="+254777000000"
+        )
+        assert False, "Expected double onboarding block to trigger"
+    except ValueError as exc:
+        assert str(exc) == "User is already registered as a landlord"
+
+
+def test_onboard_existing_user_rejects_invalid_user_id(db_session):
+    # Act & Assert: Confirm failure path handles unmapped user keys gracefully
+    service = RegistrationService(db_session)
+    fake_id = uuid.uuid4()
+    try:
+        service.onboard_existing_user(
+            user_id=fake_id,
+            display_name="Ghost Landlord Profile",
+            phone="+254788000000"
+        )
+        assert False, "Expected user validation block to trigger"
+    except ValueError as exc:
+        assert str(exc) == "User not found"
