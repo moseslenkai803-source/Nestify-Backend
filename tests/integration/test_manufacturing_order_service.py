@@ -281,6 +281,70 @@ def test_complete_manufacturing_order_creates_plate_inventory(
         assert events[0].performed_by == employee.id
 
 
+def test_complete_manufacturing_order_rolls_back_partial_inventory_on_failure(
+    db_session,
+):
+    from sqlalchemy.exc import IntegrityError
+    import uuid
+
+    employee = create_employee(db_session)
+
+    service = ManufacturingOrderService(db_session)
+
+    order = service.create_order(
+        quantity=3,
+        created_by=employee.id,
+    )
+
+    service.approve_order(
+        order_code=order.order_code,
+        approved_by=employee.id,
+    )
+
+    service.start_order(
+        order_code=order.order_code,
+    )
+
+    invalid_completed_by = uuid.uuid4()
+
+    try:
+        with db_session.begin_nested():
+            service.complete_order(
+                order_code=order.order_code,
+                completed_by=invalid_completed_by,
+            )
+    except IntegrityError:
+        pass
+    else:
+        raise AssertionError(
+            "Manufacturing completion should fail when "
+            "completed_by does not reference an existing user"
+        )
+
+    db_session.expire_all()
+
+    persisted_order = (
+        db_session.query(ManufacturingOrder)
+        .filter(
+            ManufacturingOrder.id == order.id,
+        )
+        .one()
+    )
+
+    assert persisted_order.status == "in_production"
+    assert persisted_order.completed_at is None
+
+    plates = (
+        db_session.query(AddressPlate)
+        .filter(
+            AddressPlate.manufacturing_order_id == order.id,
+        )
+        .all()
+    )
+
+    assert plates == []
+
+
 def test_complete_manufacturing_order_rejects_non_production_order(
     db_session,
 ):
