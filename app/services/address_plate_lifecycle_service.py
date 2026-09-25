@@ -13,10 +13,8 @@ from app.repositories.address_plate_repository import AddressPlateRepository
 
 class AddressPlateLifecycleService:
     LIFECYCLE_TRANSITIONS = {
-        "requested": "approved",
-        "approved": "allocated",
-        "allocated": "manufactured",
-        "manufactured": "dispatched",
+        "manufactured": "allocated",
+        "allocated": "dispatched",
         "dispatched": "installed",
         "installed": "verified",
         "verified": "activated",
@@ -53,7 +51,7 @@ class AddressPlateLifecycleService:
         )
 
         if latest_event is None:
-            if event_type not in {"requested", "manufactured"}:
+            if event_type != "manufactured":
                 raise ValueError("Invalid lifecycle transition")
         else:
             expected_event = self.LIFECYCLE_TRANSITIONS.get(
@@ -80,19 +78,12 @@ class AddressPlateLifecycleService:
         performed_by: uuid.UUID,
         notes: str | None = None,
     ) -> AddressPlateLifecycleEvent:
-        plate = self.address_plate_repository.get_by_id(plate_id)
-
-        if plate is None:
-            raise ValueError("Plate not found")
-
-        event = AddressPlateLifecycleEvent(
+        return self.record_event(
             plate_id=plate_id,
             event_type="allocated",
             performed_by=performed_by,
             notes=notes,
         )
-
-        return self.lifecycle_event_repository.add(event)
 
     def get_history(
         self,

@@ -72,7 +72,7 @@ class DispatchService:
                     "Address plate must be manufactured before dispatch"
                 )
 
-            if latest_event.event_type != "manufactured":
+            if latest_event.event_type != "allocated":
                 raise ValueError(
                     "Address plate is not ready for dispatch"
                 )
@@ -189,7 +189,7 @@ class DispatchService:
                     "Address plate has no lifecycle history"
                 )
 
-            if latest_event.event_type != "manufactured":
+            if latest_event.event_type != "allocated":
                 raise ValueError(
                     "Address plate is not ready for dispatch"
                 )
