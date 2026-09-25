@@ -1,8 +1,12 @@
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.address_plate import AddressPlate
+from app.models.address_plate_lifecycle_event import (
+    AddressPlateLifecycleEvent,
+)
 
 
 class AddressPlateRepository:
@@ -43,6 +47,40 @@ class AddressPlateRepository:
             .order_by(AddressPlate.created_at.asc())
             .all()
         )
+
+    def get_next_manufactured_plate_for_update(
+        self,
+    ) -> AddressPlate | None:
+        latest_event = (
+            select(AddressPlateLifecycleEvent.event_type)
+            .where(
+                AddressPlateLifecycleEvent.plate_id
+                == AddressPlate.id
+            )
+            .order_by(
+                AddressPlateLifecycleEvent.occurred_at.desc(),
+                AddressPlateLifecycleEvent.id.desc(),
+            )
+            .limit(1)
+            .scalar_subquery()
+        )
+
+        statement = (
+            select(AddressPlate)
+            .where(
+                AddressPlate.status == "unactivated",
+                AddressPlate.property_id.is_(None),
+                latest_event == "manufactured",
+            )
+            .order_by(
+                AddressPlate.created_at.asc(),
+                AddressPlate.id.asc(),
+            )
+            .limit(1)
+            .with_for_update()
+        )
+
+        return self.db.scalar(statement)
 
     def get_by_manufacturing_order_id(
         self,
