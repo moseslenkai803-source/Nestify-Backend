@@ -14,7 +14,7 @@ from app.repositories.manufacturing_order_repository import (
 from app.services.address_plate_lifecycle_service import (
     AddressPlateLifecycleService,
 )
-from app.services.address_plate_service import AddressPlateService
+from app.services.plate_inventory_service import PlateInventoryService
 
 
 class ManufacturingOrderService:
@@ -32,7 +32,7 @@ class ManufacturingOrderService:
             ManufacturingOrderRepository(db)
         )
         self.address_plate_repository = AddressPlateRepository(db)
-        self.address_plate_service = AddressPlateService(db)
+        self.plate_inventory_service = PlateInventoryService(db)
         self.lifecycle_service = AddressPlateLifecycleService(db)
 
     def start_order(
@@ -100,7 +100,7 @@ class ManufacturingOrderService:
             )
 
         for _ in range(order.quantity):
-            plate = self.address_plate_service.create_plate(
+            plate = self.plate_inventory_service.create_plate(
                 manufacturing_order_id=order.id,
             )
 
