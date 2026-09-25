@@ -33,14 +33,15 @@ class AddressPlateRepository:
             .all()
         )
 
-    def get_available_for_allocation(self) -> AddressPlate | None:
+    def get_available_for_allocation(self) -> list[AddressPlate]:
         return (
             self.db.query(AddressPlate)
             .filter(
                 AddressPlate.status == "unactivated",
                 AddressPlate.property_id.is_(None),
             )
-            .first()
+            .order_by(AddressPlate.created_at.asc())
+            .all()
         )
 
     def get_by_manufacturing_order_id(

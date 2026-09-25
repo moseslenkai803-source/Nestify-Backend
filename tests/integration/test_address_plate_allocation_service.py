@@ -46,6 +46,32 @@ def create_landlord_and_property(db_session):
     return user, property
 
 
+def create_manufactured_plate(
+    db_session,
+    *,
+    performed_by,
+    status="unactivated",
+    property_id=None,
+):
+    plate = AddressPlate(
+        property_id=property_id,
+        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+        status=status,
+    )
+    db_session.add(plate)
+    db_session.flush()
+
+    event = AddressPlateLifecycleEvent(
+        plate_id=plate.id,
+        event_type="manufactured",
+        performed_by=performed_by,
+    )
+    db_session.add(event)
+    db_session.flush()
+
+    return plate
+
+
 def test_allocate_plate_to_approved_request(db_session):
     user, property = create_landlord_and_property(db_session)
 
@@ -57,12 +83,7 @@ def test_allocate_plate_to_approved_request(db_session):
     db_session.add(request)
     db_session.flush()
 
-    plate = AddressPlate(
-        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
-        status="unactivated",
-    )
-    db_session.add(plate)
-    db_session.flush()
+    plate = create_manufactured_plate(db_session, performed_by=user.id)
 
     service = AddressPlateAllocationService(db_session)
 
@@ -187,6 +208,39 @@ def test_allocate_plate_rejects_when_no_plates_are_available(db_session):
         )
 
 
+def test_allocate_plate_rejects_unmanufactured_plate(db_session):
+    user, property = create_landlord_and_property(db_session)
+
+    request = AddressPlateRequest(
+        property_id=property.id,
+        requested_by=user.id,
+        status="approved",
+    )
+    db_session.add(request)
+    db_session.flush()
+
+    plate = AddressPlate(
+        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+        status="unactivated",
+    )
+    db_session.add(plate)
+    db_session.flush()
+
+    service = AddressPlateAllocationService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="No address plates available for allocation",
+    ):
+        service.allocate_plate(
+            request_id=request.id,
+            performed_by=user.id,
+        )
+
+    assert plate.property_id is None
+    assert request.status == "approved"
+
+
 def test_allocate_plate_rejects_fulfilled_request(db_session):
     user, property = create_landlord_and_property(db_session)
 
@@ -198,16 +252,8 @@ def test_allocate_plate_rejects_fulfilled_request(db_session):
     db_session.add(request)
     db_session.flush()
 
-    first_plate = AddressPlate(
-        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
-        status="unactivated",
-    )
-    second_plate = AddressPlate(
-        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
-        status="unactivated",
-    )
-    db_session.add_all([first_plate, second_plate])
-    db_session.flush()
+    first_plate = create_manufactured_plate(db_session, performed_by=user.id)
+    second_plate = create_manufactured_plate(db_session, performed_by=user.id)
 
     service = AddressPlateAllocationService(db_session)
 
@@ -245,36 +291,25 @@ def test_allocate_plate_uses_only_available_inventory(db_session):
 
     _, assigned_property = create_landlord_and_property(db_session)
 
-    assigned_plate = AddressPlate(
+    assigned_plate = create_manufactured_plate(
+        db_session,
+        performed_by=user.id,
         property_id=assigned_property.id,
-        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
-        status="unactivated",
     )
 
-    verified_plate = AddressPlate(
-        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+    verified_plate = create_manufactured_plate(
+        db_session,
+        performed_by=user.id,
         status="verified",
     )
 
-    active_plate = AddressPlate(
-        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+    active_plate = create_manufactured_plate(
+        db_session,
+        performed_by=user.id,
         status="active",
     )
 
-    available_plate = AddressPlate(
-        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
-        status="unactivated",
-    )
-
-    db_session.add_all(
-        [
-            assigned_plate,
-            verified_plate,
-            active_plate,
-            available_plate,
-        ]
-    )
-    db_session.flush()
+    available_plate = create_manufactured_plate(db_session, performed_by=user.id)
 
     service = AddressPlateAllocationService(db_session)
 

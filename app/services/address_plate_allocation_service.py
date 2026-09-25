@@ -8,6 +8,9 @@ from app.repositories.address_plate_repository import AddressPlateRepository
 from app.repositories.address_plate_request_repository import (
     AddressPlateRequestRepository,
 )
+from app.repositories.address_plate_lifecycle_event_repository import (
+    AddressPlateLifecycleEventRepository,
+)
 from app.repositories.property_repository import PropertyRepository
 from app.services.address_plate_lifecycle_service import (
     AddressPlateLifecycleService,
@@ -20,6 +23,9 @@ class AddressPlateAllocationService:
         self.address_plate_repository = AddressPlateRepository(db)
         self.address_plate_request_repository = (
             AddressPlateRequestRepository(db)
+        )
+        self.address_plate_lifecycle_event_repository = (
+            AddressPlateLifecycleEventRepository(db)
         )
         self.property_repository = PropertyRepository(db)
         self.lifecycle_service = AddressPlateLifecycleService(db)
@@ -59,9 +65,24 @@ class AddressPlateAllocationService:
                 "Property already has an address plate"
             )
 
-        plate = (
+        available_plates = (
             self.address_plate_repository.get_available_for_allocation()
         )
+
+        plate = None
+
+        for candidate in available_plates:
+            latest_event = (
+                self.address_plate_lifecycle_event_repository
+                .get_latest_by_plate_id(candidate.id)
+            )
+
+            if (
+                latest_event is not None
+                and latest_event.event_type == "manufactured"
+            ):
+                plate = candidate
+                break
 
         if plate is None:
             raise ValueError("No address plates available for allocation")

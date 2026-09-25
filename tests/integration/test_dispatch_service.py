@@ -82,8 +82,16 @@ def create_manufactured_allocated_plate(
         performed_by=employee_id,
         notes="Manufactured for dispatch test",
     )
-
     db_session.add(event)
+    db_session.flush()
+
+    allocation_event = AddressPlateLifecycleEvent(
+        plate_id=plate.id,
+        event_type="allocated",
+        performed_by=employee_id,
+        notes="Allocated for dispatch test",
+    )
+    db_session.add(allocation_event)
     db_session.flush()
 
     return plate
@@ -150,8 +158,8 @@ def test_create_dispatch(db_session):
         .all()
     )
 
-    assert len(events) == 2
-    assert all(event.event_type == "manufactured" for event in events)
+    assert len(events) == 4
+    assert {e.event_type for e in events} == {"manufactured", "allocated"}
 
 
 def test_create_dispatch_rejects_empty_plate_list(db_session):
@@ -417,10 +425,11 @@ def test_mark_dispatched_records_lifecycle_events(db_session):
             .all()
         )
 
-        assert len(events) == 2
+        assert len(events) == 3
         assert events[0].event_type == "manufactured"
-        assert events[1].event_type == "dispatched"
-        assert events[1].performed_by == employee.id
+        assert events[1].event_type == "allocated"
+        assert events[2].event_type == "dispatched"
+        assert events[2].performed_by == employee.id
 
 
 def test_mark_dispatched_requires_ready_status(db_session):
@@ -740,4 +749,4 @@ def test_cancel_dispatch_does_not_create_dispatched_lifecycle_event(
     )
 
     assert latest_event is not None
-    assert latest_event.event_type == "manufactured"
+    assert latest_event.event_type == "allocated"
