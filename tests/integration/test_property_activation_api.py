@@ -6,6 +6,7 @@ from app.core.security import create_access_token
 from app.main import app
 from app.db.session import get_db
 from app.models.address_plate import AddressPlate
+from app.models.address_plate_lifecycle_event import AddressPlateLifecycleEvent
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_address import PropertyAddress
@@ -51,10 +52,27 @@ def test_activate_property_api(db_session):
         db_session.flush()
 
         plate = AddressPlate(
-                plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
-                status="verified",
+                property_id=property.id,
+        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+                status="unactivated",
         )
         db_session.add(plate)
+        db_session.flush()
+
+        for event_type in (
+                "manufactured",
+                "allocated",
+                "dispatched",
+                "installed",
+                "verified",
+        ):
+                db_session.add(
+                        AddressPlateLifecycleEvent(
+                                plate_id=plate.id,
+                                event_type=event_type,
+                                performed_by=user.id,
+                        )
+                )
         db_session.flush()
 
         def override_get_db():
@@ -73,6 +91,7 @@ def test_activate_property_api(db_session):
                 )
                 db_session.add(employee)
                 db_session.flush()
+
 
                 PropertyAccessService(db_session).grant_access(
                     user_id=employee.id,
@@ -149,8 +168,9 @@ def test_activate_property_api_allows_employee_across_landlord_ownership(
     db_session.flush()
 
     plate = AddressPlate(
+        property_id=property.id,
         plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
-        status="verified",
+        status="unactivated",
     )
     db_session.add(plate)
     db_session.flush()
@@ -162,6 +182,16 @@ def test_activate_property_api_allows_employee_across_landlord_ownership(
         clearance="plate_operations",
     )
     db_session.add(employee)
+    db_session.flush()
+
+    for event_type in ("manufactured", "allocated", "dispatched", "installed", "verified"):
+        db_session.add(
+            AddressPlateLifecycleEvent(
+                plate_id=plate.id,
+                event_type=event_type,
+                performed_by=employee.id,
+            )
+        )
     db_session.flush()
 
     PropertyAccessService(db_session).grant_access(
@@ -244,8 +274,9 @@ def test_activate_property_api_requires_property_access(db_session):
     db_session.flush()
 
     plate = AddressPlate(
+        property_id=property.id,
         plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
-        status="verified",
+        status="unactivated",
     )
     db_session.add(plate)
     db_session.flush()
@@ -290,8 +321,8 @@ def test_activate_property_api_requires_property_access(db_session):
         db_session.refresh(plate)
 
         assert property.status == "verified"
-        assert plate.property_id is None
-        assert plate.status == "verified"
+        assert plate.property_id == property.id
+        assert plate.status == "unactivated"
         assert plate.activated_at is None
 
     finally:
@@ -327,8 +358,9 @@ def test_activate_property_api_requires_address(db_session):
         db_session.flush()
 
         plate = AddressPlate(
-                plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
-                status="verified",
+                property_id=property.id,
+        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+                status="unactivated",
         )
         db_session.add(plate)
         db_session.flush()
@@ -349,6 +381,7 @@ def test_activate_property_api_requires_address(db_session):
                 )
                 db_session.add(employee)
                 db_session.flush()
+
 
                 PropertyAccessService(db_session).grant_access(
                     user_id=employee.id,
@@ -437,6 +470,7 @@ def test_activate_property_api_returns_404_for_missing_plate(
         db_session.add(employee)
         db_session.flush()
 
+
         PropertyAccessService(db_session).grant_access(
             user_id=employee.id,
             property_id=property.id,
@@ -508,6 +542,7 @@ def test_activate_property_api_rejects_unverified_plate(
     db_session.flush()
 
     plate = AddressPlate(
+        property_id=property.id,
         plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
         status="unactivated",
     )
@@ -530,6 +565,17 @@ def test_activate_property_api_rejects_unverified_plate(
         )
         db_session.add(employee)
         db_session.flush()
+        for event_type in ("manufactured", "allocated", "dispatched", "installed"):
+            db_session.add(
+                AddressPlateLifecycleEvent(
+                    plate_id=plate.id,
+                    event_type=event_type,
+                    performed_by=employee.id,
+                )
+            )
+        db_session.flush()
+
+
 
         PropertyAccessService(db_session).grant_access(
             user_id=employee.id,
@@ -553,14 +599,14 @@ def test_activate_property_api_rejects_unverified_plate(
 
         assert response.status_code == 400
         assert response.json()["detail"] == (
-            "Only verified plates can be linked to a property"
+            "Only verified plates can be activated"
         )
 
         db_session.refresh(property)
         db_session.refresh(plate)
 
         assert property.status == "verified"
-        assert plate.property_id is None
+        assert plate.property_id == property.id
         assert plate.status == "unactivated"
         assert plate.activated_at is None
 
@@ -608,8 +654,9 @@ def test_activate_property_api_rejects_already_active_plate(
     db_session.flush()
 
     plate = AddressPlate(
+        property_id=property.id,
         plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
-        status="verified",
+        status="unactivated",
     )
     db_session.add(plate)
     db_session.flush()
@@ -629,6 +676,16 @@ def test_activate_property_api_rejects_already_active_plate(
             clearance="plate_operations",
         )
         db_session.add(employee)
+        db_session.flush()
+
+        for event_type in ("manufactured", "allocated", "dispatched", "installed", "verified"):
+            db_session.add(
+                AddressPlateLifecycleEvent(
+                    plate_id=plate.id,
+                    event_type=event_type,
+                    performed_by=employee.id,
+                )
+            )
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(

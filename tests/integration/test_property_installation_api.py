@@ -8,6 +8,7 @@ from app.core.security import create_access_token
 from app.db.session import get_db
 from app.main import app
 from app.models.address_plate import AddressPlate
+from app.models.address_plate_lifecycle_event import AddressPlateLifecycleEvent
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_installation import PropertyInstallation
@@ -74,6 +75,17 @@ def test_create_property_installation_api(db_session: Session):
         )
         db_session.add(plate)
         db_session.flush()
+
+        for event_type in ("manufactured", "allocated", "dispatched"):
+            db_session.add(
+                AddressPlateLifecycleEvent(
+                    plate_id=plate.id,
+                    event_type=event_type,
+                    performed_by=employee.id,
+                )
+            )
+        db_session.flush()
+
 
         access_token = create_access_token(
             subject=str(employee.id),
@@ -191,6 +203,17 @@ def test_create_property_installation_api_allows_authorized_employee(
             status="active",
         )
         db_session.add(plate)
+        db_session.flush()
+
+
+        for event_type in ("manufactured", "allocated", "dispatched"):
+            db_session.add(
+                AddressPlateLifecycleEvent(
+                    plate_id=plate.id,
+                    event_type=event_type,
+                    performed_by=employee.id,
+                )
+            )
         db_session.flush()
 
         token = create_access_token(

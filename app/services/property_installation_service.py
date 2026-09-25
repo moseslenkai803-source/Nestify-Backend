@@ -10,6 +10,9 @@ from app.repositories.property_installation_repository import (
 )
 from app.repositories.property_repository import PropertyRepository
 from app.repositories.user_repository import UserRepository
+from app.services.address_plate_lifecycle_service import (
+    AddressPlateLifecycleService,
+)
 
 
 class PropertyInstallationService:
@@ -19,6 +22,7 @@ class PropertyInstallationService:
         self.address_plate_repository = AddressPlateRepository(db)
         self.user_repository = UserRepository(db)
         self.property_installation_repository = PropertyInstallationRepository(db)
+        self.lifecycle_service = AddressPlateLifecycleService(db)
 
     def create_installation(
         self,
@@ -87,4 +91,12 @@ class PropertyInstallationService:
             notes=notes,
         )
 
-        return self.property_installation_repository.add(installation)
+        self.property_installation_repository.add(installation)
+
+        self.lifecycle_service.record_event(
+            plate_id=plate.id,
+            event_type="installed",
+            performed_by=installer_id,
+        )
+
+        return installation

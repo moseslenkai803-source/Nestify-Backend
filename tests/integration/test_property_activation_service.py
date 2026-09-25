@@ -1,20 +1,23 @@
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 
 from app.models.landlord import Landlord
 from app.models.property_address import PropertyAddress
 from app.models.user import User
+from app.services.address_plate_lifecycle_service import AddressPlateLifecycleService
 from app.services.address_plate_service import AddressPlateService
 from app.services.property_activation_service import PropertyActivationService
 from app.services.property_service import PropertyService
 
 
-def test_activate_property_links_verified_plate_to_property(db_session):
+def test_activate_property_activates_verified_plate(db_session):
     user = User(
         email=f"activation-{uuid.uuid4()}@example.com",
         password_hash="test-hash",
         role="landlord",
+        is_active=True,
     )
     db_session.add(user)
     db_session.flush()
@@ -43,12 +46,100 @@ def test_activate_property_links_verified_plate_to_property(db_session):
     db_session.add(address)
     db_session.flush()
 
-    plate_service = AddressPlateService(db_session)
+    employee = User(
+        email=f"activation-employee-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="employee",
+        clearance="plate_operations",
+        is_active=True,
+    )
+    reviewer = User(
+        email=f"activation-reviewer-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="employee",
+        clearance="installation_verification",
+        is_active=True,
+    )
+    db_session.add(employee)
+    db_session.add(reviewer)
+    db_session.flush()
 
+    plate_service = AddressPlateService(db_session)
     plate = plate_service.create_plate()
 
-    plate_service.verify_plate(
-        plate_code=plate.plate_code,
+    lifecycle_service = AddressPlateLifecycleService(db_session)
+
+    lifecycle_service.record_event(
+        plate_id=plate.id,
+        event_type="manufactured",
+        performed_by=employee.id,
+    )
+
+    from app.services.address_plate_request_service import (
+        AddressPlateRequestService,
+    )
+    from app.services.address_plate_allocation_service import (
+        AddressPlateAllocationService,
+    )
+
+    request_service = AddressPlateRequestService(db_session)
+    request = request_service.create_request(
+        property_id=property.id,
+        requested_by=user.id,
+    )
+    request_service.approve_request(request.id)
+
+    allocation_service = AddressPlateAllocationService(db_session)
+    allocation_service.allocate_plate(
+        request_id=request.id,
+        performed_by=employee.id,
+    )
+
+    from app.services.dispatch_service import DispatchService
+
+    dispatch_service = DispatchService(db_session)
+    dispatch = dispatch_service.create_dispatch(
+        plate_ids=[plate.id],
+        destination="Activation Test Address",
+        recipient_name="Activation Test Landlord",
+        recipient_phone="+254700000000",
+        created_by=employee.id,
+    )
+
+    dispatch_service.mark_ready(dispatch.dispatch_code)
+    dispatch_service.mark_dispatched(
+        dispatch_code=dispatch.dispatch_code,
+        performed_by=employee.id,
+    )
+
+    from app.services.property_installation_service import (
+        PropertyInstallationService,
+    )
+
+    installation_service = PropertyInstallationService(db_session)
+    installation = installation_service.create_installation(
+        property_id=property.id,
+        plate_id=plate.id,
+        installer_id=employee.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+    )
+
+    from app.services.property_installation_verification_service import (
+        PropertyInstallationVerificationService,
+    )
+
+    verification_service = PropertyInstallationVerificationService(
+        db_session
+    )
+    verification_service.verify_installation(
+        property_id=property.id,
+        installation_id=installation.id,
+        verified_by=reviewer.id,
+        status="verified",
+        notes="Installation confirmed",
     )
 
     property.status = "verified"
@@ -66,6 +157,12 @@ def test_activate_property_links_verified_plate_to_property(db_session):
     assert activated_plate.status == "active"
     assert activated_plate.activated_at is not None
     assert property.status == "active"
+
+    latest_event = lifecycle_service.get_latest_event(plate.id)
+
+    assert latest_event is not None
+    assert latest_event.event_type == "activated"
+    assert latest_event.performed_by == reviewer.id
 
 
 def test_activate_property_requires_address(db_session):

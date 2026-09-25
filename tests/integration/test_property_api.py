@@ -9,6 +9,8 @@ from app.core.security import create_access_token
 from app.db.session import get_db
 from app.main import app
 from app.models.landlord import Landlord
+from app.models.address_plate import AddressPlate
+from app.models.address_plate_lifecycle_event import AddressPlateLifecycleEvent
 from app.models.property import Property
 from app.models.property_address import PropertyAddress
 from app.models.user import User
@@ -956,12 +958,13 @@ def test_activate_property_api(db_session: Session):
         db_session.add(address)
         db_session.flush()
 
-        from app.services.address_plate_service import AddressPlateService
-
-        plate_service = AddressPlateService(db_session)
-
-        plate = plate_service.create_plate()
-        plate_service.verify_plate(plate.plate_code)
+        plate = AddressPlate(
+            property_id=property.id,
+            plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+            status="unactivated",
+        )
+        db_session.add(plate)
+        db_session.flush()
 
         employee = User(
             email=f"activate-employee-{uuid.uuid4()}@example.com",
@@ -971,6 +974,16 @@ def test_activate_property_api(db_session: Session):
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        for event_type in ("manufactured", "allocated", "dispatched", "installed", "verified"):
+            db_session.add(
+                AddressPlateLifecycleEvent(
+                    plate_id=plate.id,
+                    event_type=event_type,
+                    performed_by=employee.id,
+                )
+            )
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(
@@ -1001,7 +1014,6 @@ def test_activate_property_api(db_session: Session):
         assert data["property_id"] == str(property.id)
         assert data["plate_code"] == plate.plate_code
         assert data["status"] == "active"
-        assert data["verified_at"] is not None
         assert data["activated_at"] is not None
 
         db_session.refresh(property)

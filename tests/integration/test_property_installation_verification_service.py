@@ -8,6 +8,9 @@ from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_installation import PropertyInstallation
 from app.models.user import User
+from app.services.address_plate_lifecycle_service import (
+    AddressPlateLifecycleService,
+)
 from app.services.property_installation_verification_service import (
     PropertyInstallationVerificationService,
 )
@@ -51,10 +54,8 @@ def create_installation_context(db_session):
     plate = AddressPlate(
         id=uuid.uuid4(),
         plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
-        status="active",
+        status="unactivated",
         property_id=property_record.id,
-        verified_at=datetime.now(UTC),
-        activated_at=datetime.now(UTC),
     )
 
     db_session.add(landlord_user)
@@ -69,6 +70,32 @@ def create_installation_context(db_session):
 
     db_session.add(plate)
     db_session.flush()
+
+    lifecycle_service = AddressPlateLifecycleService(db_session)
+
+    lifecycle_service.record_event(
+        plate_id=plate.id,
+        event_type="manufactured",
+        performed_by=installer.id,
+    )
+
+    lifecycle_service.record_event(
+        plate_id=plate.id,
+        event_type="allocated",
+        performed_by=installer.id,
+    )
+
+    lifecycle_service.record_event(
+        plate_id=plate.id,
+        event_type="dispatched",
+        performed_by=installer.id,
+    )
+
+    lifecycle_service.record_event(
+        plate_id=plate.id,
+        event_type="installed",
+        performed_by=installer.id,
+    )
 
     return landlord_user, installer, property_record, plate
 
@@ -132,6 +159,14 @@ def test_verify_installation_marks_installation_verified(db_session):
     assert result.created_at is not None
     assert installation.status == "verified"
 
+    lifecycle_service = AddressPlateLifecycleService(db_session)
+
+    latest_event = lifecycle_service.get_latest_event(plate.id)
+
+    assert latest_event is not None
+    assert latest_event.event_type == "verified"
+    assert latest_event.performed_by == reviewer.id
+
 def test_verify_installation_marks_installation_rejected(db_session):
     _, _, property_record, plate = create_installation_context(db_session)
 
@@ -188,6 +223,13 @@ def test_verify_installation_marks_installation_rejected(db_session):
     assert result.notes == "Installation evidence requires correction"
     assert result.verified_at is not None
     assert installation.status == "rejected"
+
+    lifecycle_service = AddressPlateLifecycleService(db_session)
+
+    latest_event = lifecycle_service.get_latest_event(plate.id)
+
+    assert latest_event is not None
+    assert latest_event.event_type == "installed"
 
 def test_verify_installation_rejects_invalid_status(db_session):
     _, _, property_record, plate = create_installation_context(db_session)

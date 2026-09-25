@@ -13,6 +13,9 @@ from app.repositories.property_installation_verification_repository import (
     PropertyInstallationVerificationRepository,
 )
 from app.repositories.user_repository import UserRepository
+from app.services.address_plate_lifecycle_service import (
+    AddressPlateLifecycleService,
+)
 
 
 class PropertyInstallationVerificationService:
@@ -25,6 +28,7 @@ class PropertyInstallationVerificationService:
             PropertyInstallationVerificationRepository(db)
         )
         self.user_repository = UserRepository(db)
+        self.lifecycle_service = AddressPlateLifecycleService(db)
 
     def verify_installation(
         self,
@@ -73,6 +77,14 @@ class PropertyInstallationVerificationService:
         )
 
         installation.status = status
+
+        if status == "verified":
+            self.lifecycle_service.record_event(
+                plate_id=installation.plate_id,
+                event_type="verified",
+                performed_by=verified_by,
+                notes=notes,
+            )
 
         self.db.flush()
 

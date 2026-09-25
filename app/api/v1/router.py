@@ -2,6 +2,7 @@ from fastapi import APIRouter
 
 from app.api.v1.address_plates import router as address_plates_router
 from app.api.v1.address_plate_requests import router as address_plate_requests_router
+from app.api.v1.address_plate_allocations import router as address_plate_allocations_router
 from app.api.v1.auth import router as auth_router
 from app.api.v1.properties import router as properties_router
 from app.api.v1.buildings import router as buildings_router
@@ -39,6 +40,9 @@ router.include_router(
 )
 router.include_router(
     address_plate_requests_router,
+)
+router.include_router(
+    address_plate_allocations_router,
 )
 router.include_router(
     auth_router,
