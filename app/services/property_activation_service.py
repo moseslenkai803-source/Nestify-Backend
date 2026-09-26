@@ -26,8 +26,10 @@ class PropertyActivationService:
         plate_code: str,
         activated_by: uuid.UUID,
     ) -> AddressPlate:
-        property = self.property_service.property_repository.get_by_id(
-            property_id
+        property = (
+            self.property_service.property_repository.get_by_id_for_update(
+                property_id
+            )
         )
 
         if property is None:
@@ -52,6 +54,13 @@ class PropertyActivationService:
 
         plate = self.address_plate_repository.get_by_plate_code(
             plate_code
+        )
+
+        if plate is None:
+            raise ValueError("Plate not found")
+
+        plate = self.address_plate_repository.get_by_id_for_update(
+            plate.id
         )
 
         if plate is None:

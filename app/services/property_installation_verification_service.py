@@ -43,7 +43,7 @@ class PropertyInstallationVerificationService:
                 "Verification status must be 'verified' or 'rejected'"
             )
 
-        installation = self.property_installation_repository.get_by_id(
+        installation = self.property_installation_repository.get_by_id_for_update(
             installation_id
         )
 

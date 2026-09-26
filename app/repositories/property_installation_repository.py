@@ -28,6 +28,18 @@ class PropertyInstallationRepository:
             )
         )
 
+    def get_by_id_for_update(
+        self,
+        installation_id: uuid.UUID,
+    ) -> PropertyInstallation | None:
+        statement = (
+            select(PropertyInstallation)
+            .where(PropertyInstallation.id == installation_id)
+            .with_for_update()
+        )
+
+        return self.db.scalar(statement)
+
     def get_by_property_id(
         self,
         property_id: uuid.UUID,

@@ -1,7 +1,10 @@
 import uuid
 from datetime import UTC, datetime
+from threading import Event, Thread
 
 import pytest
+
+from app.db.session import SessionLocal
 
 from app.models.address_plate import AddressPlate
 from app.models.landlord import Landlord
@@ -442,3 +445,129 @@ def test_verify_installation_rejects_wrong_property(db_session):
             verified_by=reviewer.id,
             status="verified",
         )
+
+
+def test_verify_installation_serializes_concurrent_verification_attempts(
+    db_session,
+):
+    _, installer, property_record, plate = create_installation_context(
+        db_session
+    )
+
+    reviewer_one = User(
+        id=uuid.uuid4(),
+        email=f"reviewer-one-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        clearance="installation_verification",
+        is_active=True,
+    )
+
+    reviewer_two = User(
+        id=uuid.uuid4(),
+        email=f"reviewer-two-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        clearance="installation_verification",
+        is_active=True,
+    )
+
+    installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        installer_id=installer.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+    )
+
+    db_session.add(reviewer_one)
+    db_session.add(reviewer_two)
+    db_session.add(installation)
+    db_session.flush()
+
+    installation_id = installation.id
+    property_id = property_record.id
+
+    db_session.commit()
+
+    first_session = SessionLocal()
+    second_session = SessionLocal()
+
+    first_locked = Event()
+    second_started = Event()
+    second_finished = Event()
+    second_error = {}
+    thread = None
+
+    try:
+        first_service = PropertyInstallationVerificationService(
+            first_session
+        )
+
+        locked_installation = (
+            first_service.property_installation_repository.get_by_id_for_update(
+                installation_id
+            )
+        )
+
+        assert locked_installation is not None
+        assert locked_installation.status == "submitted"
+
+        first_locked.set()
+
+        def verify_from_second_transaction():
+            try:
+                second_service = PropertyInstallationVerificationService(
+                    second_session
+                )
+
+                second_started.set()
+
+                second_service.verify_installation(
+                    property_id=property_id,
+                    installation_id=installation_id,
+                    verified_by=reviewer_two.id,
+                    status="verified",
+                )
+            except Exception as exc:
+                second_error["error"] = exc
+            finally:
+                second_finished.set()
+
+        thread = Thread(target=verify_from_second_transaction)
+        thread.start()
+
+        assert first_locked.is_set()
+        assert second_started.wait(timeout=2)
+        assert not second_finished.wait(timeout=0.2)
+
+        first_service.verify_installation(
+            property_id=property_id,
+            installation_id=installation_id,
+            verified_by=reviewer_one.id,
+            status="verified",
+        )
+
+        first_session.commit()
+
+        assert second_finished.wait(timeout=2)
+
+        thread.join(timeout=2)
+
+        assert isinstance(second_error.get("error"), ValueError)
+        assert str(second_error["error"]) == (
+            "Installation is not awaiting verification"
+        )
+
+    finally:
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2)
+
+        first_session.rollback()
+        second_session.rollback()
+        first_session.close()
+        second_session.close()

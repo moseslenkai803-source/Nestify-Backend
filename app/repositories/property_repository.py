@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.property import Property
@@ -11,6 +12,18 @@ class PropertyRepository:
 
     def get_by_id(self, property_id: UUID) -> Property | None:
         return self.db.get(Property, property_id)
+
+    def get_by_id_for_update(
+        self,
+        property_id: UUID,
+    ) -> Property | None:
+        statement = (
+            select(Property)
+            .where(Property.id == property_id)
+            .with_for_update()
+        )
+
+        return self.db.scalar(statement)
 
     def get_by_id_for_landlord(
         self,
