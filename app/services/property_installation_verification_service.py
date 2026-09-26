@@ -81,6 +81,13 @@ class PropertyInstallationVerificationService:
         if status == "verified":
             self.lifecycle_service.record_event(
                 plate_id=installation.plate_id,
+                event_type="installed",
+                performed_by=installation.installer_id,
+                notes=installation.notes,
+            )
+
+            self.lifecycle_service.record_event(
+                plate_id=installation.plate_id,
                 event_type="verified",
                 performed_by=verified_by,
                 notes=notes,

@@ -91,12 +91,6 @@ def create_installation_context(db_session):
         performed_by=installer.id,
     )
 
-    lifecycle_service.record_event(
-        plate_id=plate.id,
-        event_type="installed",
-        performed_by=installer.id,
-    )
-
     return landlord_user, installer, property_record, plate
 
 
@@ -161,11 +155,19 @@ def test_verify_installation_marks_installation_verified(db_session):
 
     lifecycle_service = AddressPlateLifecycleService(db_session)
 
-    latest_event = lifecycle_service.get_latest_event(plate.id)
+    history = lifecycle_service.get_history(plate.id)
 
-    assert latest_event is not None
-    assert latest_event.event_type == "verified"
-    assert latest_event.performed_by == reviewer.id
+    assert [event.event_type for event in history] == [
+        "manufactured",
+        "allocated",
+        "dispatched",
+        "installed",
+        "verified",
+    ]
+    assert history[-2].performed_by == installer.id
+    assert history[-2].notes is None
+    assert history[-1].performed_by == reviewer.id
+    assert history[-1].notes == "GPS location and installation evidence confirmed"
 
 def test_verify_installation_marks_installation_rejected(db_session):
     _, _, property_record, plate = create_installation_context(db_session)
@@ -226,10 +228,13 @@ def test_verify_installation_marks_installation_rejected(db_session):
 
     lifecycle_service = AddressPlateLifecycleService(db_session)
 
-    latest_event = lifecycle_service.get_latest_event(plate.id)
+    history = lifecycle_service.get_history(plate.id)
 
-    assert latest_event is not None
-    assert latest_event.event_type == "installed"
+    assert [event.event_type for event in history] == [
+        "manufactured",
+        "allocated",
+        "dispatched",
+    ]
 
 def test_verify_installation_rejects_invalid_status(db_session):
     _, _, property_record, plate = create_installation_context(db_session)
