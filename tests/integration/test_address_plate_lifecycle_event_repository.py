@@ -294,3 +294,110 @@ def test_get_latest_by_plate_id_returns_newest_event(db_session):
     assert result.id == latest_event.id
     assert result.event_type == "verified"
     assert result.notes == "Installation verified"
+
+
+def test_get_by_plate_id_uses_id_as_tiebreaker_for_equal_timestamps(db_session):
+    user = User(
+        id=uuid.uuid4(),
+        email=f"plate-event-tie-history-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        clearance="plate_operations",
+        is_active=True,
+    )
+
+    plate = AddressPlate(
+        id=uuid.uuid4(),
+        plate_code=f"PLATE-TIE-HISTORY-{uuid.uuid4()}",
+        status="unactivated",
+    )
+
+    tied_time = datetime(2026, 1, 1, tzinfo=UTC)
+
+    first_event = AddressPlateLifecycleEvent(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000001"),
+        plate_id=plate.id,
+        event_type="manufactured",
+        performed_by=user.id,
+        occurred_at=tied_time,
+    )
+
+    second_event = AddressPlateLifecycleEvent(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000002"),
+        plate_id=plate.id,
+        event_type="allocated",
+        performed_by=user.id,
+        occurred_at=tied_time,
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    db_session.add(plate)
+    db_session.flush()
+
+    db_session.add_all([second_event, first_event])
+    db_session.flush()
+
+    repository = AddressPlateLifecycleEventRepository(db_session)
+
+    result = repository.get_by_plate_id(plate.id)
+
+    assert [event.id for event in result] == [
+        first_event.id,
+        second_event.id,
+    ]
+
+
+def test_get_latest_by_plate_id_uses_id_as_tiebreaker_for_equal_timestamps(
+    db_session,
+):
+    user = User(
+        id=uuid.uuid4(),
+        email=f"plate-event-tie-latest-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        clearance="plate_operations",
+        is_active=True,
+    )
+
+    plate = AddressPlate(
+        id=uuid.uuid4(),
+        plate_code=f"PLATE-TIE-LATEST-{uuid.uuid4()}",
+        status="unactivated",
+    )
+
+    tied_time = datetime(2026, 1, 1, tzinfo=UTC)
+
+    earlier_id_event = AddressPlateLifecycleEvent(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000003"),
+        plate_id=plate.id,
+        event_type="installed",
+        performed_by=user.id,
+        occurred_at=tied_time,
+    )
+
+    later_id_event = AddressPlateLifecycleEvent(
+        id=uuid.UUID("00000000-0000-0000-0000-000000000004"),
+        plate_id=plate.id,
+        event_type="verified",
+        performed_by=user.id,
+        occurred_at=tied_time,
+    )
+
+    db_session.add(user)
+    db_session.flush()
+
+    db_session.add(plate)
+    db_session.flush()
+
+    db_session.add_all([earlier_id_event, later_id_event])
+    db_session.flush()
+
+    repository = AddressPlateLifecycleEventRepository(db_session)
+
+    result = repository.get_latest_by_plate_id(plate.id)
+
+    assert result is not None
+    assert result.id == later_id_event.id
+    assert result.event_type == "verified"

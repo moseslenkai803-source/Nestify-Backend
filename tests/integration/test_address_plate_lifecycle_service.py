@@ -1,7 +1,9 @@
 import uuid
+from threading import Event, Thread
 
 import pytest
 
+from app.db.session import SessionLocal
 from app.models.address_plate import AddressPlate
 from app.models.address_plate_lifecycle_event import (
     AddressPlateLifecycleEvent,
@@ -359,3 +361,89 @@ def test_get_latest_event_returns_latest_lifecycle_event(db_session):
 
     assert result is not None
     assert result.event_type == "allocated"
+
+
+def test_record_event_serializes_concurrent_lifecycle_transitions(
+    db_session,
+):
+    employee = create_employee(db_session)
+    plate = create_plate(db_session)
+
+    setup_service = AddressPlateLifecycleService(db_session)
+
+    record_event(
+        setup_service,
+        plate.id,
+        employee.id,
+        "manufactured",
+    )
+
+    db_session.commit()
+
+    first_session = SessionLocal()
+    second_session = SessionLocal()
+
+    first_locked = Event()
+    second_started = Event()
+    second_finished = Event()
+    second_error = {}
+
+    try:
+        first_service = AddressPlateLifecycleService(first_session)
+
+        result = record_event(
+            first_service,
+            plate.id,
+            employee.id,
+            "allocated",
+        )
+
+        assert result.event_type == "allocated"
+
+        first_locked.set()
+
+        def record_from_second_transaction():
+            try:
+                second_service = AddressPlateLifecycleService(
+                    second_session
+                )
+
+                second_started.set()
+
+                record_event(
+                    second_service,
+                    plate.id,
+                    employee.id,
+                    "allocated",
+                )
+            except Exception as exc:
+                second_error["error"] = exc
+            finally:
+                second_finished.set()
+
+        thread = Thread(target=record_from_second_transaction)
+        thread.start()
+
+        assert first_locked.is_set()
+        assert second_started.wait(timeout=2)
+        assert not second_finished.wait(timeout=0.2)
+
+        first_session.commit()
+
+        assert second_finished.wait(timeout=2)
+
+        thread.join(timeout=2)
+
+        assert isinstance(second_error.get("error"), ValueError)
+        assert str(second_error["error"]) == (
+            "Invalid lifecycle transition"
+        )
+
+    finally:
+        if thread.is_alive():
+            thread.join(timeout=2)
+
+        first_session.rollback()
+        second_session.rollback()
+        first_session.close()
+        second_session.close()

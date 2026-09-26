@@ -16,6 +16,18 @@ class AddressPlateRepository:
     def get_by_id(self, plate_id: UUID) -> AddressPlate | None:
         return self.db.get(AddressPlate, plate_id)
 
+    def get_by_id_for_update(
+        self,
+        plate_id: UUID,
+    ) -> AddressPlate | None:
+        statement = (
+            select(AddressPlate)
+            .where(AddressPlate.id == plate_id)
+            .with_for_update()
+        )
+
+        return self.db.scalar(statement)
+
     def get_by_plate_code(self, plate_code: str) -> AddressPlate | None:
         return (
             self.db.query(AddressPlate)

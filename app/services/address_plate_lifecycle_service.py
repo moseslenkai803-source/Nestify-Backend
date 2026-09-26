@@ -36,7 +36,7 @@ class AddressPlateLifecycleService:
         performed_by: uuid.UUID,
         notes: str | None = None,
     ) -> AddressPlateLifecycleEvent:
-        plate = self.address_plate_repository.get_by_id(plate_id)
+        plate = self.address_plate_repository.get_by_id_for_update(plate_id)
 
         if plate is None:
             raise ValueError("Plate not found")

@@ -31,6 +31,7 @@ class AddressPlateLifecycleEventRepository:
             )
             .order_by(
                 AddressPlateLifecycleEvent.occurred_at.asc(),
+                AddressPlateLifecycleEvent.id.asc(),
             )
             .all()
         )
@@ -46,6 +47,7 @@ class AddressPlateLifecycleEventRepository:
             )
             .order_by(
                 AddressPlateLifecycleEvent.occurred_at.desc(),
+                AddressPlateLifecycleEvent.id.desc(),
             )
             .first()
         )

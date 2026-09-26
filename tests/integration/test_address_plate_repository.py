@@ -11,6 +11,26 @@ from app.db.session import SessionLocal
 from app.repositories.address_plate_repository import AddressPlateRepository
 
 
+def test_get_by_id_for_update_returns_address_plate(db_session):
+    plate = AddressPlate(
+        id=uuid.uuid4(),
+        plate_code=f"NEST-LOCK-BY-ID-{uuid.uuid4()}",
+        status="unactivated",
+    )
+
+    db_session.add(plate)
+    db_session.flush()
+
+    repository = AddressPlateRepository(db_session)
+
+    result = repository.get_by_id_for_update(plate.id)
+
+    assert result is not None
+    assert result.id == plate.id
+    assert result.plate_code == plate.plate_code
+    assert result.status == "unactivated"
+
+
 def test_get_by_plate_code_returns_address_plate(db_session):
     plate = AddressPlate(
         id=uuid.uuid4(),
