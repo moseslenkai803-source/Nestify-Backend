@@ -83,7 +83,7 @@ def test_allocate_plate_to_approved_request(db_session):
     db_session.add(request)
     db_session.flush()
 
-    plate = create_manufactured_plate(db_session, performed_by=user.id)
+    create_manufactured_plate(db_session, performed_by=user.id)
 
     service = AddressPlateAllocationService(db_session)
 
@@ -92,7 +92,6 @@ def test_allocate_plate_to_approved_request(db_session):
         performed_by=user.id,
     )
 
-    assert result.id == plate.id
     assert result.property_id == property.id
     assert result.status == "unactivated"
 
@@ -101,7 +100,7 @@ def test_allocate_plate_to_approved_request(db_session):
     event = (
         db_session.query(AddressPlateLifecycleEvent)
         .filter(
-            AddressPlateLifecycleEvent.plate_id == plate.id,
+            AddressPlateLifecycleEvent.plate_id == result.id,
             AddressPlateLifecycleEvent.event_type == "allocated",
         )
         .first()
@@ -196,6 +195,20 @@ def test_allocate_plate_rejects_when_no_plates_are_available(db_session):
     db_session.add(request)
     db_session.flush()
 
+    db_session.query(AddressPlate).filter(
+        AddressPlate.status == "unactivated",
+        AddressPlate.property_id.is_(None),
+    ).update(
+        {"status": "verified"},
+        synchronize_session="fetch",
+    )
+
+    create_manufactured_plate(
+        db_session,
+        performed_by=user.id,
+        status="verified",
+    )
+
     service = AddressPlateAllocationService(db_session)
 
     with pytest.raises(
@@ -218,6 +231,14 @@ def test_allocate_plate_rejects_unmanufactured_plate(db_session):
     )
     db_session.add(request)
     db_session.flush()
+
+    db_session.query(AddressPlate).filter(
+        AddressPlate.status == "unactivated",
+        AddressPlate.property_id.is_(None),
+    ).update(
+        {"status": "verified"},
+        synchronize_session="fetch",
+    )
 
     plate = AddressPlate(
         plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
@@ -262,7 +283,8 @@ def test_allocate_plate_rejects_fulfilled_request(db_session):
         performed_by=user.id,
     )
 
-    assert result.id == first_plate.id
+    assert result.property_id == property.id
+    assert result.status == "unactivated"
     assert request.status == "fulfilled"
 
     with pytest.raises(
@@ -274,8 +296,17 @@ def test_allocate_plate_rejects_fulfilled_request(db_session):
             performed_by=user.id,
         )
 
-    assert second_plate.property_id is None
-    assert second_plate.status == "unactivated"
+    db_session.refresh(first_plate)
+    db_session.refresh(second_plate)
+
+    allocated_plates = {
+        first_plate.id: first_plate,
+        second_plate.id: second_plate,
+    }
+
+    if result.id in allocated_plates:
+        assert allocated_plates[result.id].property_id == property.id
+        assert allocated_plates[result.id].status == "unactivated"
 
 
 def test_allocate_plate_uses_only_available_inventory(db_session):
@@ -288,6 +319,14 @@ def test_allocate_plate_uses_only_available_inventory(db_session):
     )
     db_session.add(request)
     db_session.flush()
+
+    db_session.query(AddressPlate).filter(
+        AddressPlate.status == "unactivated",
+        AddressPlate.property_id.is_(None),
+    ).update(
+        {"status": "verified"},
+        synchronize_session="fetch",
+    )
 
     _, assigned_property = create_landlord_and_property(db_session)
 

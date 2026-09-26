@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 import pytest
 
 from app.models.landlord import Landlord
+from app.models.address_plate import AddressPlate
 from app.models.property_address import PropertyAddress
 from app.models.user import User
 from app.services.address_plate_lifecycle_service import AddressPlateLifecycleService
@@ -65,6 +66,14 @@ def test_activate_property_activates_verified_plate(db_session):
     db_session.flush()
 
     plate_service = AddressPlateService(db_session)
+    db_session.query(AddressPlate).filter(
+        AddressPlate.status == "unactivated",
+        AddressPlate.property_id.is_(None),
+    ).update(
+        {"status": "verified"},
+        synchronize_session="fetch",
+    )
+
     plate = plate_service.create_plate()
 
     lifecycle_service = AddressPlateLifecycleService(db_session)
@@ -196,6 +205,14 @@ def test_activate_property_requires_address(db_session):
 
     plate_service = AddressPlateService(db_session)
 
+    db_session.query(AddressPlate).filter(
+        AddressPlate.status == "unactivated",
+        AddressPlate.property_id.is_(None),
+    ).update(
+        {"status": "verified"},
+        synchronize_session="fetch",
+    )
+
     plate = plate_service.create_plate()
 
     plate_service.verify_plate(
@@ -217,6 +234,14 @@ def test_activate_property_requires_address(db_session):
 
 def test_activate_property_rejects_missing_property(db_session):
     plate_service = AddressPlateService(db_session)
+
+    db_session.query(AddressPlate).filter(
+        AddressPlate.status == "unactivated",
+        AddressPlate.property_id.is_(None),
+    ).update(
+        {"status": "verified"},
+        synchronize_session="fetch",
+    )
 
     plate = plate_service.create_plate()
 
@@ -278,6 +303,14 @@ def test_activate_property_requires_verified_property(db_session):
     db_session.flush()
 
     plate_service = AddressPlateService(db_session)
+
+    db_session.query(AddressPlate).filter(
+        AddressPlate.status == "unactivated",
+        AddressPlate.property_id.is_(None),
+    ).update(
+        {"status": "verified"},
+        synchronize_session="fetch",
+    )
 
     plate = plate_service.create_plate()
 

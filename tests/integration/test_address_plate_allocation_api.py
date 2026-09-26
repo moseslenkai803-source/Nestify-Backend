@@ -141,6 +141,22 @@ def test_allocate_address_plate_api_success(
         requested_by=landlord_user.id,
     )
 
+    db_session.query(AddressPlate).filter(
+        AddressPlate.status == "unactivated",
+        AddressPlate.property_id.is_(None),
+    ).update(
+        {"status": "verified"},
+        synchronize_session="fetch",
+    )
+
+    db_session.query(AddressPlate).filter(
+        AddressPlate.status == "unactivated",
+        AddressPlate.property_id.is_(None),
+    ).update(
+        {"status": "verified"},
+        synchronize_session="fetch",
+    )
+
     plate = create_manufactured_plate(
         db_session,
         performed_by=employee.id,
@@ -206,6 +222,14 @@ def test_allocate_address_plate_api_requires_property_access(
         db_session,
         property_id=property.id,
         requested_by=landlord_user.id,
+    )
+
+    db_session.query(AddressPlate).filter(
+        AddressPlate.status == "unactivated",
+        AddressPlate.property_id.is_(None),
+    ).update(
+        {"status": "verified"},
+        synchronize_session="fetch",
     )
 
     plate = create_manufactured_plate(
@@ -362,6 +386,15 @@ def test_allocate_address_plate_api_rejects_when_inventory_is_empty(
         requested_by=landlord_user.id,
     )
 
+
+    db_session.query(AddressPlate).filter(
+        AddressPlate.status == "unactivated",
+        AddressPlate.property_id.is_(None),
+    ).update(
+        {"status": "verified"},
+        synchronize_session="fetch",
+    )
+
     access_token = create_access_token(
         subject=str(employee.id),
     )
@@ -407,6 +440,14 @@ def test_allocate_address_plate_api_preserves_unactivated_status(
         db_session,
         property_id=property.id,
         requested_by=landlord_user.id,
+    )
+
+    db_session.query(AddressPlate).filter(
+        AddressPlate.status == "unactivated",
+        AddressPlate.property_id.is_(None),
+    ).update(
+        {"status": "verified"},
+        synchronize_session="fetch",
     )
 
     plate = create_manufactured_plate(
