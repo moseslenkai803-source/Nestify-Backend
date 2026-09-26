@@ -24,6 +24,7 @@ class PropertyActivationService:
         self,
         property_id: uuid.UUID,
         plate_code: str,
+        activated_by: uuid.UUID,
     ) -> AddressPlate:
         property = self.property_service.property_repository.get_by_id(
             property_id
@@ -79,7 +80,7 @@ class PropertyActivationService:
         self.lifecycle_service.record_event(
             plate_id=plate.id,
             event_type="activated",
-            performed_by=latest_event.performed_by,
+            performed_by=activated_by,
         )
 
         property.status = "active"

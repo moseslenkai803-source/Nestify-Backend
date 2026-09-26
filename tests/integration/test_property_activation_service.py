@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 import pytest
 
 from app.models.landlord import Landlord
-from app.models.address_plate import AddressPlate
 from app.models.property_address import PropertyAddress
 from app.models.user import User
 from app.services.address_plate_lifecycle_service import AddressPlateLifecycleService
@@ -66,14 +65,6 @@ def test_activate_property_activates_verified_plate(db_session):
     db_session.flush()
 
     plate_service = AddressPlateService(db_session)
-    db_session.query(AddressPlate).filter(
-        AddressPlate.status == "unactivated",
-        AddressPlate.property_id.is_(None),
-    ).update(
-        {"status": "verified"},
-        synchronize_session="fetch",
-    )
-
     plate = plate_service.create_plate()
 
     lifecycle_service = AddressPlateLifecycleService(db_session)
@@ -99,7 +90,7 @@ def test_activate_property_activates_verified_plate(db_session):
     request_service.approve_request(request.id)
 
     allocation_service = AddressPlateAllocationService(db_session)
-    allocation_service.allocate_plate(
+    allocated_plate = allocation_service.allocate_plate(
         request_id=request.id,
         performed_by=employee.id,
     )
@@ -108,7 +99,7 @@ def test_activate_property_activates_verified_plate(db_session):
 
     dispatch_service = DispatchService(db_session)
     dispatch = dispatch_service.create_dispatch(
-        plate_ids=[plate.id],
+        plate_ids=[allocated_plate.id],
         destination="Activation Test Address",
         recipient_name="Activation Test Landlord",
         recipient_phone="+254700000000",
@@ -128,7 +119,7 @@ def test_activate_property_activates_verified_plate(db_session):
     installation_service = PropertyInstallationService(db_session)
     installation = installation_service.create_installation(
         property_id=property.id,
-        plate_id=plate.id,
+        plate_id=allocated_plate.id,
         installer_id=employee.id,
         latitude=-1.286389,
         longitude=36.817223,
@@ -158,20 +149,21 @@ def test_activate_property_activates_verified_plate(db_session):
 
     activated_plate = activation_service.activate_property(
         property_id=property.id,
-        plate_code=plate.plate_code,
+        plate_code=allocated_plate.plate_code,
+        activated_by=employee.id,
     )
 
-    assert activated_plate.id == plate.id
+    assert activated_plate.id == allocated_plate.id
     assert activated_plate.property_id == property.id
     assert activated_plate.status == "active"
     assert activated_plate.activated_at is not None
     assert property.status == "active"
 
-    latest_event = lifecycle_service.get_latest_event(plate.id)
+    latest_event = lifecycle_service.get_latest_event(allocated_plate.id)
 
     assert latest_event is not None
     assert latest_event.event_type == "activated"
-    assert latest_event.performed_by == reviewer.id
+    assert latest_event.performed_by == employee.id
 
 
 def test_activate_property_requires_address(db_session):
@@ -212,6 +204,7 @@ def test_activate_property_requires_address(db_session):
         activation_service.activate_property(
             property_id=property.id,
             plate_code="PLATE-DOES-NOT-MATTER",
+            activated_by=user.id,
         )
 
 
@@ -228,6 +221,7 @@ def test_activate_property_rejects_missing_property(db_session):
         activation_service.activate_property(
             property_id=missing_property_id,
             plate_code="PLATE-DOES-NOT-MATTER",
+            activated_by=uuid.uuid4(),
         )
 
 def test_activate_property_requires_verified_property(db_session):
@@ -272,6 +266,7 @@ def test_activate_property_requires_verified_property(db_session):
         activation_service.activate_property(
             property_id=property.id,
             plate_code="PLATE-DOES-NOT-MATTER",
+            activated_by=user.id,
         )
 
     db_session.refresh(property)
@@ -317,6 +312,7 @@ def test_activate_property_rejects_already_active_property(db_session):
         activation_service.activate_property(
             property_id=property.id,
             plate_code="PLATE-DOES-NOT-MATTER",
+            activated_by=user.id,
         )
 
     db_session.refresh(property)

@@ -101,6 +101,7 @@ def activate_property(
         return service.activate_property(
             property_id=property_id,
             plate_code=activation_data.plate_code,
+            activated_by=current_employee.id,
         )
 
     except ValueError as exc:

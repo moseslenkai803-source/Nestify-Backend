@@ -77,7 +77,7 @@ def test_verify_property_installation_api(db_session: Session):
         db_session.add(plate)
         db_session.flush()
 
-        for event_type in ("manufactured", "allocated", "dispatched", "installed"):
+        for event_type in ("manufactured", "allocated", "dispatched"):
             db_session.add(
                 AddressPlateLifecycleEvent(
                     plate_id=plate.id,

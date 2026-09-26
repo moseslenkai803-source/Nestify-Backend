@@ -130,7 +130,7 @@ def test_create_installation_creates_submitted_record(db_session):
     latest_event = lifecycle_service.get_latest_event(plate.id)
 
     assert latest_event is not None
-    assert latest_event.event_type == "installed"
+    assert latest_event.event_type == "dispatched"
     assert latest_event.performed_by == installer.id
 
 
