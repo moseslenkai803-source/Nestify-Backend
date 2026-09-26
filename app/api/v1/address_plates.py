@@ -5,7 +5,6 @@ from app.api.dependencies import require_employee_clearance
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.address_plate import (
-    AddressPlateLinkRequest,
     AddressPlateResponse,
 )
 from app.services.address_plate_service import AddressPlateService
@@ -74,51 +73,5 @@ def verify_address_plate(
     except ValueError as exc:
         raise HTTPException(
             status_code=404 if str(exc) == "Plate not found" else 400,
-            detail=str(exc),
-        ) from exc
-
-
-@router.post(
-    "/{plate_code}/link",
-    response_model=AddressPlateResponse,
-)
-def link_address_plate(
-    plate_code: str,
-    link_data: AddressPlateLinkRequest,
-    current_employee: User = Depends(
-        require_employee_clearance("plate_operations")
-    ),
-    db: Session = Depends(get_db),
-):
-    property_access_service = PropertyAccessService(db)
-
-    try:
-        property_access_service.authorize(
-            user_id=current_employee.id,
-            property_id=link_data.property_id,
-            access_type="plate_operations",
-        )
-
-        service = AddressPlateService(db)
-
-        return service.link_plate_to_property(
-            plate_code=plate_code,
-            property_id=link_data.property_id,
-        )
-
-    except ValueError as exc:
-        status_code = (
-            404
-            if str(exc) in {
-                "Plate not found",
-                "Property not found",
-            }
-            else 403
-            if str(exc) == "Employee does not have access to this property"
-            else 400
-        )
-
-        raise HTTPException(
-            status_code=status_code,
             detail=str(exc),
         ) from exc

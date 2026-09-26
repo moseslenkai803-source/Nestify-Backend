@@ -15,10 +15,6 @@ class AddressPlateResponse(BaseModel):
     verified_at: datetime | None
 
 
-class AddressPlateLinkRequest(BaseModel):
-    property_id: UUID
-
-
 class AddressPlateRequestResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
