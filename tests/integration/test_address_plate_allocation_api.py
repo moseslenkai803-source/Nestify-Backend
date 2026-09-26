@@ -145,7 +145,7 @@ def test_allocate_address_plate_api_success(
         AddressPlate.status == "unactivated",
         AddressPlate.property_id.is_(None),
     ).update(
-        {"status": "verified"},
+        {"status": "active"},
         synchronize_session="fetch",
     )
 
@@ -153,7 +153,7 @@ def test_allocate_address_plate_api_success(
         AddressPlate.status == "unactivated",
         AddressPlate.property_id.is_(None),
     ).update(
-        {"status": "verified"},
+        {"status": "active"},
         synchronize_session="fetch",
     )
 
@@ -182,7 +182,6 @@ def test_allocate_address_plate_api_success(
     assert data["plate_code"] == plate.plate_code
     assert data["status"] == "unactivated"
     assert data["activated_at"] is None
-    assert data["verified_at"] is None
 
     db_session.refresh(request)
     db_session.refresh(plate)
@@ -228,7 +227,7 @@ def test_allocate_address_plate_api_requires_property_access(
         AddressPlate.status == "unactivated",
         AddressPlate.property_id.is_(None),
     ).update(
-        {"status": "verified"},
+        {"status": "active"},
         synchronize_session="fetch",
     )
 
@@ -391,7 +390,7 @@ def test_allocate_address_plate_api_rejects_when_inventory_is_empty(
         AddressPlate.status == "unactivated",
         AddressPlate.property_id.is_(None),
     ).update(
-        {"status": "verified"},
+        {"status": "active"},
         synchronize_session="fetch",
     )
 
@@ -446,7 +445,7 @@ def test_allocate_address_plate_api_preserves_unactivated_status(
         AddressPlate.status == "unactivated",
         AddressPlate.property_id.is_(None),
     ).update(
-        {"status": "verified"},
+        {"status": "active"},
         synchronize_session="fetch",
     )
 

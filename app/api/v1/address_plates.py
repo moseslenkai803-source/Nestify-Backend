@@ -52,26 +52,3 @@ def get_address_plate(
         )
 
     return plate
-
-
-@router.post(
-    "/{plate_code}/verify",
-    response_model=AddressPlateResponse,
-)
-def verify_address_plate(
-    plate_code: str,
-    current_employee: User = Depends(
-        require_employee_clearance("plate_operations")
-    ),
-    db: Session = Depends(get_db),
-):
-    service = AddressPlateService(db)
-
-    try:
-        return service.verify_plate(plate_code)
-
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=404 if str(exc) == "Plate not found" else 400,
-            detail=str(exc),
-        ) from exc

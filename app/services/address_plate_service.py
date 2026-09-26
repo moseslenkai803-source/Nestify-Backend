@@ -1,6 +1,4 @@
 import uuid
-from datetime import UTC, datetime
-
 from sqlalchemy.orm import Session
 
 from app.models.address_plate import AddressPlate
@@ -33,24 +31,3 @@ class AddressPlateService:
         return self.address_plate_repository.get_by_plate_code(
             plate_code
         )
-
-    def verify_plate(self, plate_code: str) -> AddressPlate:
-        plate = self.address_plate_repository.get_by_plate_code(
-            plate_code
-        )
-
-        if plate is None:
-            raise ValueError("Plate not found")
-
-        if plate.status != "unactivated":
-            raise ValueError(
-                "Plate cannot be verified in its current status"
-            )
-
-        plate.status = "verified"
-        plate.verified_at = datetime.now(UTC)
-
-        self.db.flush()
-
-        return plate
-

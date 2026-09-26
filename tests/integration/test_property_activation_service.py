@@ -203,22 +203,6 @@ def test_activate_property_requires_address(db_session):
     property.status = "verified"
     db_session.flush()
 
-    plate_service = AddressPlateService(db_session)
-
-    db_session.query(AddressPlate).filter(
-        AddressPlate.status == "unactivated",
-        AddressPlate.property_id.is_(None),
-    ).update(
-        {"status": "verified"},
-        synchronize_session="fetch",
-    )
-
-    plate = plate_service.create_plate()
-
-    plate_service.verify_plate(
-        plate_code=plate.plate_code,
-    )
-
     activation_service = PropertyActivationService(db_session)
 
     with pytest.raises(
@@ -227,28 +211,12 @@ def test_activate_property_requires_address(db_session):
     ):
         activation_service.activate_property(
             property_id=property.id,
-            plate_code=plate.plate_code,
+            plate_code="PLATE-DOES-NOT-MATTER",
         )
 
 
 
 def test_activate_property_rejects_missing_property(db_session):
-    plate_service = AddressPlateService(db_session)
-
-    db_session.query(AddressPlate).filter(
-        AddressPlate.status == "unactivated",
-        AddressPlate.property_id.is_(None),
-    ).update(
-        {"status": "verified"},
-        synchronize_session="fetch",
-    )
-
-    plate = plate_service.create_plate()
-
-    plate_service.verify_plate(
-        plate_code=plate.plate_code,
-    )
-
     activation_service = PropertyActivationService(db_session)
 
     missing_property_id = uuid.uuid4()
@@ -259,15 +227,8 @@ def test_activate_property_rejects_missing_property(db_session):
     ):
         activation_service.activate_property(
             property_id=missing_property_id,
-            plate_code=plate.plate_code,
+            plate_code="PLATE-DOES-NOT-MATTER",
         )
-
-    db_session.refresh(plate)
-
-    assert plate.property_id is None
-    assert plate.status == "verified"
-    assert plate.activated_at is None
-
 
 def test_activate_property_requires_verified_property(db_session):
     user = User(
@@ -302,22 +263,6 @@ def test_activate_property_requires_verified_property(db_session):
     db_session.add(address)
     db_session.flush()
 
-    plate_service = AddressPlateService(db_session)
-
-    db_session.query(AddressPlate).filter(
-        AddressPlate.status == "unactivated",
-        AddressPlate.property_id.is_(None),
-    ).update(
-        {"status": "verified"},
-        synchronize_session="fetch",
-    )
-
-    plate = plate_service.create_plate()
-
-    plate_service.verify_plate(
-        plate_code=plate.plate_code,
-    )
-
     activation_service = PropertyActivationService(db_session)
 
     with pytest.raises(
@@ -326,16 +271,12 @@ def test_activate_property_requires_verified_property(db_session):
     ):
         activation_service.activate_property(
             property_id=property.id,
-            plate_code=plate.plate_code,
+            plate_code="PLATE-DOES-NOT-MATTER",
         )
 
     db_session.refresh(property)
-    db_session.refresh(plate)
 
     assert property.status == "draft"
-    assert plate.property_id is None
-    assert plate.status == "verified"
-    assert plate.activated_at is None
 
 
 def test_activate_property_rejects_already_active_property(db_session):

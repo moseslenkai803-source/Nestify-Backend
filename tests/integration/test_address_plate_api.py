@@ -61,7 +61,6 @@ def test_create_address_plate_api(db_session):
         assert data["plate_code"].startswith("PLATE-")
         assert data["status"] == "unactivated"
         assert data["activated_at"] is None
-        assert data["verified_at"] is None
 
     finally:
         app.dependency_overrides.clear()
@@ -143,56 +142,6 @@ def test_create_address_plate_api_requires_employee_clearance(
         app.dependency_overrides.clear()
 
 
-@pytest.mark.parametrize(
-    ("role", "clearance", "expected_detail"),
-    [
-        ("landlord", "plate_operations", "Employee access required"),
-        ("employee", None, "Insufficient employee clearance"),
-        ("employee", "support", "Insufficient employee clearance"),
-    ],
-)
-def test_verify_address_plate_api_requires_employee_clearance(
-    client,
-    db_session,
-    role,
-    clearance,
-    expected_detail,
-):
-    app.dependency_overrides[get_db] = lambda: db_session
-
-    try:
-        from app.services.address_plate_service import AddressPlateService
-
-        service = AddressPlateService(db_session)
-        plate = service.create_plate()
-
-        restricted_token = create_user_access_token(
-            db_session,
-            role=role,
-            clearance=clearance,
-        )
-
-        response = client.post(
-            f"/api/v1/address-plates/{plate.plate_code}/verify",
-            headers={
-                "Authorization": f"Bearer {restricted_token}",
-            },
-        )
-
-        assert response.status_code == 403
-        assert response.json()["detail"] == expected_detail
-
-        db_session.refresh(plate)
-
-        assert plate.status == "unactivated"
-        assert plate.verified_at is None
-
-    finally:
-        app.dependency_overrides.clear()
-
-
-
-
 def test_get_address_plate_api(db_session):
     def override_get_db():
         yield db_session
@@ -252,63 +201,3 @@ def test_get_address_plate_api_returns_404_for_missing_plate(
 
     finally:
         app.dependency_overrides.clear()
-
-
-def test_verify_address_plate_api(db_session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
-
-    try:
-        client = TestClient(app)
-
-        access_token = create_plate_operations_employee(
-            db_session
-        )
-
-        create_response = client.post(
-            "/api/v1/address-plates",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-            },
-        )
-
-        assert create_response.status_code == 201
-
-        plate_code = create_response.json()["plate_code"]
-
-        response = client.post(
-            f"/api/v1/address-plates/{plate_code}/verify",
-            headers={
-                "Authorization": f"Bearer {access_token}",
-            },
-        )
-
-        assert response.status_code == 200
-
-        data = response.json()
-
-        assert data["plate_code"] == plate_code
-        assert data["status"] == "verified"
-        assert data["verified_at"] is not None
-        assert data["activated_at"] is None
-
-    finally:
-        app.dependency_overrides.clear()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

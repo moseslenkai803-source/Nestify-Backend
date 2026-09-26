@@ -12,7 +12,6 @@ class AddressPlateResponse(BaseModel):
     plate_code: str
     status: str
     activated_at: datetime | None
-    verified_at: datetime | None
 
 
 class AddressPlateRequestResponse(BaseModel):

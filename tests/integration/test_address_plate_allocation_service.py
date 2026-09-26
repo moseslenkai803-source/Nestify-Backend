@@ -199,14 +199,14 @@ def test_allocate_plate_rejects_when_no_plates_are_available(db_session):
         AddressPlate.status == "unactivated",
         AddressPlate.property_id.is_(None),
     ).update(
-        {"status": "verified"},
+        {"status": "active"},
         synchronize_session="fetch",
     )
 
     create_manufactured_plate(
         db_session,
         performed_by=user.id,
-        status="verified",
+        status="active",
     )
 
     service = AddressPlateAllocationService(db_session)
@@ -236,7 +236,7 @@ def test_allocate_plate_rejects_unmanufactured_plate(db_session):
         AddressPlate.status == "unactivated",
         AddressPlate.property_id.is_(None),
     ).update(
-        {"status": "verified"},
+        {"status": "active"},
         synchronize_session="fetch",
     )
 
@@ -324,7 +324,7 @@ def test_allocate_plate_uses_only_available_inventory(db_session):
         AddressPlate.status == "unactivated",
         AddressPlate.property_id.is_(None),
     ).update(
-        {"status": "verified"},
+        {"status": "active"},
         synchronize_session="fetch",
     )
 
@@ -336,10 +336,10 @@ def test_allocate_plate_uses_only_available_inventory(db_session):
         property_id=assigned_property.id,
     )
 
-    verified_plate = create_manufactured_plate(
+    unavailable_plate = create_manufactured_plate(
         db_session,
         performed_by=user.id,
-        status="verified",
+        status="active",
     )
 
     active_plate = create_manufactured_plate(
@@ -364,8 +364,8 @@ def test_allocate_plate_uses_only_available_inventory(db_session):
     assert assigned_plate.property_id == assigned_property.id
     assert assigned_plate.status == "unactivated"
 
-    assert verified_plate.property_id is None
-    assert verified_plate.status == "verified"
+    assert unavailable_plate.property_id is None
+    assert unavailable_plate.status == "active"
 
     assert active_plate.property_id is None
     assert active_plate.status == "active"
