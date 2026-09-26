@@ -1,6 +1,9 @@
 import uuid
+from threading import Event, Thread
 
 import pytest
+
+from app.db.session import SessionLocal
 
 from app.models.address_plate import AddressPlate
 from app.models.address_plate_lifecycle_event import (
@@ -412,6 +415,111 @@ def test_complete_manufacturing_order_cannot_be_completed_twice(
 
     assert len(plates) == 2
 
+
+def test_complete_manufacturing_order_serializes_concurrent_completion_attempts(
+    db_session,
+):
+    employee = create_employee(db_session)
+
+    service = ManufacturingOrderService(db_session)
+
+    order = service.create_order(
+        quantity=2,
+        created_by=employee.id,
+    )
+
+    service.approve_order(
+        order_code=order.order_code,
+        approved_by=employee.id,
+    )
+
+    service.start_order(
+        order_code=order.order_code,
+    )
+
+    order_code = order.order_code
+    employee_id = employee.id
+    db_session.commit()
+
+    first_session = SessionLocal()
+    second_session = SessionLocal()
+
+    first_locked = Event()
+    second_started = Event()
+    second_finished = Event()
+    second_error = {}
+
+    thread = None
+
+    try:
+        first_service = ManufacturingOrderService(first_session)
+
+        locked_order = (
+            first_service.manufacturing_order_repository
+            .get_by_order_code_for_update(order_code)
+        )
+
+        assert locked_order is not None
+        assert locked_order.status == "in_production"
+
+        first_locked.set()
+
+        def complete_from_second_transaction():
+            try:
+                second_service = ManufacturingOrderService(second_session)
+                second_started.set()
+
+                second_service.complete_order(
+                    order_code=order_code,
+                    completed_by=employee_id,
+                )
+            except Exception as exc:
+                second_error['error'] = exc
+            finally:
+                second_finished.set()
+
+        thread = Thread(target=complete_from_second_transaction)
+        thread.start()
+
+        assert first_locked.is_set()
+        assert second_started.wait(timeout=2)
+        assert not second_finished.wait(timeout=0.2)
+
+        first_service.complete_order(
+            order_code=order_code,
+            completed_by=employee_id,
+        )
+        first_session.commit()
+
+        assert second_finished.wait(timeout=2)
+
+        thread.join(timeout=2)
+
+        assert isinstance(second_error.get('error'), ValueError)
+        assert str(second_error['error']) == (
+            "Manufacturing order cannot be completed in its current status"
+        )
+
+        db_session.expire_all()
+
+        plates = (
+            db_session.query(AddressPlate)
+            .filter(
+                AddressPlate.manufacturing_order_id == order.id,
+            )
+            .all()
+        )
+
+        assert len(plates) == 2
+
+    finally:
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2)
+
+        first_session.rollback()
+        second_session.rollback()
+        first_session.close()
+        second_session.close()
 
 def test_cancel_manufacturing_order_from_draft(db_session):
     employee = create_employee(db_session)

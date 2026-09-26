@@ -39,7 +39,7 @@ class ManufacturingOrderService:
         self,
         order_code: str,
     ) -> ManufacturingOrder:
-        order = self.manufacturing_order_repository.get_by_order_code(
+        order = self.manufacturing_order_repository.get_by_order_code_for_update(
             order_code
         )
 
@@ -63,7 +63,7 @@ class ManufacturingOrderService:
         order_code: str,
         approved_by: uuid.UUID,
     ) -> ManufacturingOrder:
-        order = self.manufacturing_order_repository.get_by_order_code(
+        order = self.manufacturing_order_repository.get_by_order_code_for_update(
             order_code
         )
 
@@ -87,7 +87,7 @@ class ManufacturingOrderService:
         order_code: str,
         completed_by: uuid.UUID,
     ) -> ManufacturingOrder:
-        order = self.manufacturing_order_repository.get_by_order_code(
+        order = self.manufacturing_order_repository.get_by_order_code_for_update(
             order_code
         )
 
@@ -150,7 +150,7 @@ class ManufacturingOrderService:
         self,
         order_code: str,
     ) -> ManufacturingOrder:
-        order = self.manufacturing_order_repository.get_by_order_code(
+        order = self.manufacturing_order_repository.get_by_order_code_for_update(
             order_code
         )
 

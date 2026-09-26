@@ -39,6 +39,19 @@ class ManufacturingOrderRepository:
             .first()
         )
 
+    def get_by_order_code_for_update(
+        self,
+        order_code: str,
+    ) -> ManufacturingOrder | None:
+        return (
+            self.db.query(ManufacturingOrder)
+            .filter(
+                ManufacturingOrder.order_code == order_code,
+            )
+            .with_for_update()
+            .first()
+        )
+
     def get_by_status(
         self,
         status: str,
