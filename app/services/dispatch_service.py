@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.models.address_plate import AddressPlate
 from app.models.dispatch import Dispatch
 from app.models.dispatch_item import DispatchItem
 from app.repositories.address_plate_repository import AddressPlateRepository
@@ -126,12 +127,17 @@ class DispatchService:
     def get_dispatch_plates(
         self,
         dispatch_code: str,
-    ) -> list[DispatchItem]:
+    ) -> list[AddressPlate]:
         dispatch = self.get_dispatch(dispatch_code)
 
-        return self.dispatch_item_repository.get_by_dispatch_id(
+        items = self.dispatch_item_repository.get_by_dispatch_id(
             dispatch.id
         )
+
+        return [
+            self.address_plate_repository.get_by_id(item.plate_id)
+            for item in items
+        ]
 
     def mark_ready(
         self,

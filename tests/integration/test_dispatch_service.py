@@ -865,7 +865,7 @@ def test_get_dispatch_and_plates(db_session):
     )
 
     assert len(items) == 1
-    assert items[0].plate_id == plate.id
+    assert items[0].id == plate.id
 
 
 def test_get_missing_dispatch_rejected(db_session):
@@ -907,8 +907,14 @@ def test_cancel_dispatch_releases_dispatch_items(db_session):
     )
 
     assert len(items) == 1
-    assert items[0].plate_id == plate.id
-    assert items[0].released_at is not None
+    assert items[0].id == plate.id
+
+    dispatch_items = service.dispatch_item_repository.get_by_dispatch_id(
+        dispatch.id
+    )
+    assert len(dispatch_items) == 1
+    assert dispatch_items[0].plate_id == plate.id
+    assert dispatch_items[0].released_at is not None
 
 
 def test_cancelled_dispatch_allows_plate_reassignment(db_session):
@@ -955,11 +961,28 @@ def test_cancelled_dispatch_allows_plate_reassignment(db_session):
     assert len(first_items) == 1
     assert len(second_items) == 1
 
-    assert first_items[0].plate_id == plate.id
-    assert first_items[0].released_at is not None
+    assert first_items[0].id == plate.id
+    assert second_items[0].id == plate.id
 
-    assert second_items[0].plate_id == plate.id
-    assert second_items[0].released_at is None
+    first_dispatch_items = (
+        service.dispatch_item_repository.get_by_dispatch_id(
+            first_dispatch.id
+        )
+    )
+    second_dispatch_items = (
+        service.dispatch_item_repository.get_by_dispatch_id(
+            second_dispatch.id
+        )
+    )
+
+    assert len(first_dispatch_items) == 1
+    assert len(second_dispatch_items) == 1
+
+    assert first_dispatch_items[0].plate_id == plate.id
+    assert first_dispatch_items[0].released_at is not None
+
+    assert second_dispatch_items[0].plate_id == plate.id
+    assert second_dispatch_items[0].released_at is None
 
 
 def test_cancel_dispatch_does_not_create_dispatched_lifecycle_event(

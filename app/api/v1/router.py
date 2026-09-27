@@ -9,6 +9,7 @@ from app.api.v1.buildings import router as buildings_router
 from app.api.v1.floors import router as floors_router
 from app.api.v1.spaces import router as spaces_router
 from app.api.v1.manufacturing_orders import router as manufacturing_orders_router
+from app.api.v1.dispatches import router as dispatches_router
 from app.api.v1.landlords import router as landlords_router
 
 
@@ -49,6 +50,9 @@ router.include_router(
 )
 router.include_router(
     manufacturing_orders_router,
+)
+router.include_router(
+    dispatches_router,
 )
 router.include_router(
     landlords_router,
