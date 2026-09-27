@@ -35,11 +35,16 @@ from app.schemas.property_installation_verification import (
     PropertyInstallationVerificationCreate,
     PropertyInstallationVerificationResponse,
 )
+from app.schemas.property_verification import (
+    PropertyVerificationCreate,
+    PropertyVerificationResponse,
+)
 from app.services.address_plate_request_service import AddressPlateRequestService
 from app.services.property_address_service import PropertyAddressService
 from app.services.property_location_service import PropertyLocationService
 from app.services.property_installation_service import PropertyInstallationService
 from app.services.property_installation_verification_service import PropertyInstallationVerificationService
+from app.services.property_verification_service import PropertyVerificationService
 from app.services.property_activation_service import PropertyActivationService
 from app.services.property_authorization_service import PropertyAuthorizationService
 from app.services.property_service import PropertyService
@@ -294,6 +299,52 @@ def list_properties(
     except ValueError as exc:
         raise HTTPException(
             status_code=404,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/{property_id}/verify",
+    response_model=PropertyVerificationResponse,
+)
+def verify_property(
+    property_id: UUID,
+    verification_data: PropertyVerificationCreate,
+    current_employee: User = Depends(
+        require_employee_clearance("property_verification")
+    ),
+    db: Session = Depends(get_db),
+):
+    authorization_service = PropertyAuthorizationService(db)
+    service = PropertyVerificationService(db)
+
+    try:
+        authorization_service.authorize(
+            user=current_employee,
+            property_id=property_id,
+            action=PropertyAction.PROPERTY_VERIFICATION,
+        )
+
+        return service.verify_property(
+            property_id=property_id,
+            verified_by=current_employee.id,
+            status=verification_data.status,
+            notes=verification_data.notes,
+        )
+
+    except ValueError as exc:
+        status_code = (
+            404
+            if str(exc) == "Property not found"
+            else 403
+            if str(exc) in {
+                "User is not authorized for this property",
+            }
+            else 400
+        )
+
+        raise HTTPException(
+            status_code=status_code,
             detail=str(exc),
         ) from exc
 
