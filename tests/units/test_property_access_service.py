@@ -237,6 +237,34 @@ def test_revoke_access_deactivates_access(db_session):
     assert result.is_active is False
 
 
+def test_grant_access_reactivates_inactive_access(db_session):
+    employee = create_user(db_session)
+    property = create_property(db_session)
+
+    service = PropertyAccessService(db_session)
+
+    granted_access = service.grant_access(
+        user_id=employee.id,
+        property_id=property.id,
+        access_type="plate_operations",
+    )
+
+    service.revoke_access(
+        user_id=employee.id,
+        property_id=property.id,
+        access_type="plate_operations",
+    )
+
+    reactivated_access = service.grant_access(
+        user_id=employee.id,
+        property_id=property.id,
+        access_type="plate_operations",
+    )
+
+    assert reactivated_access.id == granted_access.id
+    assert reactivated_access.is_active is True
+
+
 def test_revoke_access_rejects_missing_access(db_session):
     employee = create_user(db_session)
     property = create_property(db_session)

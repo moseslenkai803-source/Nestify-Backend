@@ -24,7 +24,8 @@ class PropertyAccessService:
             raise ValueError("Access type is required")
 
         existing_access = (
-            self.property_access_repository.get_active_access(
+            self.property_access_repository
+            .get_by_user_property_type_for_update(
                 user_id=user_id,
                 property_id=property_id,
                 access_type=access_type,
@@ -32,9 +33,14 @@ class PropertyAccessService:
         )
 
         if existing_access is not None:
-            raise ValueError(
-                "Employee already has this property access"
-            )
+            if existing_access.is_active:
+                raise ValueError(
+                    "Employee already has this property access"
+                )
+
+            existing_access.is_active = True
+            self.property_access_repository.db.flush()
+            return existing_access
 
         property_access = PropertyAccess(
             user_id=user_id,
@@ -86,7 +92,8 @@ class PropertyAccessService:
         access_type: str,
     ) -> PropertyAccess:
         property_access = (
-            self.property_access_repository.get_active_access(
+            self.property_access_repository
+            .get_by_user_property_type_for_update(
                 user_id=user_id,
                 property_id=property_id,
                 access_type=access_type,
