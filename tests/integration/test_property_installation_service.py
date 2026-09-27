@@ -5,6 +5,7 @@ from threading import Event, Thread
 import pytest
 
 from app.db.session import SessionLocal
+from tests.conftest import cleanup_installation_test_context
 
 from app.models.address_plate import AddressPlate
 from app.services.address_plate_lifecycle_service import (
@@ -12,6 +13,8 @@ from app.services.address_plate_lifecycle_service import (
 )
 from app.models.landlord import Landlord
 from app.models.property import Property
+from app.models.property_address import PropertyAddress
+from app.models.property_verification import PropertyVerification
 from app.models.user import User
 from app.services.property_installation_service import (
     PropertyInstallationService,
@@ -68,6 +71,30 @@ def create_installation_context(db_session):
     db_session.flush()
 
     db_session.add(property_record)
+    db_session.flush()
+
+    property_address = PropertyAddress(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        formatted_address="Installation Service Address",
+        county="Nairobi",
+        sub_county="Westlands",
+        locality="Installation Test Locality",
+        latitude=-1.286389,
+        longitude=36.817223,
+    )
+
+    property_verification = PropertyVerification(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        verified_by=landlord_user.id,
+        status="verified",
+        verified_at=datetime.now(UTC),
+        notes="Installation service test fixture",
+    )
+
+    db_session.add(property_address)
+    db_session.add(property_verification)
     db_session.flush()
 
     db_session.add(plate)
@@ -446,13 +473,14 @@ def test_create_installation_allows_new_submission_after_rejected_installation(
 def test_create_installation_serializes_concurrent_submissions_for_same_property(
     db_session,
 ):
-    _, installer, property_record, plate = create_installation_context(
+    landlord_user, installer, property_record, plate = create_installation_context(
         db_session
     )
 
     property_id = property_record.id
     plate_id = plate.id
     installer_id = installer.id
+    landlord_user_id = landlord_user.id
 
     db_session.commit()
 
@@ -546,3 +574,13 @@ def test_create_installation_serializes_concurrent_submissions_for_same_property
         second_session.rollback()
         first_session.close()
         second_session.close()
+
+        cleanup_session = SessionLocal()
+        try:
+            cleanup_installation_test_context(
+                cleanup_session,
+                property_id,
+                [landlord_user_id, installer_id],
+            )
+        finally:
+            cleanup_session.close()
