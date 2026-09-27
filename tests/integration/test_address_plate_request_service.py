@@ -258,6 +258,106 @@ def test_approve_request_raises_when_request_is_not_pending(db_session):
         service.approve_request(request.id)
 
 
+def test_approve_and_reject_request_serialize_concurrent_transitions(db_session):
+    user = User(
+        email=f"concurrent-request-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="landlord",
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    landlord = Landlord(
+        user_id=user.id,
+        display_name="Concurrent Request Landlord",
+        phone="+254700000000",
+        landlord_type="individual",
+    )
+    db_session.add(landlord)
+    db_session.flush()
+
+    property = Property(
+        landlord_id=landlord.id,
+        property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+        name="Concurrent Request Property",
+        property_type="residential",
+        status="draft",
+    )
+    db_session.add(property)
+    db_session.flush()
+
+    service = AddressPlateRequestService(db_session)
+
+    request = service.create_request(
+        property_id=property.id,
+        requested_by=user.id,
+    )
+    db_session.commit()
+
+    first_session = SessionLocal()
+    second_session = SessionLocal()
+
+    try:
+        first_service = AddressPlateRequestService(first_session)
+        second_service = AddressPlateRequestService(second_session)
+
+        locked_request = (
+            first_service.address_plate_request_repository
+            .get_by_id_for_update(request.id)
+        )
+
+        assert locked_request is not None
+        assert locked_request.status == "pending"
+
+        started = Event()
+        result = {}
+
+        def reject_in_second_session():
+            started.set()
+            try:
+                second_service.reject_request(request.id)
+            except Exception as exc:
+                result["exception"] = exc
+
+        thread = Thread(target=reject_in_second_session)
+        thread.start()
+
+        assert started.wait(timeout=2)
+        thread.join(timeout=0.5)
+
+        assert thread.is_alive()
+
+        approved_request = first_service.approve_request(request.id)
+
+        assert approved_request.status == "approved"
+
+        first_session.commit()
+
+        thread.join(timeout=2)
+
+        assert not thread.is_alive()
+        assert isinstance(result.get("exception"), ValueError)
+        assert str(result["exception"]) == (
+            "Address plate request is not pending"
+        )
+
+        first_session.expire_all()
+
+        final_request = (
+            first_service.address_plate_request_repository
+            .get_by_id(request.id)
+        )
+
+        assert final_request is not None
+        assert final_request.status == "approved"
+
+    finally:
+        first_session.rollback()
+        second_session.rollback()
+        first_session.close()
+        second_session.close()
+
+
 def test_reject_request_changes_pending_request_to_rejected(db_session):
     user = User(
         email=f"reject-request-{uuid.uuid4()}@example.com",

@@ -70,7 +70,7 @@ class AddressPlateRequestService:
         self,
         request_id: uuid.UUID,
     ) -> AddressPlateRequest:
-        request = self.address_plate_request_repository.get_by_id(
+        request = self.address_plate_request_repository.get_by_id_for_update(
             request_id
         )
 
@@ -89,7 +89,7 @@ class AddressPlateRequestService:
         self,
         request_id: uuid.UUID,
     ) -> AddressPlateRequest:
-        request = self.address_plate_request_repository.get_by_id(
+        request = self.address_plate_request_repository.get_by_id_for_update(
             request_id
         )
 

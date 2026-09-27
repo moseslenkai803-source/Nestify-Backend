@@ -1,5 +1,6 @@
 from uuid import UUID
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.address_plate_request import AddressPlateRequest
@@ -26,6 +27,17 @@ class AddressPlateRequestRepository:
             AddressPlateRequest,
             request_id,
         )
+
+    def get_by_id_for_update(
+        self,
+        request_id: UUID,
+    ) -> AddressPlateRequest | None:
+        statement = (
+            select(AddressPlateRequest)
+            .where(AddressPlateRequest.id == request_id)
+            .with_for_update()
+        )
+        return self.db.scalar(statement)
 
     def get_by_property_id(
         self,
