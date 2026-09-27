@@ -2,6 +2,7 @@ import uuid
 from threading import Event, Thread
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.db.session import SessionLocal
 from app.models.address_plate import AddressPlate
@@ -126,6 +127,24 @@ def test_record_event_rejects_unknown_event_type(db_session):
             employee.id,
             "unknown",
         )
+
+
+def test_database_rejects_invalid_lifecycle_event_type(db_session):
+    employee = create_employee(db_session)
+    plate = create_plate(db_session)
+
+    event = AddressPlateLifecycleEvent(
+        plate_id=plate.id,
+        event_type="invalid",
+        performed_by=employee.id,
+    )
+
+    db_session.add(event)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
 
 
 def test_record_event_allows_complete_lifecycle(db_session):
