@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from threading import Event, Thread
 
 import pytest
+from sqlalchemy.exc import IntegrityError
 
 from app.db.session import SessionLocal
 from app.models.landlord import Landlord
@@ -282,3 +283,25 @@ def test_create_location_serializes_concurrent_creations_for_same_property(
     first_session.close()
     second_session.rollback()
     second_session.close()
+
+
+def test_property_location_rejects_invalid_status_at_database_level(db_session):
+    property = create_test_property(db_session)
+
+    location = PropertyLocation(
+        property_id=property.id,
+        latitude=-1.2921,
+        longitude=36.8219,
+        location="SRID=4326;POINT(36.8219 -1.2921)",
+        source="device_gps",
+        capture_method="user_confirmed_device_location",
+        captured_at=datetime.now(UTC),
+        status="invalid_status",
+    )
+
+    db_session.add(location)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
