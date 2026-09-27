@@ -1,8 +1,12 @@
 import uuid
+from threading import Event, Thread
 
 import pytest
 
+from app.db.session import SessionLocal
+
 from app.models.address_plate import AddressPlate
+from app.models.address_plate_request import AddressPlateRequest
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.user import User
@@ -396,3 +400,113 @@ def test_create_request_raises_when_property_has_allocated_plate(db_session):
             property_id=property.id,
             requested_by=user.id,
         )
+
+def test_create_request_serializes_concurrent_requests_for_same_property(
+    db_session,
+):
+    user = User(
+        email=f"concurrent-request-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="landlord",
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    landlord = Landlord(
+        user_id=user.id,
+        display_name="Concurrent Request Landlord",
+        phone="+254700000000",
+        landlord_type="individual",
+    )
+    db_session.add(landlord)
+    db_session.flush()
+
+    property = Property(
+        landlord_id=landlord.id,
+        property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+        name="Concurrent Request Property",
+        property_type="residential",
+        status="draft",
+    )
+    db_session.add(property)
+    db_session.flush()
+
+    property_id = property.id
+    user_id = user.id
+    db_session.commit()
+
+    first_session = SessionLocal()
+    second_session = SessionLocal()
+
+    second_started = Event()
+    second_finished = Event()
+    second_error = {}
+    thread = None
+
+    try:
+        first_service = AddressPlateRequestService(first_session)
+
+        locked_property = (
+            first_service.property_repository.get_by_id_for_update(
+                property_id
+            )
+        )
+
+        assert locked_property is not None
+
+        def create_from_second_transaction():
+            try:
+                second_service = AddressPlateRequestService(second_session)
+                second_started.set()
+
+                second_service.create_request(
+                    property_id=property_id,
+                    requested_by=user_id,
+                )
+            except Exception as exc:
+                second_error["error"] = exc
+            finally:
+                second_finished.set()
+
+        thread = Thread(target=create_from_second_transaction)
+        thread.start()
+
+        assert second_started.wait(timeout=2)
+        assert not second_finished.wait(timeout=0.2)
+
+        first_request = first_service.create_request(
+            property_id=property_id,
+            requested_by=user_id,
+        )
+        assert first_request.status == "pending"
+
+        first_session.commit()
+
+        assert second_finished.wait(timeout=2)
+        thread.join(timeout=2)
+
+        assert isinstance(second_error.get("error"), ValueError)
+        assert str(second_error["error"]) == (
+            "Property already has a pending address plate request"
+        )
+
+        db_session.expire_all()
+
+        requests = (
+            db_session.query(AddressPlateRequest)
+            .filter(AddressPlateRequest.property_id == property_id)
+            .all()
+        )
+
+        assert len(requests) == 1
+        assert requests[0].status == "pending"
+
+
+    finally:
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=2)
+
+        first_session.rollback()
+        second_session.rollback()
+        first_session.close()
+        second_session.close()

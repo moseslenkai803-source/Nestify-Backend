@@ -25,7 +25,7 @@ class AddressPlateRequestService:
         property_id: uuid.UUID,
         requested_by: uuid.UUID,
     ) -> AddressPlateRequest:
-        property = self.property_repository.get_by_id(property_id)
+        property = self.property_repository.get_by_id_for_update(property_id)
 
         if property is None:
             raise ValueError("Property not found")
