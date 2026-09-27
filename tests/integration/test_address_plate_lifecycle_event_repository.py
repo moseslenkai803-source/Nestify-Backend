@@ -133,28 +133,28 @@ def test_get_by_plate_id_returns_events_in_chronological_order(db_session):
     first_event = AddressPlateLifecycleEvent(
         id=uuid.uuid4(),
         plate_id=plate.id,
-        event_type="requested",
+        event_type="manufactured",
         performed_by=user.id,
         occurred_at=datetime.now(UTC) - timedelta(minutes=10),
-        notes="Plate requested",
+        notes="Plate manufactured",
     )
 
     second_event = AddressPlateLifecycleEvent(
         id=uuid.uuid4(),
         plate_id=plate.id,
-        event_type="approved",
+        event_type="allocated",
         performed_by=user.id,
         occurred_at=datetime.now(UTC) - timedelta(minutes=5),
-        notes="Plate approved",
+        notes="Plate allocated",
     )
 
     third_event = AddressPlateLifecycleEvent(
         id=uuid.uuid4(),
         plate_id=plate.id,
-        event_type="allocated",
+        event_type="dispatched",
         performed_by=user.id,
         occurred_at=datetime.now(UTC),
-        notes="Plate allocated",
+        notes="Plate dispatched",
     )
 
     other_plate = AddressPlate(
@@ -166,7 +166,7 @@ def test_get_by_plate_id_returns_events_in_chronological_order(db_session):
     other_event = AddressPlateLifecycleEvent(
         id=uuid.uuid4(),
         plate_id=other_plate.id,
-        event_type="requested",
+        event_type="manufactured",
         performed_by=user.id,
         occurred_at=datetime.now(UTC),
         notes="Other plate event",
@@ -200,11 +200,11 @@ def test_get_by_plate_id_returns_events_in_chronological_order(db_session):
 
     assert len(result) == 3
     assert result[0].id == first_event.id
-    assert result[0].event_type == "requested"
+    assert result[0].event_type == "manufactured"
     assert result[1].id == second_event.id
-    assert result[1].event_type == "approved"
+    assert result[1].event_type == "allocated"
     assert result[2].id == third_event.id
-    assert result[2].event_type == "allocated"
+    assert result[2].event_type == "dispatched"
 
 
 def test_get_latest_by_plate_id_returns_newest_event(db_session):

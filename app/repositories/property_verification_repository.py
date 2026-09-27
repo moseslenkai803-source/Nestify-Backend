@@ -29,6 +29,7 @@ class PropertyVerificationRepository:
             )
             .order_by(
                 PropertyVerification.created_at.desc(),
+                PropertyVerification.id.desc(),
             )
             .all()
         )
@@ -44,6 +45,7 @@ class PropertyVerificationRepository:
             )
             .order_by(
                 PropertyVerification.created_at.desc(),
+                PropertyVerification.id.desc(),
             )
             .first()
         )

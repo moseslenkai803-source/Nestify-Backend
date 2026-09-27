@@ -32,7 +32,7 @@ class PropertyVerificationService:
                 "Verification status must be 'verified' or 'rejected'"
             )
 
-        property = self.property_repository.get_by_id(property_id)
+        property = self.property_repository.get_by_id_for_update(property_id)
 
         if property is None:
             raise ValueError("Property not found")

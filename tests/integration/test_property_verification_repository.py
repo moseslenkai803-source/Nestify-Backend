@@ -232,3 +232,93 @@ def test_get_latest_by_property_id_returns_newest_verification(db_session):
     assert result.id == latest_verification.id
     assert result.status == "verified"
     assert result.notes == "Latest review"
+
+def test_get_latest_by_property_id_uses_id_as_tiebreaker_for_equal_created_at(
+    db_session,
+):
+    user = User(
+        id=uuid.uuid4(),
+        email=f"verification-tiebreaker-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        clearance="property_verification",
+        is_active=True,
+    )
+
+    landlord_user = User(
+        id=uuid.uuid4(),
+        email=f"verification-tiebreaker-landlord-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="landlord",
+        is_active=True,
+    )
+
+    landlord = Landlord(
+        id=uuid.uuid4(),
+        user_id=landlord_user.id,
+        display_name="Verification Tiebreaker Landlord",
+        phone="+254700000013",
+        landlord_type="individual",
+    )
+
+    property_record = Property(
+        id=uuid.uuid4(),
+        landlord_id=landlord.id,
+        property_code=f"NEST-TIE-{uuid.uuid4().hex[:8].upper()}",
+        name="Verification Tiebreaker Property",
+        property_type="residential",
+        status="draft",
+    )
+
+    created_at = datetime.now(UTC)
+    lower_id = uuid.UUID("00000000-0000-0000-0000-000000000001")
+    higher_id = uuid.UUID("00000000-0000-0000-0000-000000000002")
+
+    older_id_verification = PropertyVerification(
+        id=lower_id,
+        property_id=property_record.id,
+        verified_by=user.id,
+        status="rejected",
+        verified_at=created_at,
+        created_at=created_at,
+        notes="Lower UUID",
+    )
+
+    newer_id_verification = PropertyVerification(
+        id=higher_id,
+        property_id=property_record.id,
+        verified_by=user.id,
+        status="verified",
+        verified_at=created_at,
+        created_at=created_at,
+        notes="Higher UUID",
+    )
+
+    db_session.add(user)
+    db_session.add(landlord_user)
+    db_session.flush()
+
+    db_session.add(landlord)
+    db_session.flush()
+
+    db_session.add(property_record)
+    db_session.flush()
+
+    db_session.add_all([
+        older_id_verification,
+        newer_id_verification,
+    ])
+    db_session.flush()
+
+    repository = PropertyVerificationRepository(db_session)
+
+    history = repository.get_by_property_id(property_record.id)
+    latest = repository.get_latest_by_property_id(property_record.id)
+
+    assert [verification.id for verification in history] == [
+        higher_id,
+        lower_id,
+    ]
+    assert latest is not None
+    assert latest.id == higher_id
+    assert latest.status == "verified"
