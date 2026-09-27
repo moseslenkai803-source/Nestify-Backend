@@ -72,6 +72,40 @@ def test_create_building_creates_draft_building(db_session):
     assert building.status == "draft"
 
 
+def test_duplicate_building_number_within_property_is_rejected(db_session):
+    from sqlalchemy.exc import IntegrityError
+
+    user = create_user(db_session)
+    landlord = create_landlord(db_session, user)
+    property_record = create_property(db_session, landlord)
+
+    first_building = Building(
+        property_id=property_record.id,
+        building_number="1",
+        name="First Building",
+        status="draft",
+    )
+    db_session.add(first_building)
+    db_session.flush()
+
+    duplicate_building = Building(
+        property_id=property_record.id,
+        building_number="1",
+        name="Duplicate Building",
+        status="draft",
+    )
+    db_session.add(duplicate_building)
+
+    try:
+        db_session.flush()
+    except IntegrityError:
+        db_session.rollback()
+    else:
+        raise AssertionError(
+            "Duplicate building number should violate the "
+            "property-scoped unique constraint"
+        )
+
 def test_create_building_rejects_unauthorized_user(db_session):
     owner = create_user(db_session)
     landlord = create_landlord(db_session, owner)

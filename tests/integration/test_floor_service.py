@@ -117,6 +117,41 @@ def test_create_floor_creates_draft_floor(db_session):
     assert floor.status == "draft"
 
 
+def test_duplicate_floor_number_within_building_is_rejected(db_session):
+    from sqlalchemy.exc import IntegrityError
+
+    user = create_user(db_session)
+    landlord = create_landlord(db_session, user)
+    property_record = create_property(db_session, landlord)
+    building = create_building(db_session, property_record)
+
+    first_floor = Floor(
+        building_id=building.id,
+        floor_number="1",
+        name="First Floor",
+        status="draft",
+    )
+    db_session.add(first_floor)
+    db_session.flush()
+
+    duplicate_floor = Floor(
+        building_id=building.id,
+        floor_number="1",
+        name="Duplicate Floor",
+        status="draft",
+    )
+    db_session.add(duplicate_floor)
+
+    try:
+        db_session.flush()
+    except IntegrityError:
+        db_session.rollback()
+    else:
+        raise AssertionError(
+            "Duplicate floor number should violate the "
+            "building-scoped unique constraint"
+        )
+
 def test_create_floor_rejects_unauthorized_user(db_session):
     owner = create_user(db_session)
     landlord = create_landlord(db_session, owner)
