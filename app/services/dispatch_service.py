@@ -53,7 +53,7 @@ class DispatchService:
             raise ValueError("Dispatch cannot contain duplicate plates")
 
         for plate_id in plate_ids:
-            plate = self.address_plate_repository.get_by_id(plate_id)
+            plate = self.address_plate_repository.get_by_id_for_update(plate_id)
 
             if plate is None:
                 raise ValueError("Address plate not found")

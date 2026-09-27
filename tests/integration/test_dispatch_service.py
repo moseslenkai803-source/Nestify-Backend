@@ -564,6 +564,118 @@ def test_mark_dispatched_serializes_concurrent_transitions(
         second_session.close()
 
 
+def test_create_dispatch_serializes_concurrent_plate_assignment(
+    db_session,
+):
+    employee = create_employee(db_session)
+    _, property = create_landlord_and_property(db_session)
+
+    plate = create_manufactured_allocated_plate(
+        db_session,
+        property.id,
+        employee.id,
+    )
+
+    db_session.commit()
+
+    first_session = SessionLocal()
+    second_session = SessionLocal()
+
+    second_started = Event()
+    second_finished = Event()
+
+    errors = {}
+    result = {}
+
+    try:
+        first_service = DispatchService(first_session)
+        second_service = DispatchService(second_session)
+
+        first_plate = (
+            first_service.address_plate_repository
+            .get_by_id_for_update(plate.id)
+        )
+
+        assert first_plate is not None
+
+        def second_worker():
+            second_started.set()
+            try:
+                second_service.create_dispatch(
+                    plate_ids=[plate.id],
+                    destination="Nairobi",
+                    recipient_name="Second Recipient",
+                    recipient_phone="+254722222222",
+                    created_by=employee.id,
+                )
+            except Exception as exc:
+                errors["second"] = exc
+            finally:
+                second_finished.set()
+
+        thread = Thread(target=second_worker)
+        thread.start()
+
+        assert second_started.wait(timeout=2)
+        assert not second_finished.wait(timeout=0.5)
+
+        first_dispatch = first_service.create_dispatch(
+            plate_ids=[plate.id],
+            destination="Nairobi",
+            recipient_name="First Recipient",
+            recipient_phone="+254711111111",
+            created_by=employee.id,
+        )
+
+        first_session.commit()
+        result["first"] = True
+
+        assert second_finished.wait(timeout=5)
+        thread.join(timeout=2)
+
+        assert result["first"] is True
+        assert isinstance(errors["second"], ValueError)
+        assert str(errors["second"]) == (
+            "Address plate is already assigned to a dispatch"
+        )
+
+        second_session.rollback()
+
+        verification_session = SessionLocal()
+        try:
+            active_items = (
+                verification_session.query(DispatchItem)
+                .filter(
+                    DispatchItem.plate_id == plate.id,
+                    DispatchItem.released_at.is_(None),
+                )
+                .all()
+            )
+
+            assert len(active_items) == 1
+
+            verified_dispatch = (
+                verification_session.query(Dispatch)
+                .filter(
+                    Dispatch.id == active_items[0].dispatch_id,
+                )
+                .one()
+            )
+
+            assert verified_dispatch.id == first_dispatch.id
+            assert verified_dispatch.status == "draft"
+        finally:
+            verification_session.close()
+
+    finally:
+        if not second_started.is_set():
+            second_started.set()
+        first_session.rollback()
+        second_session.rollback()
+        first_session.close()
+        second_session.close()
+
+
 def test_mark_dispatched_requires_ready_status(db_session):
     employee = create_employee(db_session)
     _, property = create_landlord_and_property(db_session)
