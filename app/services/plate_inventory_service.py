@@ -11,7 +11,7 @@ class PlateInventoryService:
 
     def create_plate(
         self,
-        manufacturing_order_id: uuid.UUID | None = None,
+        manufacturing_order_id: uuid.UUID,
     ) -> AddressPlate:
         plate_code = f"PLATE-{uuid.uuid4().hex[:12].upper()}"
 
