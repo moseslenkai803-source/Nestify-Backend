@@ -1,6 +1,9 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 
+import pytest
+from sqlalchemy.exc import IntegrityError
+
 from app.models.address_plate_request import AddressPlateRequest
 from app.models.landlord import Landlord
 from app.models.property import Property
@@ -160,3 +163,20 @@ def test_get_pending_by_property_id_returns_none_when_no_pending_request(
     result = repository.get_pending_by_property_id(property_record.id)
 
     assert result is None
+
+
+def test_add_rejects_invalid_status_at_database_level(db_session):
+    user, property_record = create_property(db_session)
+
+    request = AddressPlateRequest(
+        property_id=property_record.id,
+        requested_by=user.id,
+        status="invalid_status",
+    )
+
+    db_session.add(request)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
