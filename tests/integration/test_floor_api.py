@@ -116,6 +116,66 @@ def test_create_floor_api(db_session: Session):
         app.dependency_overrides.clear()
 
 
+def test_create_floor_api_rejects_duplicate_floor_number(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        user = create_user(db_session)
+        landlord = create_landlord(db_session, user)
+        property_record = create_property(db_session, landlord)
+        building = Building(
+            property_id=property_record.id,
+            building_number="1",
+            name="Building One",
+            status="draft",
+        )
+        db_session.add(building)
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
+        first_response = client.post(
+            f"/api/v1/properties/{property_record.id}/buildings/{building.id}/floors",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+            json={
+                "floor_number": "1",
+                "name": "First Floor",
+            },
+        )
+
+        assert first_response.status_code == 201
+
+        duplicate_response = client.post(
+            f"/api/v1/properties/{property_record.id}/buildings/{building.id}/floors",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+            json={
+                "floor_number": "1",
+                "name": "Duplicate Floor",
+            },
+        )
+
+        assert duplicate_response.status_code == 400
+        assert duplicate_response.json()["detail"] == (
+            "Floor number already exists for this building"
+        )
+
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_list_floors_api(db_session: Session):
     def override_get_db():
         yield db_session

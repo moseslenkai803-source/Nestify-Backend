@@ -29,6 +29,16 @@ class BuildingService:
             action=PropertyAction.PROPERTY_MANAGEMENT,
         )
 
+        existing_building = self.building_repository.get_by_property_and_number(
+            property_id=property_id,
+            building_number=building_number,
+        )
+
+        if existing_building is not None:
+            raise ValueError(
+                "Building number already exists for this property"
+            )
+
         building = Building(
             property_id=property_id,
             building_number=building_number,

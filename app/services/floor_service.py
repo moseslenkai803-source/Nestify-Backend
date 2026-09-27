@@ -40,6 +40,16 @@ class FloorService:
             action=PropertyAction.PROPERTY_MANAGEMENT,
         )
 
+        existing_floor = self.floor_repository.get_by_building_and_number(
+            building_id=building_id,
+            floor_number=floor_number,
+        )
+
+        if existing_floor is not None:
+            raise ValueError(
+                "Floor number already exists for this building"
+            )
+
         floor = Floor(
             building_id=building_id,
             floor_number=floor_number,
