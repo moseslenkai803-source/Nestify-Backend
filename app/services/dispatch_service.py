@@ -137,7 +137,12 @@ class DispatchService:
         self,
         dispatch_code: str,
     ) -> Dispatch:
-        dispatch = self.get_dispatch(dispatch_code)
+        dispatch = self.dispatch_repository.get_by_dispatch_code_for_update(
+            dispatch_code
+        )
+
+        if dispatch is None:
+            raise ValueError("Dispatch not found")
 
         self._validate_transition(
             dispatch,
@@ -163,7 +168,12 @@ class DispatchService:
         dispatch_code: str,
         performed_by: uuid.UUID,
     ) -> Dispatch:
-        dispatch = self.get_dispatch(dispatch_code)
+        dispatch = self.dispatch_repository.get_by_dispatch_code_for_update(
+            dispatch_code
+        )
+
+        if dispatch is None:
+            raise ValueError("Dispatch not found")
 
         self._validate_transition(
             dispatch,
@@ -212,7 +222,12 @@ class DispatchService:
         self,
         dispatch_code: str,
     ) -> Dispatch:
-        dispatch = self.get_dispatch(dispatch_code)
+        dispatch = self.dispatch_repository.get_by_dispatch_code_for_update(
+            dispatch_code
+        )
+
+        if dispatch is None:
+            raise ValueError("Dispatch not found")
 
         self._validate_transition(
             dispatch,
@@ -228,7 +243,12 @@ class DispatchService:
         self,
         dispatch_code: str,
     ) -> Dispatch:
-        dispatch = self.get_dispatch(dispatch_code)
+        dispatch = self.dispatch_repository.get_by_dispatch_code_for_update(
+            dispatch_code
+        )
+
+        if dispatch is None:
+            raise ValueError("Dispatch not found")
 
         self._validate_transition(
             dispatch,

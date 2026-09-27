@@ -1,4 +1,5 @@
 import uuid
+from threading import Event, Thread
 
 import pytest
 
@@ -6,10 +7,12 @@ from app.models.address_plate import AddressPlate
 from app.models.address_plate_lifecycle_event import (
     AddressPlateLifecycleEvent,
 )
+from app.models.dispatch import Dispatch
 from app.models.dispatch_item import DispatchItem
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.user import User
+from app.db.session import SessionLocal
 from app.services.dispatch_service import DispatchService
 
 
@@ -430,6 +433,135 @@ def test_mark_dispatched_records_lifecycle_events(db_session):
         assert events[1].event_type == "allocated"
         assert events[2].event_type == "dispatched"
         assert events[2].performed_by == employee.id
+
+
+def test_mark_dispatched_serializes_concurrent_transitions(
+    db_session,
+):
+    employee = create_employee(db_session)
+    _, property = create_landlord_and_property(db_session)
+
+    plate = create_manufactured_allocated_plate(
+        db_session,
+        property.id,
+        employee.id,
+    )
+
+    service = DispatchService(db_session)
+
+    dispatch = service.create_dispatch(
+        plate_ids=[plate.id],
+        destination="Nairobi",
+        recipient_name="Jane Doe",
+        recipient_phone="+254711111111",
+        created_by=employee.id,
+    )
+
+    service.mark_ready(dispatch.dispatch_code)
+    dispatch_code = dispatch.dispatch_code
+
+    db_session.commit()
+
+    first_session = SessionLocal()
+    second_session = SessionLocal()
+
+    first_started = Event()
+    second_started = Event()
+    second_finished = Event()
+
+    result = {}
+    errors = {}
+
+    try:
+        first_service = DispatchService(first_session)
+        second_service = DispatchService(second_session)
+
+        def second_worker():
+            second_started.set()
+            try:
+                second_service.mark_dispatched(
+                    dispatch_code,
+                    performed_by=employee.id,
+                )
+            except Exception as exc:
+                errors["second"] = exc
+            finally:
+                second_finished.set()
+
+        dispatch_row = (
+            first_service.dispatch_repository
+            .get_by_dispatch_code_for_update(dispatch_code)
+        )
+
+        assert dispatch_row is not None
+        assert dispatch_row.status == "ready"
+
+        first_started.set()
+
+        thread = Thread(target=second_worker)
+        thread.start()
+
+        assert second_started.wait(timeout=2)
+        assert not second_finished.wait(timeout=0.5)
+
+        first_service.mark_dispatched(
+            dispatch_code,
+            performed_by=employee.id,
+        )
+        first_session.commit()
+        result["first"] = True
+
+        assert second_finished.wait(timeout=5)
+        thread.join(timeout=2)
+
+        assert result["first"] is True
+        assert isinstance(errors["second"], ValueError)
+        assert str(errors["second"]) == (
+            "Dispatch cannot transition to the requested status"
+        )
+
+        second_session.rollback()
+
+        verification_session = SessionLocal()
+        try:
+            verified_dispatch = (
+                verification_session.query(Dispatch)
+                .filter(
+                    Dispatch.dispatch_code == dispatch_code,
+                )
+                .one()
+            )
+
+            assert verified_dispatch.status == "dispatched"
+
+            events = (
+                verification_session.query(
+                    AddressPlateLifecycleEvent
+                )
+                .filter(
+                    AddressPlateLifecycleEvent.plate_id == plate.id,
+                )
+                .order_by(
+                    AddressPlateLifecycleEvent.occurred_at.asc(),
+                )
+                .all()
+            )
+
+            assert [event.event_type for event in events] == [
+                "manufactured",
+                "allocated",
+                "dispatched",
+            ]
+        finally:
+            verification_session.close()
+
+    finally:
+        if not first_started.is_set():
+            first_started.set()
+        first_session.rollback()
+        second_session.rollback()
+        first_session.close()
+        second_session.close()
 
 
 def test_mark_dispatched_requires_ready_status(db_session):
