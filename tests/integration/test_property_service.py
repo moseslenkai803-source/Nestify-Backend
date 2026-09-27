@@ -1,7 +1,10 @@
 import pytest
 import uuid
 
+from sqlalchemy.exc import IntegrityError
+
 from app.models.landlord import Landlord
+from app.models.property import Property
 from app.models.user import User
 from app.services.property_service import PropertyService
 
@@ -49,3 +52,36 @@ def test_create_property_raises_when_landlord_does_not_exist(db_session):
             name="Invalid Landlord Property",
             property_type="residential",
         )
+
+
+def test_database_rejects_invalid_property_status(db_session):
+    user = User(
+        email=f"status-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="landlord",
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    landlord = Landlord(
+        user_id=user.id,
+        display_name="Status Test Landlord",
+        phone="+254700000000",
+        landlord_type="individual",
+    )
+    db_session.add(landlord)
+    db_session.flush()
+
+    property = Property(
+        landlord_id=landlord.id,
+        property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+        name="Invalid Status Property",
+        property_type="residential",
+        status="invalid_status",
+    )
+    db_session.add(property)
+
+    with pytest.raises(IntegrityError):
+        db_session.flush()
+
+    db_session.rollback()
