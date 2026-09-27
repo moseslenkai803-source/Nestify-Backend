@@ -1,10 +1,13 @@
 import uuid
 from datetime import UTC, datetime
+from threading import Event, Thread
 
 import pytest
 
+from app.db.session import SessionLocal
 from app.models.landlord import Landlord
 from app.models.property import Property
+from app.models.property_location import PropertyLocation
 from app.models.user import User
 from app.services.property_location_service import PropertyLocationService
 
@@ -204,3 +207,78 @@ def test_get_location_raises_when_location_does_not_exist(db_session):
         match="Property location not found",
     ):
         service.get_location(property.id)
+
+
+def test_create_location_serializes_concurrent_creations_for_same_property(
+    db_session,
+):
+    property = create_test_property(db_session)
+    db_session.commit()
+
+    first_session = SessionLocal()
+    second_session = SessionLocal()
+
+    first_service = PropertyLocationService(first_session)
+    second_service = PropertyLocationService(second_session)
+
+    first_service.property_repository.get_by_id_for_update(property.id)
+
+    second_started = Event()
+    second_finished = Event()
+    second_error = []
+
+    def create_second_location():
+        second_started.set()
+        try:
+            second_service.create_location(
+                property_id=property.id,
+                latitude=-1.3000,
+                longitude=36.8300,
+                source="landlord_provided",
+                capture_method="manual_entry",
+                captured_at=datetime.now(UTC),
+            )
+        except Exception as exc:
+            second_error.append(exc)
+        finally:
+            second_finished.set()
+
+    thread = Thread(target=create_second_location)
+    thread.start()
+
+    assert second_started.wait(timeout=2)
+    assert not second_finished.wait(timeout=0.5)
+
+    first_service.create_location(
+        property_id=property.id,
+        latitude=-1.2921,
+        longitude=36.8219,
+        source="device_gps",
+        capture_method="user_confirmed_device_location",
+        captured_at=datetime.now(UTC),
+    )
+    first_session.commit()
+
+    assert second_finished.wait(timeout=2)
+    thread.join(timeout=2)
+
+    assert len(second_error) == 1
+    assert isinstance(second_error[0], ValueError)
+    assert str(second_error[0]) == "Property already has a location"
+
+    second_session.rollback()
+
+    locations = (
+        db_session.query(PropertyLocation)
+        .filter(PropertyLocation.property_id == property.id)
+        .all()
+    )
+
+    assert len(locations) == 1
+    assert locations[0].latitude == -1.2921
+    assert locations[0].longitude == 36.8219
+
+    first_session.rollback()
+    first_session.close()
+    second_session.rollback()
+    second_session.close()
