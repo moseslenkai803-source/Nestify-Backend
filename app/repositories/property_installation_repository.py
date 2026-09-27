@@ -47,7 +47,7 @@ class PropertyInstallationRepository:
         return self.db.scalar(
             select(PropertyInstallation)
             .where(PropertyInstallation.property_id == property_id)
-            .order_by(PropertyInstallation.created_at.desc())
+            .order_by(PropertyInstallation.created_at.desc(), PropertyInstallation.id.desc())
         )
 
     def get_by_plate_id(
@@ -57,5 +57,5 @@ class PropertyInstallationRepository:
         return self.db.scalar(
             select(PropertyInstallation)
             .where(PropertyInstallation.plate_id == plate_id)
-            .order_by(PropertyInstallation.created_at.desc())
+            .order_by(PropertyInstallation.created_at.desc(), PropertyInstallation.id.desc())
         )

@@ -42,7 +42,7 @@ class PropertyInstallationVerificationRepository:
                     == installation_id
                 )
                 .order_by(
-                    PropertyInstallationVerification.created_at.desc()
+                    PropertyInstallationVerification.created_at.desc(), PropertyInstallationVerification.id.desc()
                 )
             ).all()
         )
@@ -58,7 +58,7 @@ class PropertyInstallationVerificationRepository:
                 == installation_id
             )
             .order_by(
-                PropertyInstallationVerification.created_at.desc()
+                PropertyInstallationVerification.created_at.desc(), PropertyInstallationVerification.id.desc()
             )
             .limit(1)
         )
