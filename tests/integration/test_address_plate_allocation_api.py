@@ -359,6 +359,53 @@ def test_allocate_address_plate_api_rejects_missing_request(
     )
 
 
+def test_allocate_address_plate_api_rejects_employee_without_property_access(
+    client,
+    db_session,
+):
+    landlord_user, property = create_landlord_and_property(
+        db_session,
+    )
+
+    employee = create_user(
+        db_session,
+        role="employee",
+        clearance="plate_operations",
+    )
+
+    request = create_approved_request(
+        db_session,
+        property_id=property.id,
+        requested_by=landlord_user.id,
+    )
+
+    plate = create_manufactured_plate(
+        db_session,
+        performed_by=employee.id,
+    )
+
+    access_token = create_access_token(
+        subject=str(employee.id),
+    )
+
+    response = client.post(
+        f"/api/v1/address-plate-requests/{request.id}/allocate",
+        headers={
+            "Authorization": f"Bearer {access_token}",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Employee does not have access to this property"
+
+    db_session.refresh(request)
+    db_session.refresh(plate)
+
+    assert request.status == "approved"
+    assert plate.property_id is None
+    assert plate.status == "unactivated"
+
+
 def test_allocate_address_plate_api_rejects_when_inventory_is_empty(
     client,
     db_session,

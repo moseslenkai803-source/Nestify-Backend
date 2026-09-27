@@ -282,6 +282,10 @@ def test_complete_manufacturing_order_creates_plate_inventory(
         assert len(events) == 1
         assert events[0].event_type == "manufactured"
         assert events[0].performed_by == employee.id
+        assert events[0].plate_id == plate.id
+        assert events[0].notes == (
+            f"Manufactured as part of order {order.order_code}"
+        )
 
 
 def test_complete_manufacturing_order_rolls_back_partial_inventory_on_failure(

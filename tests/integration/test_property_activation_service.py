@@ -9,7 +9,7 @@ from app.models.landlord import Landlord
 from app.models.property_address import PropertyAddress
 from app.models.user import User
 from app.services.address_plate_lifecycle_service import AddressPlateLifecycleService
-from app.services.address_plate_service import AddressPlateService
+from app.services.manufacturing_order_service import ManufacturingOrderService
 from app.services.property_activation_service import PropertyActivationService
 from app.services.property_service import PropertyService
 
@@ -66,16 +66,32 @@ def test_activate_property_activates_verified_plate(db_session):
     db_session.add(reviewer)
     db_session.flush()
 
-    plate_service = AddressPlateService(db_session)
-    plate = plate_service.create_plate()
+    manufacturing_service = ManufacturingOrderService(db_session)
+
+    manufacturing_order = manufacturing_service.create_order(
+        quantity=1,
+        created_by=employee.id,
+    )
+
+    manufacturing_service.approve_order(
+        order_code=manufacturing_order.order_code,
+        approved_by=employee.id,
+    )
+
+    manufacturing_service.start_order(
+        order_code=manufacturing_order.order_code,
+    )
+
+    manufacturing_service.complete_order(
+        order_code=manufacturing_order.order_code,
+        completed_by=employee.id,
+    )
+
+    plate = manufacturing_service.get_order_plates(
+        manufacturing_order.order_code
+    )[0]
 
     lifecycle_service = AddressPlateLifecycleService(db_session)
-
-    lifecycle_service.record_event(
-        plate_id=plate.id,
-        event_type="manufactured",
-        performed_by=employee.id,
-    )
 
     from app.services.address_plate_request_service import (
         AddressPlateRequestService,
@@ -377,16 +393,32 @@ def test_activate_property_serializes_concurrent_activation_attempts(
     db_session.add(employee_two)
     db_session.flush()
 
-    plate_service = AddressPlateService(db_session)
-    plate = plate_service.create_plate()
+    manufacturing_service = ManufacturingOrderService(db_session)
+
+    manufacturing_order = manufacturing_service.create_order(
+        quantity=1,
+        created_by=employee_one.id,
+    )
+
+    manufacturing_service.approve_order(
+        order_code=manufacturing_order.order_code,
+        approved_by=employee_one.id,
+    )
+
+    manufacturing_service.start_order(
+        order_code=manufacturing_order.order_code,
+    )
+
+    manufacturing_service.complete_order(
+        order_code=manufacturing_order.order_code,
+        completed_by=employee_one.id,
+    )
+
+    plate = manufacturing_service.get_order_plates(
+        manufacturing_order.order_code
+    )[0]
 
     lifecycle_service = AddressPlateLifecycleService(db_session)
-
-    lifecycle_service.record_event(
-        plate_id=plate.id,
-        event_type="manufactured",
-        performed_by=employee_one.id,
-    )
 
     from app.services.address_plate_request_service import (
         AddressPlateRequestService,
