@@ -1,7 +1,10 @@
 import uuid
 from datetime import UTC, datetime
+from threading import Event, Thread
 
 import pytest
+
+from app.db.session import SessionLocal
 
 from app.models.address_plate import AddressPlate
 from app.services.address_plate_lifecycle_service import (
@@ -438,3 +441,108 @@ def test_create_installation_allows_new_submission_after_rejected_installation(
     assert result.status == "submitted"
     assert result.property_id == property_record.id
     assert result.plate_id == plate.id
+
+
+def test_create_installation_serializes_concurrent_submissions_for_same_property(
+    db_session,
+):
+    _, installer, property_record, plate = create_installation_context(
+        db_session
+    )
+
+    property_id = property_record.id
+    plate_id = plate.id
+    installer_id = installer.id
+
+    db_session.commit()
+
+    first_session = SessionLocal()
+    second_session = SessionLocal()
+
+    second_started = Event()
+    second_finished = Event()
+    second_error = {}
+    thread = None
+
+    try:
+        first_service = PropertyInstallationService(first_session)
+
+        locked_property = (
+            first_service.property_repository.get_by_id_for_update(
+                property_id
+            )
+        )
+
+        assert locked_property is not None
+
+        def create_from_second_transaction():
+            try:
+                second_service = PropertyInstallationService(second_session)
+                second_started.set()
+
+                second_service.create_installation(
+                    property_id=property_id,
+                    plate_id=plate_id,
+                    installer_id=installer_id,
+                    latitude=-1.286390,
+                    longitude=36.817224,
+                    accuracy_meters=4.0,
+                    captured_at=datetime.now(UTC),
+                )
+            except Exception as exc:
+                second_error["error"] = exc
+            finally:
+                second_finished.set()
+
+        thread = Thread(target=create_from_second_transaction)
+        thread.start()
+
+        assert second_started.wait(timeout=2)
+        assert not second_finished.wait(timeout=0.2)
+
+        first_result = first_service.create_installation(
+            property_id=property_id,
+            plate_id=plate_id,
+            installer_id=installer_id,
+            latitude=-1.286389,
+            longitude=36.817223,
+            accuracy_meters=5.0,
+            captured_at=datetime.now(UTC),
+        )
+
+        assert first_result.property_id == property_id
+        assert first_result.plate_id == plate_id
+        assert first_result.status == "submitted"
+
+        first_session.commit()
+
+        assert second_finished.wait(timeout=2)
+        thread.join(timeout=2)
+
+        assert isinstance(second_error.get("error"), ValueError)
+        assert str(second_error["error"]) == (
+            "Property already has a submitted installation"
+        )
+
+        second_session.rollback()
+
+        from app.models.property_installation import PropertyInstallation
+
+        installations = (
+            second_session.query(PropertyInstallation)
+            .filter(PropertyInstallation.property_id == property_id)
+            .all()
+        )
+
+        assert len(installations) == 1
+        assert installations[0].id == first_result.id
+        assert installations[0].status == "submitted"
+
+    finally:
+        if thread is not None:
+            thread.join(timeout=2)
+
+        first_session.rollback()
+        second_session.rollback()
+        first_session.close()
+        second_session.close()
