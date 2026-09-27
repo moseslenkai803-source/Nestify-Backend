@@ -41,7 +41,7 @@ class AddressPlateAllocationService:
                 "Address plate request is not approved"
             )
 
-        property = self.property_repository.get_by_id(
+        property = self.property_repository.get_by_id_for_update(
             request.property_id
         )
 

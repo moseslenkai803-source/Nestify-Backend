@@ -1,7 +1,9 @@
 import uuid
+from threading import Event, Thread
 
 import pytest
 
+from app.db.session import SessionLocal
 from app.models.address_plate import AddressPlate
 from app.models.address_plate_lifecycle_event import (
     AddressPlateLifecycleEvent,
@@ -369,3 +371,123 @@ def test_allocate_plate_uses_only_available_inventory(db_session):
 
     assert active_plate.property_id is None
     assert active_plate.status == "active"
+
+
+def test_allocate_plate_serializes_concurrent_allocations_for_same_property(
+    db_session,
+):
+    user, property = create_landlord_and_property(db_session)
+
+    first_request = AddressPlateRequest(
+        property_id=property.id,
+        requested_by=user.id,
+        status="approved",
+    )
+    second_request = AddressPlateRequest(
+        property_id=property.id,
+        requested_by=user.id,
+        status="approved",
+    )
+    db_session.add_all([first_request, second_request])
+    db_session.flush()
+
+    create_manufactured_plate(
+        db_session,
+        performed_by=user.id,
+    )
+    create_manufactured_plate(
+        db_session,
+        performed_by=user.id,
+    )
+
+    property_id = property.id
+    first_request_id = first_request.id
+    second_request_id = second_request.id
+    user_id = user.id
+
+    db_session.commit()
+
+    first_session = SessionLocal()
+    second_session = SessionLocal()
+
+    second_started = Event()
+    second_finished = Event()
+    second_result = {}
+    second_error = {}
+    thread = None
+
+    try:
+        first_service = AddressPlateAllocationService(first_session)
+
+        locked_property = (
+            first_service.property_repository.get_by_id_for_update(
+                property_id
+            )
+        )
+
+        assert locked_property is not None
+
+        def allocate_from_second_transaction():
+            try:
+                second_service = AddressPlateAllocationService(
+                    second_session
+                )
+                second_started.set()
+
+                result = second_service.allocate_plate(
+                    request_id=second_request_id,
+                    performed_by=user_id,
+                )
+
+                second_result["plate_id"] = result.id
+            except Exception as exc:
+                second_error["error"] = exc
+            finally:
+                second_finished.set()
+
+        thread = Thread(target=allocate_from_second_transaction)
+        thread.start()
+
+        assert second_started.wait(timeout=2)
+        assert not second_finished.wait(timeout=0.2)
+
+        first_result = first_service.allocate_plate(
+            request_id=first_request_id,
+            performed_by=user_id,
+        )
+
+        assert first_result.property_id == property_id
+
+        first_session.commit()
+
+        assert second_finished.wait(timeout=2)
+        thread.join(timeout=2)
+
+        assert "plate_id" not in second_result
+        assert isinstance(
+            second_error.get("error"),
+            ValueError,
+        )
+        assert str(second_error["error"]) == (
+            "Property already has an address plate"
+        )
+
+        second_session.rollback()
+
+        allocated_plates = (
+            second_session.query(AddressPlate)
+            .filter(AddressPlate.property_id == property_id)
+            .all()
+        )
+
+        assert len(allocated_plates) == 1
+        assert allocated_plates[0].id == first_result.id
+
+    finally:
+        if thread is not None:
+            thread.join(timeout=2)
+
+        first_session.rollback()
+        second_session.rollback()
+        first_session.close()
+        second_session.close()
