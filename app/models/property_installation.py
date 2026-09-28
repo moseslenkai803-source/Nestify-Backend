@@ -30,6 +30,13 @@ class PropertyInstallation(Base):
         index=True,
     )
 
+    assignment_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("installation_assignments.id"),
+        nullable=True,
+        index=True,
+    )
+
     installer_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey("users.id"),

@@ -3,11 +3,15 @@ from datetime import UTC, datetime
 from threading import Event, Thread
 
 import pytest
+from sqlalchemy import text
 
 from app.db.session import SessionLocal
 from tests.conftest import cleanup_installation_test_context
 
 from app.models.address_plate import AddressPlate
+from app.models.contractor import Contractor
+from app.models.contractor_member import ContractorMember
+from app.models.installation_assignment import InstallationAssignment
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_address import PropertyAddress
@@ -124,6 +128,103 @@ def create_installation_context(db_session):
     return landlord_user, installer, property_record, plate
 
 
+
+
+
+def test_verify_assignment_linked_installation_completes_assignment(db_session):
+    _, installer, property_record, plate = create_installation_context(db_session)
+
+    contractor = Contractor(
+        id=uuid.uuid4(),
+        name="Verification Assignment Contractor",
+        contractor_type="company",
+        status="active",
+    )
+    contractor_user = User(
+        id=uuid.uuid4(),
+        email=f"contractor-verification-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="contractor",
+        is_active=True,
+    )
+    contractor_member = ContractorMember(
+        id=uuid.uuid4(),
+        contractor_id=contractor.id,
+        user_id=contractor_user.id,
+        is_active=True,
+    )
+    reviewer = User(
+        id=uuid.uuid4(),
+        email=f"reviewer-assignment-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        clearance="installation_verification",
+        is_active=True,
+    )
+
+    db_session.add(contractor)
+    db_session.add(contractor_user)
+    db_session.add(reviewer)
+    db_session.flush()
+
+    db_session.add(contractor_member)
+    db_session.flush()
+
+    assignment = InstallationAssignment(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        contractor_id=contractor.id,
+        contractor_member_id=contractor_member.id,
+        assigned_by=installer.id,
+        status="submitted",
+    )
+    db_session.add(assignment)
+    db_session.flush()
+
+    installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        assignment_id=assignment.id,
+        installer_id=contractor_user.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+        notes="Contractor installation evidence.",
+    )
+    db_session.add(installation)
+    db_session.flush()
+
+    service = PropertyInstallationVerificationService(db_session)
+
+    result = service.verify_installation(
+        property_id=property_record.id,
+        installation_id=installation.id,
+        verified_by=reviewer.id,
+        status="verified",
+        notes="Installation evidence confirmed.",
+    )
+
+    assert result.status == "verified"
+    assert installation.status == "verified"
+
+    fetched_assignment = db_session.get(InstallationAssignment, assignment.id)
+    assert fetched_assignment is not None
+    assert fetched_assignment.status == "completed"
+
+    lifecycle_service = AddressPlateLifecycleService(db_session)
+    history = lifecycle_service.get_history(plate.id)
+
+    assert [event.event_type for event in history] == [
+        "manufactured",
+        "allocated",
+        "dispatched",
+        "installed",
+        "verified",
+    ]
 
 def test_verify_installation_marks_installation_verified(db_session):
     _, _, property_record, plate = create_installation_context(db_session)
@@ -613,3 +714,324 @@ def test_verify_installation_serializes_concurrent_verification_attempts(
             )
         finally:
             cleanup_session.close()
+
+
+
+def test_verify_assignment_linked_installation_rejection_returns_assignment_to_in_progress(db_session):
+    _, installer, property_record, plate = create_installation_context(db_session)
+
+    contractor = Contractor(
+        id=uuid.uuid4(),
+        name="Rejection Assignment Contractor",
+        contractor_type="company",
+        status="active",
+    )
+    contractor_user = User(
+        id=uuid.uuid4(),
+        email=f"contractor-rejection-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="contractor",
+        is_active=True,
+    )
+    contractor_member = ContractorMember(
+        id=uuid.uuid4(),
+        contractor_id=contractor.id,
+        user_id=contractor_user.id,
+        is_active=True,
+    )
+    reviewer = User(
+        id=uuid.uuid4(),
+        email=f"reviewer-rejection-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        clearance="installation_verification",
+        is_active=True,
+    )
+
+    db_session.add(contractor)
+    db_session.add(contractor_user)
+    db_session.add(reviewer)
+    db_session.flush()
+
+    db_session.add(contractor_member)
+    db_session.flush()
+
+    assignment = InstallationAssignment(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        contractor_id=contractor.id,
+        contractor_member_id=contractor_member.id,
+        assigned_by=installer.id,
+        status="submitted",
+    )
+    db_session.add(assignment)
+    db_session.flush()
+
+    installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        assignment_id=assignment.id,
+        installer_id=contractor_user.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+        notes="Contractor installation evidence.",
+    )
+    db_session.add(installation)
+    db_session.flush()
+
+    service = PropertyInstallationVerificationService(db_session)
+
+    result = service.verify_installation(
+        property_id=property_record.id,
+        installation_id=installation.id,
+        verified_by=reviewer.id,
+        status="rejected",
+        notes="Installation evidence requires correction.",
+    )
+
+    assert result.status == "rejected"
+    assert installation.status == "rejected"
+
+    fetched_assignment = db_session.get(InstallationAssignment, assignment.id)
+    assert fetched_assignment is not None
+    assert fetched_assignment.status == "in_progress"
+
+    lifecycle_service = AddressPlateLifecycleService(db_session)
+    history = lifecycle_service.get_history(plate.id)
+
+    assert [event.event_type for event in history] == [
+        "manufactured",
+        "allocated",
+        "dispatched",
+    ]
+
+
+
+def test_verify_cancelled_assignment_linked_installation_is_rejected(db_session):
+    _, installer, property_record, plate = create_installation_context(db_session)
+
+    contractor = Contractor(
+        id=uuid.uuid4(),
+        name="Cancelled Assignment Contractor",
+        contractor_type="company",
+        status="active",
+    )
+    contractor_user = User(
+        id=uuid.uuid4(),
+        email=f"contractor-cancelled-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="contractor",
+        is_active=True,
+    )
+    contractor_member = ContractorMember(
+        id=uuid.uuid4(),
+        contractor_id=contractor.id,
+        user_id=contractor_user.id,
+        is_active=True,
+    )
+    reviewer = User(
+        id=uuid.uuid4(),
+        email=f"reviewer-cancelled-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        clearance="installation_verification",
+        is_active=True,
+    )
+
+    db_session.add(contractor)
+    db_session.add(contractor_user)
+    db_session.add(reviewer)
+    db_session.flush()
+
+    db_session.add(contractor_member)
+    db_session.flush()
+
+    assignment = InstallationAssignment(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        contractor_id=contractor.id,
+        contractor_member_id=contractor_member.id,
+        assigned_by=installer.id,
+        status="cancelled",
+    )
+    db_session.add(assignment)
+    db_session.flush()
+
+    installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        assignment_id=assignment.id,
+        installer_id=contractor_user.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+        notes="Installation evidence from cancelled assignment.",
+    )
+    db_session.add(installation)
+    db_session.flush()
+
+    service = PropertyInstallationVerificationService(db_session)
+
+    with pytest.raises(ValueError, match="Installation assignment is cancelled"):
+        service.verify_installation(
+            property_id=property_record.id,
+            installation_id=installation.id,
+            verified_by=reviewer.id,
+            status="verified",
+        )
+
+    assert installation.status == "submitted"
+
+    fetched_assignment = db_session.get(InstallationAssignment, assignment.id)
+    assert fetched_assignment is not None
+    assert fetched_assignment.status == "cancelled"
+
+
+
+def test_verify_installation_rejects_assignment_property_mismatch(db_session):
+    _, installer, property_record, plate = create_installation_context(db_session)
+
+    second_property = Property(
+        id=uuid.uuid4(),
+        landlord_id=property_record.landlord_id,
+        property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+        name="Assignment Mismatch Property",
+        property_type="residential",
+        status="verified",
+    )
+    second_plate = AddressPlate(
+        id=uuid.uuid4(),
+        plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+        status="unactivated",
+        property_id=second_property.id,
+    )
+    db_session.add(second_property)
+    db_session.flush()
+    db_session.add(second_plate)
+    db_session.flush()
+
+    contractor = Contractor(
+        id=uuid.uuid4(),
+        name="Property Mismatch Contractor",
+        contractor_type="company",
+        status="active",
+    )
+    contractor_user = User(
+        id=uuid.uuid4(),
+        email=f"contractor-property-mismatch-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="contractor",
+        is_active=True,
+    )
+    contractor_member = ContractorMember(
+        id=uuid.uuid4(),
+        contractor_id=contractor.id,
+        user_id=contractor_user.id,
+        is_active=True,
+    )
+    reviewer = User(
+        id=uuid.uuid4(),
+        email=f"reviewer-property-mismatch-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        clearance="installation_verification",
+        is_active=True,
+    )
+
+    db_session.add(contractor)
+    db_session.add(contractor_user)
+    db_session.add(reviewer)
+    db_session.flush()
+
+    db_session.add(contractor_member)
+    db_session.flush()
+
+    assignment = InstallationAssignment(
+        id=uuid.uuid4(),
+        property_id=second_property.id,
+        plate_id=second_plate.id,
+        contractor_id=contractor.id,
+        contractor_member_id=contractor_member.id,
+        assigned_by=installer.id,
+        status="submitted",
+    )
+    db_session.add(assignment)
+    db_session.flush()
+
+    installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        assignment_id=assignment.id,
+        installer_id=contractor_user.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+        notes="Installation evidence with mismatched assignment property.",
+    )
+    db_session.add(installation)
+    db_session.flush()
+
+    service = PropertyInstallationVerificationService(db_session)
+
+    try:
+        with pytest.raises(
+            ValueError,
+            match="Installation assignment does not belong to this property",
+        ):
+            service.verify_installation(
+                property_id=property_record.id,
+                installation_id=installation.id,
+                verified_by=reviewer.id,
+                status="verified",
+            )
+
+        assert installation.status == "submitted"
+
+        fetched_assignment = db_session.get(
+            InstallationAssignment,
+            assignment.id,
+        )
+        assert fetched_assignment is not None
+        assert fetched_assignment.status == "submitted"
+    finally:
+        db_session.execute(
+            text(
+                "DELETE FROM property_installations "
+                "WHERE id = :installation_id"
+            ),
+            {"installation_id": installation.id},
+        )
+        db_session.execute(
+            text(
+                "DELETE FROM installation_assignments "
+                "WHERE id = :assignment_id"
+            ),
+            {"assignment_id": assignment.id},
+        )
+        db_session.execute(
+            text(
+                "DELETE FROM address_plates "
+                "WHERE id = :plate_id"
+            ),
+            {"plate_id": second_plate.id},
+        )
+        db_session.execute(
+            text(
+                "DELETE FROM properties "
+                "WHERE id = :property_id"
+            ),
+            {"property_id": second_property.id},
+        )
+        db_session.flush()

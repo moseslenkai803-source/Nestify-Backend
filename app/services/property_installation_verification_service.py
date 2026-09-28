@@ -9,6 +9,9 @@ from app.models.property_installation_verification import (
 from app.repositories.property_installation_repository import (
     PropertyInstallationRepository,
 )
+from app.repositories.installation_assignment_repository import (
+    InstallationAssignmentRepository,
+)
 from app.repositories.property_installation_verification_repository import (
     PropertyInstallationVerificationRepository,
 )
@@ -27,6 +30,7 @@ class PropertyInstallationVerificationService:
         self.property_installation_verification_repository = (
             PropertyInstallationVerificationRepository(db)
         )
+        self.installation_assignment_repository = InstallationAssignmentRepository(db)
         self.user_repository = UserRepository(db)
         self.lifecycle_service = AddressPlateLifecycleService(db)
 
@@ -43,12 +47,50 @@ class PropertyInstallationVerificationService:
                 "Verification status must be 'verified' or 'rejected'"
             )
 
-        installation = self.property_installation_repository.get_by_id_for_update(
+        installation = self.property_installation_repository.get_by_id(
             installation_id
         )
 
         if installation is None:
             raise ValueError("Installation not found")
+
+        assignment = None
+        if installation.assignment_id is not None:
+            assignment = self.installation_assignment_repository.get_by_id_for_update(
+                installation.assignment_id
+            )
+
+            if assignment is None:
+                raise ValueError("Installation assignment not found")
+
+            installation = self.property_installation_repository.get_by_id_for_update(
+                installation_id
+            )
+
+            if installation is None:
+                raise ValueError("Installation not found")
+
+            if installation.assignment_id != assignment.id:
+                raise ValueError("Installation assignment does not match installation")
+
+            if assignment.property_id != installation.property_id:
+                raise ValueError("Installation assignment does not belong to this property")
+
+            if assignment.plate_id != installation.plate_id:
+                raise ValueError("Installation assignment does not belong to this plate")
+
+            if assignment.status == "cancelled":
+                raise ValueError("Installation assignment is cancelled")
+
+            if assignment.status != "submitted":
+                raise ValueError("Installation assignment is not awaiting verification")
+        else:
+            installation = self.property_installation_repository.get_by_id_for_update(
+                installation_id
+            )
+
+            if installation is None:
+                raise ValueError("Installation not found")
 
         if installation.property_id != property_id:
             raise ValueError("Installation does not belong to this property")
@@ -77,6 +119,12 @@ class PropertyInstallationVerificationService:
         )
 
         installation.status = status
+
+        if assignment is not None:
+            if status == "verified":
+                assignment.status = "completed"
+            else:
+                assignment.status = "in_progress"
 
         if status == "verified":
             self.lifecycle_service.record_event(
