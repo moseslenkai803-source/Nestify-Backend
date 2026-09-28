@@ -17,6 +17,9 @@ from app.models.property_verification import PropertyVerification
 from app.models.building import Building
 from app.models.floor import Floor
 from app.models.space import Space
+from app.models.contractor import Contractor
+from app.models.contractor_member import ContractorMember
+from app.models.installation_assignment import InstallationAssignment
 
 __all__ = [
     "Base",
@@ -38,4 +41,7 @@ __all__ = [
     "Building",
     "Floor",
     "Space",
+    "Contractor",
+    "ContractorMember",
+    "InstallationAssignment",
 ]

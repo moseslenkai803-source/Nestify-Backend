@@ -19,6 +19,7 @@ class PropertyInstallationResponse(BaseModel):
     id: UUID
     property_id: UUID
     plate_id: UUID
+    assignment_id: UUID | None
     installer_id: UUID
     latitude: float
     longitude: float

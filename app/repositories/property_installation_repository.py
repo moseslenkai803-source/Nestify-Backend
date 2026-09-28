@@ -36,6 +36,7 @@ class PropertyInstallationRepository:
             select(PropertyInstallation)
             .where(PropertyInstallation.id == installation_id)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
 
         return self.db.scalar(statement)
@@ -59,3 +60,32 @@ class PropertyInstallationRepository:
             .where(PropertyInstallation.plate_id == plate_id)
             .order_by(PropertyInstallation.created_at.desc(), PropertyInstallation.id.desc())
         )
+
+    def get_by_assignment_id(
+        self,
+        assignment_id: uuid.UUID,
+    ) -> PropertyInstallation | None:
+        return self.db.scalar(
+            select(PropertyInstallation)
+            .where(PropertyInstallation.assignment_id == assignment_id)
+            .order_by(
+                PropertyInstallation.created_at.desc(),
+                PropertyInstallation.id.desc(),
+            )
+        )
+
+    def get_by_assignment_id_for_update(
+        self,
+        assignment_id: uuid.UUID,
+    ) -> PropertyInstallation | None:
+        statement = (
+            select(PropertyInstallation)
+            .where(PropertyInstallation.assignment_id == assignment_id)
+            .order_by(
+                PropertyInstallation.created_at.desc(),
+                PropertyInstallation.id.desc(),
+            )
+            .with_for_update()
+        )
+
+        return self.db.scalar(statement)

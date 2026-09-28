@@ -237,3 +237,19 @@ def test_access_token_for_missing_user_is_rejected():
 
     assert exc_info.value.status_code == 401
     assert exc_info.value.detail == "User not found"
+
+
+def test_employee_with_contractor_management_clearance_is_allowed():
+    user = User(
+        email="contractor-manager@example.com",
+        password_hash="test-hash",
+        role="employee",
+        clearance="contractor_management",
+        is_active=True,
+    )
+
+    dependency = require_employee_clearance("contractor_management")
+
+    result = dependency(user)
+
+    assert result is user
