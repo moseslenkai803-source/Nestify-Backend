@@ -587,3 +587,60 @@ def test_create_space_api_returns_404_for_wrong_parent_floor(
 
     finally:
         app.dependency_overrides.clear()
+
+
+def test_create_space_api_rejects_duplicate_space_number_within_floor(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        user = create_user(db_session)
+        landlord = create_landlord(db_session, user)
+        property_record = create_property(db_session, landlord)
+        building = create_building(db_session, property_record)
+        floor = create_floor(db_session, building)
+
+        access_token = create_access_token(
+            subject=str(user.id),
+        )
+
+        first_response = client.post(
+            f"/api/v1/properties/{property_record.id}/buildings/{building.id}/floors/{floor.id}/spaces",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+            json={
+                "space_number": "A-101",
+                "name": "First Space",
+                "space_type": "apartment",
+            },
+        )
+
+        assert first_response.status_code == 201
+
+        duplicate_response = client.post(
+            f"/api/v1/properties/{property_record.id}/buildings/{building.id}/floors/{floor.id}/spaces",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+            json={
+                "space_number": "A-101",
+                "name": "Duplicate Space",
+                "space_type": "apartment",
+            },
+        )
+
+        assert duplicate_response.status_code == 400
+        assert (
+            duplicate_response.json()["detail"]
+            == "Space number already exists for this floor"
+        )
+
+    finally:
+        app.dependency_overrides.clear()

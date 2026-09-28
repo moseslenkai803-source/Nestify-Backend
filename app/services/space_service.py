@@ -52,6 +52,16 @@ class SpaceService:
             action=PropertyAction.PROPERTY_MANAGEMENT,
         )
 
+        existing_space = self.space_repository.get_by_floor_and_number(
+            floor_id=floor_id,
+            space_number=space_number,
+        )
+
+        if existing_space is not None:
+            raise ValueError(
+                "Space number already exists for this floor"
+            )
+
         space = Space(
             floor_id=floor_id,
             space_number=space_number,

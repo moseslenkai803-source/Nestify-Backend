@@ -530,42 +530,37 @@ def test_list_spaces_rejects_floor_from_wrong_building(
         )
 
 
-def test_duplicate_space_number_within_floor_is_rejected(db_session):
-    from sqlalchemy.exc import IntegrityError
-
+def test_create_space_rejects_duplicate_space_number_within_floor(
+    db_session,
+):
     user = create_user(db_session)
     landlord = create_landlord(db_session, user)
     property_record = create_property(db_session, landlord)
     building = create_building(db_session, property_record)
     floor = create_floor(db_session, building)
 
-    first_space = Space(
+    service = SpaceService(db_session)
+
+    service.create_space(
+        user=user,
+        property_id=property_record.id,
+        building_id=building.id,
         floor_id=floor.id,
         space_number="A-101",
         name="First Space",
         space_type="apartment",
-        status="draft",
     )
 
-    db_session.add(first_space)
-    db_session.flush()
-
-    duplicate_space = Space(
-        floor_id=floor.id,
-        space_number="A-101",
-        name="Duplicate Space",
-        space_type="apartment",
-        status="draft",
-    )
-
-    db_session.add(duplicate_space)
-
-    try:
-        db_session.flush()
-    except IntegrityError:
-        db_session.rollback()
-    else:
-        raise AssertionError(
-            "Duplicate space number should violate the floor-scoped "
-            "unique constraint"
+    with pytest.raises(
+        ValueError,
+        match="Space number already exists for this floor",
+    ):
+        service.create_space(
+            user=user,
+            property_id=property_record.id,
+            building_id=building.id,
+            floor_id=floor.id,
+            space_number="A-101",
+            name="Duplicate Space",
+            space_type="apartment",
         )
