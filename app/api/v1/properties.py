@@ -455,7 +455,7 @@ def create_address_plate_request(
         authorization_service.authorize(
             user=current_user,
             property_id=property_id,
-            action=PropertyAction.PLATE_OPERATIONS,
+            action=PropertyAction.PLATE_REQUEST,
         )
 
         return service.create_request(

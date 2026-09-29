@@ -138,6 +138,36 @@ def test_user_with_active_property_access_can_authorize_property(
     assert authorized_property.id == property.id
 
 
+def test_user_with_plate_request_access_can_authorize_plate_request(
+    db_session,
+):
+    owner = create_user(db_session)
+    landlord = create_landlord(db_session, owner)
+    property = create_property(db_session, landlord)
+
+    employee = create_user(
+        db_session,
+        role="employee",
+    )
+
+    grant_property_access(
+        db_session,
+        employee,
+        property,
+        action=PropertyAction.PLATE_REQUEST,
+    )
+
+    service = PropertyAuthorizationService(db_session)
+
+    authorized_property = service.authorize(
+        user=employee,
+        property_id=property.id,
+        action=PropertyAction.PLATE_REQUEST,
+    )
+
+    assert authorized_property.id == property.id
+
+
 def test_user_without_property_access_cannot_authorize_property(
     db_session,
 ):

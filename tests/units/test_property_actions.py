@@ -7,6 +7,7 @@ def test_property_actions_define_supported_actions():
         for action in PropertyAction
     } == {
         "property_management",
+        "plate_request",
         "plate_operations",
         "property_verification",
         "installation_verification",
@@ -15,6 +16,7 @@ def test_property_actions_define_supported_actions():
 
 def test_property_action_values_match_existing_access_types():
     assert PropertyAction.PROPERTY_MANAGEMENT.value == "property_management"
+    assert PropertyAction.PLATE_REQUEST.value == "plate_request"
     assert PropertyAction.PLATE_OPERATIONS.value == "plate_operations"
     assert (
         PropertyAction.PROPERTY_VERIFICATION.value
