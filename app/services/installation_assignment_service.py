@@ -175,6 +175,9 @@ class InstallationAssignmentService:
         if not contractor_member_user.is_active:
             raise ValueError("Contractor member user is inactive")
 
+        if contractor_member_user.role != "contractor":
+            raise ValueError("Contractor member user must be a contractor")
+
         assignment.status = "in_progress"
         self.db.flush()
 
@@ -267,6 +270,9 @@ class InstallationAssignmentService:
 
         if not contractor_member_user.is_active:
             raise ValueError("Contractor member user is inactive")
+
+        if contractor_member_user.role != "contractor":
+            raise ValueError("Contractor member user must be a contractor")
 
         if not -90 <= latitude <= 90:
             raise ValueError("Latitude must be between -90 and 90")

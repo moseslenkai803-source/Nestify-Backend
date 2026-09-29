@@ -1580,6 +1580,249 @@ def test_start_installation_assignment_api_rejects_wrong_contractor_user(
         app.dependency_overrides.clear()
 
 
+def test_start_installation_assignment_api_rejects_user_whose_role_is_no_longer_contractor(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        owner_user = User(
+            email=f"assignment-api-role-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+            is_active=True,
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Role Change Owner",
+            phone="+254700000021",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Role Change Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        employee = User(
+            email=f"assignment-api-role-employee-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        contractor = Contractor(
+            name="Role Change Contractor",
+            contractor_type="company",
+            status="active",
+        )
+        db_session.add(contractor)
+        db_session.flush()
+
+        contractor_user = User(
+            email=f"assignment-api-role-contractor-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="contractor",
+            is_active=True,
+        )
+        db_session.add(contractor_user)
+        db_session.flush()
+
+        contractor_member = ContractorMember(
+            contractor_id=contractor.id,
+            user_id=contractor_user.id,
+            is_active=True,
+        )
+        db_session.add(contractor_member)
+        db_session.flush()
+
+        plate = AddressPlate(
+            plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+            property_id=property.id,
+            status="unactivated",
+        )
+        db_session.add(plate)
+        db_session.flush()
+
+        assignment = InstallationAssignment(
+            property_id=property.id,
+            plate_id=plate.id,
+            contractor_id=contractor.id,
+            contractor_member_id=contractor_member.id,
+            assigned_by=employee.id,
+            status="assigned",
+        )
+        db_session.add(assignment)
+        db_session.flush()
+
+        contractor_user.role = "landlord"
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(contractor_user.id),
+        )
+
+        response = client.post(
+            f"/api/v1/installation-assignments/{assignment.id}/start",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Contractor member user must be a contractor"
+
+        db_session.refresh(assignment)
+        assert assignment.status == "assigned"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_submit_installation_assignment_api_rejects_user_whose_role_is_no_longer_contractor(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        owner_user = User(
+            email=f"assignment-api-submit-role-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+            is_active=True,
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Submit Role Change Owner",
+            phone="+254700000031",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Submit Role Change Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        employee = User(
+            email=f"assignment-api-submit-role-employee-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        contractor = Contractor(
+            name="Submit Role Change Contractor",
+            contractor_type="company",
+            status="active",
+        )
+        db_session.add(contractor)
+        db_session.flush()
+
+        contractor_user = User(
+            email=f"assignment-api-submit-role-contractor-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="contractor",
+            is_active=True,
+        )
+        db_session.add(contractor_user)
+        db_session.flush()
+
+        contractor_member = ContractorMember(
+            contractor_id=contractor.id,
+            user_id=contractor_user.id,
+            is_active=True,
+        )
+        db_session.add(contractor_member)
+        db_session.flush()
+
+        plate = AddressPlate(
+            plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+            property_id=property.id,
+            status="unactivated",
+        )
+        db_session.add(plate)
+        db_session.flush()
+
+        assignment = InstallationAssignment(
+            property_id=property.id,
+            plate_id=plate.id,
+            contractor_id=contractor.id,
+            contractor_member_id=contractor_member.id,
+            assigned_by=employee.id,
+            status="in_progress",
+        )
+        db_session.add(assignment)
+        db_session.flush()
+
+        contractor_user.role = "landlord"
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(contractor_user.id),
+        )
+
+        captured_at = datetime(2026, 9, 28, 18, 0, tzinfo=UTC)
+
+        response = client.post(
+            f"/api/v1/installation-assignments/{assignment.id}/submit",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+            json={
+                "latitude": -1.2921,
+                "longitude": 36.8219,
+                "accuracy_meters": 4.5,
+                "captured_at": captured_at.isoformat(),
+                "notes": "Plate installed and GPS evidence captured.",
+            },
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Contractor member user must be a contractor"
+
+        db_session.refresh(assignment)
+        assert assignment.status == "in_progress"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_submit_installation_assignment_api(db_session):
     def override_get_db():
         yield db_session

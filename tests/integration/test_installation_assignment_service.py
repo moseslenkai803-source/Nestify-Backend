@@ -715,6 +715,46 @@ def test_submit_assignment_rejects_wrong_contractor_user(db_session):
     assert fetched_assignment is not None
     assert fetched_assignment.status == "in_progress"
 
+def test_submit_assignment_rejects_user_whose_role_is_no_longer_contractor(db_session):
+    context = create_assignment_context(db_session)
+
+    service = InstallationAssignmentService(db_session)
+
+    assignment = service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+
+    service.start_assignment(
+        assignment_id=assignment.id,
+        contractor_user_id=context["contractor_user"].id,
+    )
+
+    context["contractor_user"].role = "landlord"
+    db_session.flush()
+
+    with pytest.raises(
+        ValueError,
+        match="Contractor member user must be a contractor",
+    ):
+        service.submit_assignment(
+            assignment_id=assignment.id,
+            contractor_user_id=context["contractor_user"].id,
+            latitude=-1.2921,
+            longitude=36.8219,
+            accuracy_meters=4.5,
+            captured_at=datetime(2026, 9, 28, 18, 0, tzinfo=UTC),
+        )
+
+    fetched_assignment = db_session.get(InstallationAssignment, assignment.id)
+
+    assert fetched_assignment is not None
+    assert fetched_assignment.status == "in_progress"
+
+
 def test_submit_assignment_creates_installation_and_moves_to_submitted(db_session):
     context = create_assignment_context(db_session)
 
@@ -868,6 +908,32 @@ def test_start_assignment_rejects_inactive_contractor_member(db_session):
     with pytest.raises(
         ValueError,
         match="Contractor member is inactive",
+    ):
+        service.start_assignment(
+            assignment_id=assignment.id,
+            contractor_user_id=context["contractor_user"].id,
+        )
+
+
+def test_start_assignment_rejects_user_whose_role_is_no_longer_contractor(db_session):
+    context = create_assignment_context(db_session)
+
+    service = InstallationAssignmentService(db_session)
+
+    assignment = service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+
+    context["contractor_user"].role = "landlord"
+    db_session.flush()
+
+    with pytest.raises(
+        ValueError,
+        match="Contractor member user must be a contractor",
     ):
         service.start_assignment(
             assignment_id=assignment.id,

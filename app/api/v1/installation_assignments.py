@@ -142,6 +142,7 @@ def start_installation_assignment(
                 "Contractor user is not assigned to this installation",
                 "Contractor member is inactive",
                 "Contractor member user is inactive",
+                "Contractor member user must be a contractor",
             }
             else 400
         )
@@ -188,6 +189,7 @@ def submit_installation_assignment(
                 "Contractor user is not assigned to this installation",
                 "Contractor member is inactive",
                 "Contractor member user is inactive",
+                "Contractor member user must be a contractor",
             }
             else 400
         )
