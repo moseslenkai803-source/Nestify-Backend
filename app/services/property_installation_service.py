@@ -4,6 +4,9 @@ from datetime import UTC, datetime
 from sqlalchemy.orm import Session
 
 from app.models.property_installation import PropertyInstallation
+from app.services.address_plate_lifecycle_service import (
+    AddressPlateLifecycleService,
+)
 from app.repositories.address_plate_repository import AddressPlateRepository
 from app.repositories.property_installation_repository import (
     PropertyInstallationRepository,
@@ -17,6 +20,7 @@ class PropertyInstallationService:
         self.db = db
         self.property_repository = PropertyRepository(db)
         self.address_plate_repository = AddressPlateRepository(db)
+        self.lifecycle_service = AddressPlateLifecycleService(db)
         self.user_repository = UserRepository(db)
         self.property_installation_repository = PropertyInstallationRepository(db)
 
@@ -35,7 +39,7 @@ class PropertyInstallationService:
         if property is None:
             raise ValueError("Property not found")
 
-        plate = self.address_plate_repository.get_by_id(plate_id)
+        plate = self.address_plate_repository.get_by_id_for_update(plate_id)
         if plate is None:
             raise ValueError("Address plate not found")
 
@@ -48,6 +52,13 @@ class PropertyInstallationService:
 
         if plate.property_id != property_id:
             raise ValueError("Address plate is not linked to this property")
+
+        latest_event = self.lifecycle_service.get_latest_event(plate_id)
+
+        if latest_event is None or latest_event.event_type != "dispatched":
+            raise ValueError(
+                "Address plate must be dispatched before installation"
+            )
 
         if not -90 <= latitude <= 90:
             raise ValueError("Latitude must be between -90 and 90")

@@ -21,7 +21,7 @@ from app.services.property_installation_service import (
 )
 
 
-def create_installation_context(db_session):
+def create_installation_context(db_session, lifecycle_stage="dispatched"):
     landlord_user = User(
         id=uuid.uuid4(),
         email=f"landlord-{uuid.uuid4()}@example.com",
@@ -114,11 +114,17 @@ def create_installation_context(db_session):
         performed_by=installer.id,
     )
 
-    lifecycle_service.record_event(
-        plate_id=plate.id,
-        event_type="dispatched",
-        performed_by=installer.id,
-    )
+    if lifecycle_stage == "dispatched":
+        lifecycle_service.record_event(
+            plate_id=plate.id,
+            event_type="dispatched",
+            performed_by=installer.id,
+        )
+    elif lifecycle_stage != "allocated":
+        raise ValueError(
+            f"Unsupported installation fixture lifecycle stage: "
+            f"{lifecycle_stage}"
+        )
 
     return landlord_user, installer, property_record, plate
 
@@ -162,6 +168,31 @@ def test_create_installation_creates_submitted_record(db_session):
     assert latest_event is not None
     assert latest_event.event_type == "dispatched"
     assert latest_event.performed_by == installer.id
+
+
+def test_create_installation_rejects_plate_not_yet_dispatched(
+    db_session,
+):
+    _, installer, property_record, plate = create_installation_context(
+        db_session,
+        lifecycle_stage="allocated",
+    )
+
+    service = PropertyInstallationService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Address plate must be dispatched before installation",
+    ):
+        service.create_installation(
+            property_id=property_record.id,
+            plate_id=plate.id,
+            installer_id=installer.id,
+            latitude=-1.286389,
+            longitude=36.817223,
+            accuracy_meters=5.0,
+            captured_at=datetime.now(UTC),
+        )
 
 
 def test_create_installation_requires_existing_property(db_session):
