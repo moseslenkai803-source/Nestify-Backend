@@ -11,6 +11,7 @@ from app.models.address_plate import AddressPlate
 from app.models.address_plate_lifecycle_event import AddressPlateLifecycleEvent
 from app.models.landlord import Landlord
 from app.models.property import Property
+from app.models.property_access import PropertyAccess
 from app.models.property_installation import PropertyInstallation
 from app.models.property_installation_verification import (
     PropertyInstallationVerification,
@@ -512,11 +513,15 @@ def test_verify_property_installation_api_denies_non_employee(db_session: Sessio
         db_session.add(reviewer)
         db_session.flush()
 
-        PropertyAccessService(db_session).grant_access(
-            user_id=reviewer.id,
-            property_id=property.id,
-            access_type="installation_verification",
+        db_session.add(
+            PropertyAccess(
+                user_id=reviewer.id,
+                property_id=property.id,
+                access_type="installation_verification",
+                is_active=True,
+            )
         )
+        db_session.flush()
 
         plate = AddressPlate(
             plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",

@@ -280,3 +280,90 @@ def test_revoke_access_rejects_missing_access(db_session):
             property_id=property.id,
             access_type="plate_operations",
         )
+
+
+def test_grant_access_rejects_invalid_access_type(db_session):
+    employee = create_user(db_session)
+    property = create_property(db_session)
+
+    service = PropertyAccessService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Invalid property access type",
+    ):
+        service.grant_access(
+            user_id=employee.id,
+            property_id=property.id,
+            access_type="invalid_access",
+        )
+
+
+def test_grant_access_rejects_missing_user(db_session):
+    property = create_property(db_session)
+
+    service = PropertyAccessService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Employee not found",
+    ):
+        service.grant_access(
+            user_id=uuid.uuid4(),
+            property_id=property.id,
+            access_type="plate_operations",
+        )
+
+
+def test_grant_access_rejects_inactive_user(db_session):
+    employee = create_user(db_session)
+    employee.is_active = False
+    property = create_property(db_session)
+
+    service = PropertyAccessService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Employee is inactive",
+    ):
+        service.grant_access(
+            user_id=employee.id,
+            property_id=property.id,
+            access_type="plate_operations",
+        )
+
+
+def test_grant_access_rejects_non_employee_user(db_session):
+    landlord = create_user(
+        db_session,
+        role="landlord",
+    )
+    property = create_property(db_session)
+
+    service = PropertyAccessService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="User must be an employee",
+    ):
+        service.grant_access(
+            user_id=landlord.id,
+            property_id=property.id,
+            access_type="plate_operations",
+        )
+
+
+def test_grant_access_rejects_missing_property(db_session):
+    employee = create_user(db_session)
+
+    service = PropertyAccessService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Property not found",
+    ):
+        service.grant_access(
+            user_id=employee.id,
+            property_id=uuid.uuid4(),
+            access_type="plate_operations",
+        )

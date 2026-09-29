@@ -3,6 +3,8 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.models.property_access import PropertyAccess
+from app.core.property_actions import PropertyAction
+from app.repositories.user_repository import UserRepository
 from app.repositories.property_access_repository import (
     PropertyAccessRepository,
 )
@@ -13,6 +15,7 @@ class PropertyAccessService:
     def __init__(self, db: Session):
         self.property_access_repository = PropertyAccessRepository(db)
         self.property_repository = PropertyRepository(db)
+        self.user_repository = UserRepository(db)
 
     def grant_access(
         self,
@@ -22,6 +25,24 @@ class PropertyAccessService:
     ) -> PropertyAccess:
         if not access_type.strip():
             raise ValueError("Access type is required")
+
+        valid_access_types = {action.value for action in PropertyAction}
+        if access_type not in valid_access_types:
+            raise ValueError("Invalid property access type")
+
+        user = self.user_repository.get_by_id(user_id)
+        if user is None:
+            raise ValueError("Employee not found")
+
+        if not user.is_active:
+            raise ValueError("Employee is inactive")
+
+        if user.role != "employee":
+            raise ValueError("User must be an employee")
+
+        property = self.property_repository.get_by_id(property_id)
+        if property is None:
+            raise ValueError("Property not found")
 
         existing_access = (
             self.property_access_repository
