@@ -93,6 +93,12 @@ def get_current_landlord(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Landlord:
+    if current_user.role != "landlord":
+        raise HTTPException(
+            status_code=403,
+            detail="Landlord access required",
+        )
+
     landlord_repository = LandlordRepository(db)
 
     landlord = landlord_repository.get_by_user_id(

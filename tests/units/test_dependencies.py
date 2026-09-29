@@ -126,12 +126,39 @@ def test_current_landlord_returns_landlord_profile():
     )
 
 
-def test_current_landlord_rejects_user_without_landlord_profile():
+def test_current_landlord_rejects_non_landlord_even_with_profile():
     user = User(
         id=uuid.uuid4(),
         email="customer@example.com",
         password_hash="test-hash",
         role="customer",
+        is_active=True,
+    )
+
+    landlord = object()
+    db = __import__("unittest").mock.Mock()
+
+    with __import__("unittest").mock.patch(
+        "app.api.dependencies.LandlordRepository",
+    ) as repository_class:
+        repository_class.return_value.get_by_user_id.return_value = landlord
+
+        with pytest.raises(HTTPException) as exc_info:
+            get_current_landlord(
+                current_user=user,
+                db=db,
+            )
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Landlord access required"
+
+
+def test_current_landlord_rejects_user_without_landlord_profile():
+    user = User(
+        id=uuid.uuid4(),
+        email="landlord@example.com",
+        password_hash="test-hash",
+        role="landlord",
         is_active=True,
     )
 
