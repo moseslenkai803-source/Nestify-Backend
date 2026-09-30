@@ -20,6 +20,7 @@ from app.models.space import Space
 from app.models.contractor import Contractor
 from app.models.contractor_member import ContractorMember
 from app.models.installation_assignment import InstallationAssignment
+from app.models.listing import Listing
 
 __all__ = [
     "Base",
@@ -44,4 +45,5 @@ __all__ = [
     "Contractor",
     "ContractorMember",
     "InstallationAssignment",
+    "Listing",
 ]
