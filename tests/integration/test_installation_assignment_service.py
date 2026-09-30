@@ -1,8 +1,10 @@
 import uuid
 from datetime import UTC, datetime
+from threading import Event, Thread
 
 import pytest
 
+from app.db.session import SessionLocal
 from app.models.address_plate import AddressPlate
 from app.models.contractor import Contractor
 from app.models.contractor_member import ContractorMember
@@ -391,6 +393,106 @@ def test_create_assignment_requires_employee_assigner(db_session):
             contractor_member_id=context["contractor_member"].id,
             assigned_by=context["assigning_employee"].id,
         )
+
+
+def test_create_assignment_serializes_concurrent_assignments_for_same_property(
+    db_session,
+):
+    context = create_assignment_context(db_session)
+
+    db_session.commit()
+
+    first_session = SessionLocal()
+    second_session = SessionLocal()
+
+    second_started = Event()
+    second_finished = Event()
+    second_error = {}
+
+    try:
+        first_service = InstallationAssignmentService(first_session)
+
+        locked_property = (
+            first_service.property_repository.get_by_id_for_update(
+                context["property"].id
+            )
+        )
+
+        assert locked_property is not None
+
+        def create_from_second_transaction():
+            try:
+                second_service = InstallationAssignmentService(second_session)
+
+                second_started.set()
+
+                second_service.create_assignment(
+                    property_id=context["property"].id,
+                    plate_id=context["plate"].id,
+                    contractor_id=context["contractor"].id,
+                    contractor_member_id=context["contractor_member"].id,
+                    assigned_by=context["assigning_employee"].id,
+                )
+            except Exception as exc:
+                second_error["error"] = exc
+            finally:
+                second_finished.set()
+
+        thread = Thread(target=create_from_second_transaction)
+        thread.start()
+
+        assert second_started.wait(timeout=2)
+        assert not second_finished.wait(timeout=0.5)
+
+        first_assignment = first_service.create_assignment(
+            property_id=context["property"].id,
+            plate_id=context["plate"].id,
+            contractor_id=context["contractor"].id,
+            contractor_member_id=context["contractor_member"].id,
+            assigned_by=context["assigning_employee"].id,
+        )
+
+        first_session.commit()
+
+        assert first_assignment.status == "assigned"
+
+        assert second_finished.wait(timeout=5)
+        thread.join(timeout=2)
+
+        assert len(second_error) == 1
+        assert isinstance(second_error["error"], ValueError)
+        assert str(second_error["error"]) == (
+            "Property already has an active installation assignment"
+        )
+
+        second_session.rollback()
+
+        verification_session = SessionLocal()
+        try:
+            assignments = (
+                verification_session.query(InstallationAssignment)
+                .filter(
+                    InstallationAssignment.property_id
+                    == context["property"].id
+                )
+                .all()
+            )
+
+            assert len(assignments) == 1
+            assert assignments[0].status == "assigned"
+            assert assignments[0].id == first_assignment.id
+        finally:
+            verification_session.rollback()
+            verification_session.close()
+
+    finally:
+        if not second_started.is_set():
+            second_started.set()
+
+        first_session.rollback()
+        second_session.rollback()
+        first_session.close()
+        second_session.close()
 
 
 def test_create_assignment_rejects_existing_active_property_assignment(
