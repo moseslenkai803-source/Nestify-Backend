@@ -97,6 +97,25 @@ class ContractorService:
             contractor_member
         )
 
+    def deactivate_contractor(
+        self,
+        contractor_id: UUID,
+    ) -> Contractor:
+        contractor = self.contractor_repository.get_by_id_for_update(
+            contractor_id
+        )
+
+        if contractor is None:
+            raise ValueError("Contractor not found")
+
+        if contractor.status == "inactive":
+            raise ValueError("Contractor is already inactive")
+
+        contractor.status = "inactive"
+        self.db.flush()
+
+        return contractor
+
     def get_contractor(
         self,
         contractor_id: UUID,

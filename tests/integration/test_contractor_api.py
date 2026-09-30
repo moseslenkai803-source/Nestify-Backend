@@ -440,3 +440,107 @@ def test_deactivate_contractor_member_api(db_session):
 
     finally:
         app.dependency_overrides.clear()
+
+
+def test_deactivate_contractor_api(db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        _, access_token = create_employee_access_token(
+            db_session
+        )
+
+        contractor = Contractor(
+            name="Installation Partner",
+            contractor_type="company",
+            status="active",
+        )
+
+        db_session.add(contractor)
+        db_session.flush()
+
+        response = client.post(
+            f"/api/v1/contractors/{contractor.id}/deactivate",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert data["id"] == str(contractor.id)
+        assert data["status"] == "inactive"
+
+        db_session.refresh(contractor)
+
+        assert contractor.status == "inactive"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_deactivate_contractor_api_returns_404_for_missing_contractor(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        _, access_token = create_employee_access_token(
+            db_session
+        )
+
+        response = client.post(
+            f"/api/v1/contractors/{uuid.uuid4()}/deactivate",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Contractor not found"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_deactivate_contractor_api_rejects_already_inactive_contractor(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        _, access_token = create_employee_access_token(
+            db_session
+        )
+
+        contractor = Contractor(
+            name="Inactive Contractor",
+            contractor_type="company",
+            status="inactive",
+        )
+
+        db_session.add(contractor)
+        db_session.flush()
+
+        response = client.post(
+            f"/api/v1/contractors/{contractor.id}/deactivate",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == (
+            "Contractor is already inactive"
+        )
+
+    finally:
+        app.dependency_overrides.clear()

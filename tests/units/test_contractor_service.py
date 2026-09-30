@@ -345,3 +345,45 @@ def test_deactivate_member_rejects_already_inactive_membership(db_session):
             contractor_id=contractor.id,
             user_id=user.id,
         )
+
+
+def test_deactivate_contractor_sets_inactive_status(db_session):
+    contractor = create_contractor(db_session)
+
+    service = ContractorService(db_session)
+
+    result = service.deactivate_contractor(contractor.id)
+
+    assert result.id == contractor.id
+    assert result.status == "inactive"
+
+    db_session.refresh(contractor)
+
+    assert contractor.status == "inactive"
+
+
+def test_deactivate_contractor_rejects_missing_contractor(db_session):
+    service = ContractorService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Contractor not found",
+    ):
+        service.deactivate_contractor(uuid.uuid4())
+
+
+def test_deactivate_contractor_rejects_already_inactive_contractor(
+    db_session,
+):
+    contractor = create_contractor(
+        db_session,
+        status="inactive",
+    )
+
+    service = ContractorService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Contractor is already inactive",
+    ):
+        service.deactivate_contractor(contractor.id)
