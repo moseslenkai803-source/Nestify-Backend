@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, UTC
 
-from sqlalchemy import DateTime, String, Uuid
+from sqlalchemy import CheckConstraint, DateTime, String, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -9,6 +9,13 @@ from app.models.base import Base
 
 class Contractor(Base):
     __tablename__ = "contractors"
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'inactive')",
+            name="ck_contractors_status",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
