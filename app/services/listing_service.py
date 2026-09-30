@@ -58,6 +58,7 @@ class ListingService:
         self,
         user: User,
         property_id: uuid.UUID,
+        building_id: uuid.UUID,
         floor_id: uuid.UUID,
         transaction_type: str,
         title: str,
@@ -74,6 +75,9 @@ class ListingService:
 
         if building is None:
             raise ValueError("Building not found")
+
+        if building.id != building_id:
+            raise ValueError("Floor not found")
 
         if building.property_id != property_id:
             raise ValueError("Floor not found")

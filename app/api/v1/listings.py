@@ -79,6 +79,7 @@ def create_floor_listing(
         listing = service.create_floor_listing(
             user=current_user,
             property_id=property_id,
+            building_id=building_id,
             floor_id=floor_id,
             transaction_type=listing_data.transaction_type,
             title=listing_data.title,

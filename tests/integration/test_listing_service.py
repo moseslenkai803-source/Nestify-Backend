@@ -165,6 +165,7 @@ def test_create_floor_listing_creates_draft(db_session):
     listing = service.create_floor_listing(
         user=user,
         property_id=property_record.id,
+        building_id=building.id,
         floor_id=floor.id,
         transaction_type="sale",
         title="First Floor for Sale",
@@ -269,9 +270,44 @@ def test_create_floor_listing_rejects_floor_from_wrong_property(
         service.create_floor_listing(
             user=user,
             property_id=property_two.id,
+            building_id=building.id,
             floor_id=floor.id,
             transaction_type="rent",
             title="Wrong Property Floor",
+        )
+
+
+
+def test_create_floor_listing_rejects_floor_from_wrong_building(
+    db_session,
+):
+    user = create_user(db_session)
+    landlord = create_landlord(db_session, user)
+    property_record = create_property(db_session, landlord)
+
+    building_one = create_building(
+        db_session,
+        property_record,
+        building_number="1",
+    )
+    building_two = create_building(
+        db_session,
+        property_record,
+        building_number="2",
+    )
+
+    floor = create_floor(db_session, building_one)
+
+    service = ListingService(db_session)
+
+    with pytest.raises(ValueError, match="Floor not found"):
+        service.create_floor_listing(
+            user=user,
+            property_id=property_record.id,
+            building_id=building_two.id,
+            floor_id=floor.id,
+            transaction_type="rent",
+            title="Wrong Building Floor",
         )
 
 
@@ -383,6 +419,7 @@ def test_publish_floor_listing_resolves_owning_property(
     listing = service.create_floor_listing(
         user=user,
         property_id=property_record.id,
+        building_id=building.id,
         floor_id=floor.id,
         transaction_type="rent",
         title="Active Floor",
