@@ -1,6 +1,4 @@
 import uuid
-from datetime import UTC, datetime
-
 from sqlalchemy.orm import Session
 
 from app.models.address_plate import AddressPlate
@@ -71,24 +69,8 @@ class PropertyActivationService:
                 "Plate is not allocated to this property"
             )
 
-        if plate.status == "active":
-            raise ValueError("Plate is already active")
-
-        latest_event = self.lifecycle_service.get_latest_event(
-            plate.id
-        )
-
-        if latest_event is None or latest_event.event_type != "verified":
-            raise ValueError(
-                "Only verified plates can be activated"
-            )
-
-        plate.status = "active"
-        plate.activated_at = datetime.now(UTC)
-
-        self.lifecycle_service.record_event(
+        plate = self.lifecycle_service.activate_plate(
             plate_id=plate.id,
-            event_type="activated",
             performed_by=activated_by,
         )
 
