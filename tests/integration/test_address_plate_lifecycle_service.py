@@ -159,7 +159,6 @@ def test_record_event_allows_complete_lifecycle(db_session):
         "dispatched",
         "installed",
         "verified",
-        "activated",
     ]
 
     results = []
@@ -174,7 +173,19 @@ def test_record_event_allows_complete_lifecycle(db_session):
             )
         )
 
-    assert [event.event_type for event in results] == lifecycle
+    activated = service.activate_plate(
+        plate_id=plate.id,
+        performed_by=employee.id,
+    )
+
+    results.append(service.get_latest_event(plate.id))
+
+    assert [event.event_type for event in results] == [
+        *lifecycle,
+        "activated",
+    ]
+    assert activated.status == "active"
+    assert activated.activated_at is not None
 
 
 @pytest.mark.parametrize(
@@ -185,15 +196,6 @@ def test_record_event_allows_complete_lifecycle(db_session):
         (
             ["manufactured", "allocated", "dispatched"],
             "verified",
-        ),
-        (
-            [
-                "manufactured",
-                "allocated",
-                "dispatched",
-                "installed",
-            ],
-            "activated",
         ),
         (
             [
@@ -235,6 +237,57 @@ def test_record_event_rejects_invalid_transitions(
             employee.id,
             invalid_next_event,
         )
+
+
+def test_record_event_rejects_direct_activation(db_session):
+    employee = create_employee(db_session)
+    plate = create_plate(db_session)
+
+    service = AddressPlateLifecycleService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Plate activation must use activate_plate",
+    ):
+        service.record_event(
+            plate_id=plate.id,
+            event_type="activated",
+            performed_by=employee.id,
+        )
+
+
+def test_activate_plate_requires_verified_lifecycle_state(db_session):
+    employee = create_employee(db_session)
+    plate = create_plate(db_session)
+
+    service = AddressPlateLifecycleService(db_session)
+
+    for event_type in [
+        "manufactured",
+        "allocated",
+        "dispatched",
+        "installed",
+    ]:
+        record_event(
+            service,
+            plate.id,
+            employee.id,
+            event_type,
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="Only verified plates can be activated",
+    ):
+        service.activate_plate(
+            plate_id=plate.id,
+            performed_by=employee.id,
+        )
+
+    db_session.refresh(plate)
+
+    assert plate.status == "unactivated"
+    assert plate.activated_at is None
 
 
 def test_record_event_rejects_non_manufactured_first_event(db_session):
