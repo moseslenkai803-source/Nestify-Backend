@@ -1,6 +1,5 @@
 import uuid
 
-from geoalchemy2.elements import WKTElement
 from sqlalchemy.orm import Session
 
 from app.models.property import Property
@@ -50,8 +49,6 @@ class PropertyAddressService:
         county: str | None = None,
         sub_county: str | None = None,
         locality: str | None = None,
-        latitude: float | None = None,
-        longitude: float | None = None,
     ) -> PropertyAddress:
         property = self.property_repository.get_by_id_for_update(property_id)
 
@@ -67,23 +64,12 @@ class PropertyAddressService:
                 "Property already has an address"
             )
 
-        location = None
-
-        if latitude is not None and longitude is not None:
-            location = WKTElement(
-                f"POINT({longitude} {latitude})",
-                srid=4326,
-            )
-
         address = PropertyAddress(
             property_id=property_id,
             formatted_address=formatted_address,
             county=county,
             sub_county=sub_county,
             locality=locality,
-            latitude=latitude,
-            longitude=longitude,
-            location=location,
         )
 
         self.db.add(address)

@@ -763,8 +763,6 @@ def test_create_property_address_api(db_session: Session):
                 "county": "Nairobi",
                 "sub_county": "Dagoretti South",
                 "locality": "Karen",
-                "latitude": -1.3197,
-                "longitude": 36.7073,
             },
         )
 
@@ -777,8 +775,6 @@ def test_create_property_address_api(db_session: Session):
         assert data["county"] == "Nairobi"
         assert data["sub_county"] == "Dagoretti South"
         assert data["locality"] == "Karen"
-        assert data["latitude"] == -1.3197
-        assert data["longitude"] == 36.7073
 
     finally:
         app.dependency_overrides.clear()
@@ -824,8 +820,6 @@ def test_get_property_address_api(db_session: Session):
             county="Nairobi",
             sub_county="Westlands",
             locality="Westlands",
-            latitude=-1.2676,
-            longitude=36.8108,
         )
 
         db_session.add(address)
@@ -952,8 +946,6 @@ def test_activate_property_api(db_session: Session):
             county="Nairobi",
             sub_county="Dagoretti South",
             locality="Karen",
-            latitude=-1.3197,
-            longitude=36.7073,
         )
         db_session.add(address)
         db_session.flush()

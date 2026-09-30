@@ -48,17 +48,12 @@ def test_create_address_creates_property_address(db_session):
         county="Nairobi",
         sub_county="Westlands",
         locality="Westlands",
-        latitude=-1.2921,
-        longitude=36.8219,
     )
 
     assert address.id is not None
     assert address.property_id == property.id
     assert address.formatted_address == "123 Test Road, Nairobi"
     assert address.county == "Nairobi"
-    assert address.latitude == -1.2921
-    assert address.longitude == 36.8219
-    assert address.location is not None
 
 
 def test_create_address_raises_when_property_does_not_exist(db_session):
@@ -105,8 +100,6 @@ def test_create_address_raises_when_property_already_has_address(db_session):
         property_id=property.id,
         formatted_address="First Address, Nairobi",
         county="Nairobi",
-        latitude=-1.2921,
-        longitude=36.8219,
     )
 
     with pytest.raises(
@@ -117,8 +110,6 @@ def test_create_address_raises_when_property_already_has_address(db_session):
             property_id=property.id,
             formatted_address="Second Address, Nairobi",
             county="Nairobi",
-            latitude=-1.3000,
-            longitude=36.8300,
         )
 
 
@@ -183,8 +174,6 @@ def test_create_address_serializes_concurrent_creations_for_same_property(
                     property_id=property_id,
                     formatted_address="Second Address, Nairobi",
                     county="Nairobi",
-                    latitude=-1.3000,
-                    longitude=36.8300,
                 )
             except Exception as exc:
                 second_error["error"] = exc
@@ -201,8 +190,6 @@ def test_create_address_serializes_concurrent_creations_for_same_property(
             property_id=property_id,
             formatted_address="First Address, Nairobi",
             county="Nairobi",
-            latitude=-1.2921,
-            longitude=36.8219,
         )
 
         assert first_address.property_id == property_id

@@ -8,8 +8,6 @@ class PropertyAddressCreate(BaseModel):
     county: str | None = None
     sub_county: str | None = None
     locality: str | None = None
-    latitude: float | None = None
-    longitude: float | None = None
 
 
 class PropertyAddressResponse(BaseModel):
@@ -21,5 +19,3 @@ class PropertyAddressResponse(BaseModel):
     county: str | None
     sub_county: str | None
     locality: str | None
-    latitude: float | None
-    longitude: float | None

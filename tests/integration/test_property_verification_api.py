@@ -77,8 +77,6 @@ def create_property_verification_fixture(
             county="Nairobi",
             sub_county="Westlands",
             locality="Nairobi",
-            latitude=-1.286389,
-            longitude=36.817223,
         )
         db_session.add(address)
         db_session.flush()

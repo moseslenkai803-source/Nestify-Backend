@@ -72,8 +72,6 @@ def add_property_address(db_session, property_id):
         county="Nairobi",
         sub_county="Westlands",
         locality="Nairobi",
-        latitude=-1.286389,
-        longitude=36.817223,
     )
 
     db_session.add(address)

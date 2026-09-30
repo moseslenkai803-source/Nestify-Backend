@@ -154,8 +154,6 @@ def create_property_address(
             county=address_data.county,
             sub_county=address_data.sub_county,
             locality=address_data.locality,
-            latitude=address_data.latitude,
-            longitude=address_data.longitude,
         )
     except ValueError as exc:
         detail = (

@@ -85,8 +85,6 @@ def create_installation_context(db_session):
         county="Nairobi",
         sub_county="Westlands",
         locality="Installation Test Locality",
-        latitude=-1.286389,
-        longitude=36.817223,
     )
 
     property_verification = PropertyVerification(
