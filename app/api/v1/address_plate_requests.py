@@ -6,6 +6,9 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import require_employee_clearance
 from app.db.session import get_db
 from app.models.user import User
+from app.repositories.address_plate_request_repository import (
+    AddressPlateRequestRepository,
+)
 from app.schemas.address_plate import AddressPlateRequestResponse
 from app.services.address_plate_request_service import AddressPlateRequestService
 
@@ -14,6 +17,21 @@ router = APIRouter(
     prefix="/address-plate-requests",
     tags=["Address Plate Requests"],
 )
+
+
+@router.get(
+    "",
+    response_model=list[AddressPlateRequestResponse],
+)
+def list_address_plate_requests(
+    status: str = "pending",
+    current_employee: User = Depends(
+        require_employee_clearance("plate_operations")
+    ),
+    db: Session = Depends(get_db),
+):
+    repository = AddressPlateRequestRepository(db)
+    return repository.get_by_status(status)
 
 
 @router.post(

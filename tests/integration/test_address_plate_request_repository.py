@@ -123,6 +123,55 @@ def test_get_by_property_id_returns_requests_newest_first(db_session):
     assert result[1].id == older_request.id
 
 
+def test_get_by_status_returns_matching_requests_newest_first(db_session):
+    user, property_record = create_property(db_session)
+
+    older_request = AddressPlateRequest(
+        property_id=property_record.id,
+        requested_by=user.id,
+        status="pending",
+        requested_at=datetime.now(UTC) - timedelta(days=2),
+    )
+
+    newer_request = AddressPlateRequest(
+        property_id=property_record.id,
+        requested_by=user.id,
+        status="pending",
+        requested_at=datetime.now(UTC) - timedelta(days=1),
+    )
+
+    fulfilled_request = AddressPlateRequest(
+        property_id=property_record.id,
+        requested_by=user.id,
+        status="fulfilled",
+        requested_at=datetime.now(UTC),
+    )
+
+    db_session.add_all(
+        [
+            older_request,
+            newer_request,
+            fulfilled_request,
+        ]
+    )
+    db_session.flush()
+
+    repository = AddressPlateRequestRepository(db_session)
+
+    result = repository.get_by_status("pending")
+
+    result_ids = [request.id for request in result]
+
+    assert older_request.id in result_ids
+    assert newer_request.id in result_ids
+    assert fulfilled_request.id not in result_ids
+
+    assert result_ids.index(newer_request.id) < result_ids.index(
+        older_request.id
+    )
+    assert all(request.status == "pending" for request in result)
+
+
 def test_get_pending_by_property_id_returns_pending_request(db_session):
     user, property_record = create_property(db_session)
 

@@ -54,6 +54,21 @@ class AddressPlateRequestRepository:
             .all()
         )
 
+    def get_by_status(
+        self,
+        status: str,
+    ) -> list[AddressPlateRequest]:
+        return (
+            self.db.query(AddressPlateRequest)
+            .filter(
+                AddressPlateRequest.status == status,
+            )
+            .order_by(
+                AddressPlateRequest.requested_at.desc(),
+            )
+            .all()
+        )
+
     def get_pending_by_property_id(
         self,
         property_id: UUID,

@@ -297,6 +297,210 @@ def create_plate_operations_employee(db_session: Session):
     )
 
 
+def test_list_address_plate_requests_api_returns_pending_requests(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        owner = User(
+            email=f"list-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(owner)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=owner.id,
+            display_name="List Request Landlord",
+            phone="+254700000020",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property_service = PropertyService(db_session)
+
+        property = property_service.create_property(
+            landlord_id=landlord.id,
+            name="List Request Property",
+            property_type="residential",
+        )
+
+        pending_request = AddressPlateRequest(
+            property_id=property.id,
+            requested_by=owner.id,
+            status="pending",
+        )
+        fulfilled_request = AddressPlateRequest(
+            property_id=property.id,
+            requested_by=owner.id,
+            status="fulfilled",
+        )
+
+        db_session.add_all(
+            [
+                pending_request,
+                fulfilled_request,
+            ]
+        )
+        db_session.flush()
+
+        employee, access_token = create_plate_operations_employee(
+            db_session,
+        )
+
+        response = client.get(
+            "/api/v1/address-plate-requests",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+        request_ids = [item["id"] for item in data]
+
+        assert str(pending_request.id) in request_ids
+        assert str(fulfilled_request.id) not in request_ids
+
+        assert all(
+            item["status"] == "pending"
+            for item in data
+        )
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_address_plate_requests_api_filters_by_status(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        owner = User(
+            email=f"filter-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(owner)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=owner.id,
+            display_name="Filter Request Landlord",
+            phone="+254700000021",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property_service = PropertyService(db_session)
+
+        property = property_service.create_property(
+            landlord_id=landlord.id,
+            name="Filter Request Property",
+            property_type="residential",
+        )
+
+        pending_request = AddressPlateRequest(
+            property_id=property.id,
+            requested_by=owner.id,
+            status="pending",
+        )
+        approved_request = AddressPlateRequest(
+            property_id=property.id,
+            requested_by=owner.id,
+            status="approved",
+        )
+
+        db_session.add_all(
+            [
+                pending_request,
+                approved_request,
+            ]
+        )
+        db_session.flush()
+
+        employee, access_token = create_plate_operations_employee(
+            db_session,
+        )
+
+        response = client.get(
+            "/api/v1/address-plate-requests?status=approved",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+        request_ids = [item["id"] for item in data]
+
+        assert str(approved_request.id) in request_ids
+        assert str(pending_request.id) not in request_ids
+
+        assert all(
+            item["status"] == "approved"
+            for item in data
+        )
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_address_plate_requests_api_denies_employee_without_plate_operations_clearance(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        employee = User(
+            email=f"no-plate-clearance-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="property_verification",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
+
+        response = client.get(
+            "/api/v1/address-plate-requests",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 403
+
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_approve_address_plate_request_api(
     db_session: Session,
 ):
