@@ -1,6 +1,9 @@
-from fastapi.testclient import TestClient
-import pytest
+from uuid import uuid4
 
+import pytest
+from fastapi.testclient import TestClient
+
+from app.core.security import create_access_token
 from app.db.session import get_db
 from app.main import app
 from app.models.landlord import Landlord
@@ -303,6 +306,134 @@ def test_register_landlord_rolls_back_user_when_landlord_creation_fails(
         )
 
         assert user is None
+
+    finally:
+        app.dependency_overrides.clear()
+
+def test_get_me_returns_authenticated_employee(client, db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        employee = User(
+            email=f"employee-me-{uuid4()}@example.com",
+            password_hash="not-used",
+            role="employee",
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.commit()
+        db_session.refresh(employee)
+
+        token = create_access_token(subject=str(employee.id))
+
+        response = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert data["id"] == str(employee.id)
+        assert data["email"] == employee.email
+        assert data["role"] == "employee"
+        assert data["clearance"] == "plate_operations"
+        assert data["is_active"] is True
+        assert "password_hash" not in data
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_me_rejects_missing_token(client, db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        response = client.get("/api/v1/auth/me")
+
+        assert response.status_code == 401
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_me_rejects_invalid_token(client, db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        response = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": "Bearer invalid-token"},
+        )
+
+        assert response.status_code == 401
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_me_rejects_inactive_user(client, db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        employee = User(
+            email=f"inactive-me-{uuid4()}@example.com",
+            password_hash="not-used",
+            role="employee",
+            clearance="plate_operations",
+            is_active=False,
+        )
+        db_session.add(employee)
+        db_session.commit()
+        db_session.refresh(employee)
+
+        token = create_access_token(subject=str(employee.id))
+
+        response = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "User account is inactive"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_me_returns_landlord_identity(client, db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        landlord = User(
+            email=f"landlord-me-{uuid4()}@example.com",
+            password_hash="not-used",
+            role="landlord",
+            clearance=None,
+            is_active=True,
+        )
+        db_session.add(landlord)
+        db_session.commit()
+        db_session.refresh(landlord)
+
+        token = create_access_token(subject=str(landlord.id))
+
+        response = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert data["id"] == str(landlord.id)
+        assert data["email"] == landlord.email
+        assert data["role"] == "landlord"
+        assert data["clearance"] is None
+        assert data["is_active"] is True
 
     finally:
         app.dependency_overrides.clear()
