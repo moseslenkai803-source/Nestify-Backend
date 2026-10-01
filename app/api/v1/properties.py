@@ -8,6 +8,7 @@ from app.core.property_actions import PropertyAction
 from app.api.dependencies import (
     get_current_landlord,
     get_current_user,
+    require_employee,
     require_employee_clearance,
 )
 from app.db.session import get_db
@@ -46,6 +47,7 @@ from app.services.property_installation_service import PropertyInstallationServi
 from app.services.property_installation_verification_service import PropertyInstallationVerificationService
 from app.services.property_verification_service import PropertyVerificationService
 from app.services.property_activation_service import PropertyActivationService
+from app.services.property_access_service import PropertyAccessService
 from app.services.property_authorization_service import PropertyAuthorizationService
 from app.services.property_service import PropertyService
 
@@ -79,6 +81,18 @@ def create_property(
             status_code=404,
             detail=str(exc),
         ) from exc
+
+
+@router.get(
+    "/accessible",
+    response_model=list[PropertyResponse],
+)
+def list_accessible_properties(
+    current_employee: User = Depends(require_employee),
+    db: Session = Depends(get_db),
+):
+    service = PropertyAccessService(db)
+    return service.list_accessible_properties(current_employee.id)
 
 
 @router.post(

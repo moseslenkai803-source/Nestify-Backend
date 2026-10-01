@@ -367,3 +367,73 @@ def test_grant_access_rejects_missing_property(db_session):
             property_id=uuid.uuid4(),
             access_type="plate_operations",
         )
+
+def test_list_accessible_properties_returns_active_properties(
+    db_session,
+):
+    employee = create_user(db_session)
+    property = create_property(db_session)
+
+    service = PropertyAccessService(db_session)
+
+    service.grant_access(
+        user_id=employee.id,
+        property_id=property.id,
+        access_type="plate_operations",
+    )
+
+    result = service.list_accessible_properties(employee.id)
+
+    assert len(result) == 1
+    assert result[0].id == property.id
+
+
+def test_list_accessible_properties_excludes_inactive_access(
+    db_session,
+):
+    employee = create_user(db_session)
+    property = create_property(db_session)
+
+    service = PropertyAccessService(db_session)
+
+    service.grant_access(
+        user_id=employee.id,
+        property_id=property.id,
+        access_type="plate_operations",
+    )
+
+    service.revoke_access(
+        user_id=employee.id,
+        property_id=property.id,
+        access_type="plate_operations",
+    )
+
+    result = service.list_accessible_properties(employee.id)
+
+    assert result == []
+
+
+def test_list_accessible_properties_deduplicates_multiple_access_types(
+    db_session,
+):
+    employee = create_user(db_session)
+    property = create_property(db_session)
+
+    service = PropertyAccessService(db_session)
+
+    service.grant_access(
+        user_id=employee.id,
+        property_id=property.id,
+        access_type="plate_operations",
+    )
+
+    service.grant_access(
+        user_id=employee.id,
+        property_id=property.id,
+        access_type="property_verification",
+    )
+
+    result = service.list_accessible_properties(employee.id)
+
+    assert len(result) == 1
+    assert result[0].id == property.id

@@ -66,6 +66,18 @@ def get_current_user(
     return user
 
 
+def require_employee(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    if current_user.role != "employee":
+        raise HTTPException(
+            status_code=403,
+            detail="Employee access required",
+        )
+
+    return current_user
+
+
 def require_employee_clearance(
     required_clearance: str,
 ):

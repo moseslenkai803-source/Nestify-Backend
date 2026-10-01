@@ -195,3 +195,77 @@ def test_deactivate_marks_access_inactive(db_session):
 
     assert result.id == access.id
     assert result.is_active is False
+
+def test_get_active_properties_by_user_id_returns_accessible_property(
+    db_session,
+):
+    user = create_user(db_session)
+    property = create_property(db_session)
+
+    access = PropertyAccess(
+        user_id=user.id,
+        property_id=property.id,
+        access_type="plate_operations",
+        is_active=True,
+    )
+    db_session.add(access)
+    db_session.flush()
+
+    repository = PropertyAccessRepository(db_session)
+
+    result = repository.get_active_properties_by_user_id(user.id)
+
+    assert len(result) == 1
+    assert result[0].id == property.id
+
+
+def test_get_active_properties_by_user_id_ignores_inactive_access(
+    db_session,
+):
+    user = create_user(db_session)
+    property = create_property(db_session)
+
+    access = PropertyAccess(
+        user_id=user.id,
+        property_id=property.id,
+        access_type="plate_operations",
+        is_active=False,
+    )
+    db_session.add(access)
+    db_session.flush()
+
+    repository = PropertyAccessRepository(db_session)
+
+    result = repository.get_active_properties_by_user_id(user.id)
+
+    assert result == []
+
+
+def test_get_active_properties_by_user_id_deduplicates_multiple_access_types(
+    db_session,
+):
+    user = create_user(db_session)
+    property = create_property(db_session)
+
+    access_one = PropertyAccess(
+        user_id=user.id,
+        property_id=property.id,
+        access_type="plate_operations",
+        is_active=True,
+    )
+    access_two = PropertyAccess(
+        user_id=user.id,
+        property_id=property.id,
+        access_type="property_verification",
+        is_active=True,
+    )
+
+    db_session.add_all([access_one, access_two])
+    db_session.flush()
+
+    repository = PropertyAccessRepository(db_session)
+
+    result = repository.get_active_properties_by_user_id(user.id)
+
+    assert len(result) == 1
+    assert result[0].id == property.id

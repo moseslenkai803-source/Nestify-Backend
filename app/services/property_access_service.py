@@ -2,6 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.models.property import Property
 from app.models.property_access import PropertyAccess
 from app.core.property_actions import PropertyAction
 from app.repositories.user_repository import UserRepository
@@ -103,6 +104,14 @@ class PropertyAccessService:
         user_id: UUID,
     ) -> list[PropertyAccess]:
         return self.property_access_repository.get_by_user_id(
+            user_id
+        )
+
+    def list_accessible_properties(
+        self,
+        user_id: UUID,
+    ) -> list[Property]:
+        return self.property_access_repository.get_active_properties_by_user_id(
             user_id
         )
 

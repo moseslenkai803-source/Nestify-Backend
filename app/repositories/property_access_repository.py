@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.property import Property
 from app.models.property_access import PropertyAccess
 
 
@@ -63,6 +64,26 @@ class PropertyAccessRepository:
             .order_by(PropertyAccess.created_at.desc())
             .all()
         )
+
+    def get_active_properties_by_user_id(
+        self,
+        user_id: UUID,
+    ) -> list[Property]:
+        statement = (
+            select(Property)
+            .join(
+                PropertyAccess,
+                PropertyAccess.property_id == Property.id,
+            )
+            .where(
+                PropertyAccess.user_id == user_id,
+                PropertyAccess.is_active.is_(True),
+            )
+            .distinct()
+            .order_by(Property.created_at.desc())
+        )
+
+        return list(self.db.scalars(statement).all())
 
     def deactivate(
         self,

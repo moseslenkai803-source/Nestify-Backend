@@ -1448,3 +1448,337 @@ def test_get_property_location_api_returns_not_found_when_missing(
 
     finally:
         app.dependency_overrides.clear()
+
+def test_list_accessible_properties_api_returns_active_properties(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        landlord_user = User(
+            email=f"accessible-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(landlord_user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=landlord_user.id,
+            display_name="Accessible Property Owner",
+            phone="+254700000010",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Accessible Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        employee = User(
+            email=f"accessible-employee-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="plate_operations",
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        access_service = PropertyAccessService(db_session)
+        access_service.grant_access(
+            user_id=employee.id,
+            property_id=property.id,
+            access_type="plate_operations",
+        )
+        db_session.commit()
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
+
+        response = client.get(
+            "/api/v1/properties/accessible",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert len(data) == 1
+        assert data[0]["id"] == str(property.id)
+        assert data[0]["landlord_id"] == str(landlord.id)
+        assert data[0]["property_code"] == property.property_code
+        assert data[0]["name"] == "Accessible Property"
+        assert data[0]["property_type"] == "residential"
+        assert data[0]["status"] == "draft"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_accessible_properties_api_deduplicates_multiple_access_types(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        landlord_user = User(
+            email=f"accessible-duplicate-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(landlord_user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=landlord_user.id,
+            display_name="Duplicate Access Owner",
+            phone="+254700000011",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Duplicate Access Property",
+            property_type="commercial",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        employee = User(
+            email=f"accessible-duplicate-employee-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="plate_operations",
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        access_service = PropertyAccessService(db_session)
+        access_service.grant_access(
+            user_id=employee.id,
+            property_id=property.id,
+            access_type="plate_operations",
+        )
+        access_service.grant_access(
+            user_id=employee.id,
+            property_id=property.id,
+            access_type="property_management",
+        )
+        db_session.commit()
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
+
+        response = client.get(
+            "/api/v1/properties/accessible",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert len(data) == 1
+        assert data[0]["id"] == str(property.id)
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_accessible_properties_api_excludes_inactive_access(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        landlord_user = User(
+            email=f"accessible-inactive-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(landlord_user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=landlord_user.id,
+            display_name="Inactive Access Owner",
+            phone="+254700000012",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Inactive Access Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        employee = User(
+            email=f"accessible-inactive-employee-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="plate_operations",
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        access_service = PropertyAccessService(db_session)
+        access = access_service.grant_access(
+            user_id=employee.id,
+            property_id=property.id,
+            access_type="plate_operations",
+        )
+        access.is_active = False
+        db_session.commit()
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
+
+        response = client.get(
+            "/api/v1/properties/accessible",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_accessible_properties_api_returns_empty_for_employee_without_access(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        employee = User(
+            email=f"accessible-none-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="plate_operations",
+        )
+        db_session.add(employee)
+        db_session.flush()
+        db_session.commit()
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
+
+        response = client.get(
+            "/api/v1/properties/accessible",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_accessible_properties_api_requires_authentication(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        response = client.get(
+            "/api/v1/properties/accessible",
+        )
+
+        assert response.status_code == 401
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_accessible_properties_api_denies_landlord(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        landlord_user = User(
+            email=f"accessible-landlord-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(landlord_user)
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(landlord_user.id),
+        )
+
+        response = client.get(
+            "/api/v1/properties/accessible",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Employee access required"
+
+    finally:
+        app.dependency_overrides.clear()
