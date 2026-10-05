@@ -103,7 +103,7 @@ class InstallationAssignmentService:
         if not assigned_user.is_active:
             raise ValueError("Assigning employee is inactive")
 
-        if assigned_user.role != "employee":
+        if assigned_user.role not in {"admin", "employee"}:
             raise ValueError("Only Nestify employees can assign installations")
 
         existing_property_assignment = (
@@ -216,7 +216,7 @@ class InstallationAssignmentService:
         if not employee.is_active:
             raise ValueError("Cancelling employee is inactive")
 
-        if employee.role != "employee":
+        if employee.role not in {"admin", "employee"}:
             raise ValueError("Only Nestify employees can cancel installations")
 
         if not reason.strip():

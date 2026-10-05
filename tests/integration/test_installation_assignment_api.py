@@ -152,6 +152,142 @@ def test_create_installation_assignment_api(db_session):
         app.dependency_overrides.clear()
 
 
+def test_create_installation_assignment_api_allows_admin(db_session):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        owner_user = User(
+            email=f"assignment-api-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+            is_active=True,
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Assignment API Owner",
+            phone="+254700000010",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Assignment API Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        employee = User(
+            email=f"assignment-api-employee-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="admin",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        contractor = Contractor(
+            name="Assignment API Contractor",
+            contractor_type="company",
+            status="active",
+        )
+        db_session.add(contractor)
+        db_session.flush()
+
+        contractor_user = User(
+            email=f"assignment-api-contractor-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="contractor",
+            is_active=True,
+        )
+        db_session.add(contractor_user)
+        db_session.flush()
+
+        contractor_member = ContractorMember(
+            contractor_id=contractor.id,
+            user_id=contractor_user.id,
+            is_active=True,
+        )
+        db_session.add(contractor_member)
+        db_session.flush()
+
+        plate = AddressPlate(
+            plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+            property_id=property.id,
+            status="unactivated",
+        )
+        db_session.add(plate)
+        db_session.flush()
+
+        due_at = datetime(
+            2026,
+            10,
+            5,
+            12,
+            0,
+            tzinfo=UTC,
+        )
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
+
+        response = client.post(
+            "/api/v1/installation-assignments",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+            json={
+                "property_id": str(property.id),
+                "plate_id": str(plate.id),
+                "contractor_id": str(contractor.id),
+                "contractor_member_id": str(contractor_member.id),
+                "due_at": due_at.isoformat(),
+            },
+        )
+
+        assert response.status_code == 201
+
+        data = response.json()
+
+        assert data["id"] is not None
+        assert data["property_id"] == str(property.id)
+        assert data["plate_id"] == str(plate.id)
+        assert data["contractor_id"] == str(contractor.id)
+        assert data["contractor_member_id"] == str(contractor_member.id)
+        assert data["assigned_by"] == str(employee.id)
+        assert data["due_at"] == due_at.isoformat().replace("+00:00", "Z")
+        assert data["status"] == "assigned"
+
+        assignment = db_session.get(
+            InstallationAssignment,
+            uuid.UUID(data["id"]),
+        )
+
+        assert assignment is not None
+        assert assignment.property_id == property.id
+        assert assignment.plate_id == plate.id
+        assert assignment.contractor_id == contractor.id
+        assert assignment.contractor_member_id == contractor_member.id
+        assert assignment.assigned_by == employee.id
+        assert assignment.status == "assigned"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_create_installation_assignment_api_requires_plate_operations_clearance(
     db_session,
 ):
@@ -2239,6 +2375,123 @@ def test_cancel_installation_assignment_api(db_session):
             password_hash="test-hash",
             role="employee",
             clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        contractor = Contractor(
+            name="Cancel API Contractor",
+            contractor_type="company",
+            status="active",
+        )
+        db_session.add(contractor)
+        db_session.flush()
+
+        contractor_user = User(
+            email=f"assignment-api-cancel-contractor-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="contractor",
+            is_active=True,
+        )
+        db_session.add(contractor_user)
+        db_session.flush()
+
+        contractor_member = ContractorMember(
+            contractor_id=contractor.id,
+            user_id=contractor_user.id,
+            is_active=True,
+        )
+        db_session.add(contractor_member)
+        db_session.flush()
+
+        plate = AddressPlate(
+            plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+            property_id=property.id,
+            status="unactivated",
+        )
+        db_session.add(plate)
+        db_session.flush()
+
+        assignment = InstallationAssignment(
+            property_id=property.id,
+            plate_id=plate.id,
+            contractor_id=contractor.id,
+            contractor_member_id=contractor_member.id,
+            assigned_by=employee.id,
+            status="assigned",
+        )
+        db_session.add(assignment)
+        db_session.flush()
+
+        access_token = create_access_token(subject=str(employee.id))
+
+        response = client.post(
+            f"/api/v1/installation-assignments/{assignment.id}/cancel",
+            headers={"Authorization": f"Bearer {access_token}"},
+            json={"reason": "Contractor scheduling changed."},
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+        assert data["id"] == str(assignment.id)
+        assert data["status"] == "cancelled"
+        assert data["cancelled_by"] == str(employee.id)
+        assert data["cancelled_at"] is not None
+        assert data["cancellation_reason"] == "Contractor scheduling changed."
+
+        db_session.refresh(assignment)
+        assert assignment.status == "cancelled"
+        assert assignment.cancelled_by == employee.id
+        assert assignment.cancelled_at is not None
+        assert assignment.cancellation_reason == "Contractor scheduling changed."
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_cancel_installation_assignment_api_allows_admin(db_session):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        owner_user = User(
+            email=f"assignment-api-cancel-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+            is_active=True,
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Cancel API Owner",
+            phone="+254700000040",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Cancel API Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        employee = User(
+            email=f"assignment-api-cancel-employee-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="admin",
             is_active=True,
         )
         db_session.add(employee)

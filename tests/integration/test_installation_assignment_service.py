@@ -144,6 +144,25 @@ def test_create_assignment_creates_assigned_record(db_session):
     assert fetched.status == "assigned"
 
 
+def test_create_assignment_allows_admin_assigner(db_session):
+    context = create_assignment_context(db_session)
+    context["assigning_employee"].role = "admin"
+    db_session.flush()
+
+    service = InstallationAssignmentService(db_session)
+
+    result = service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+
+    assert result.status == "assigned"
+    assert result.assigned_by == context["assigning_employee"].id
+
+
 def test_create_assignment_requires_existing_property(db_session):
     context = create_assignment_context(db_session)
 
@@ -1093,6 +1112,39 @@ def test_cancel_assignment_moves_assigned_to_cancelled(db_session):
     assert result.cancelled_by == context["assigning_employee"].id
     assert result.cancelled_at is not None
     assert result.cancellation_reason == "Contractor scheduling changed."
+
+
+def test_cancel_assignment_allows_admin_actor(db_session):
+    context = create_assignment_context(db_session)
+    context["assigning_employee"].role = "admin"
+    db_session.flush()
+
+    service = InstallationAssignmentService(db_session)
+
+    assignment = InstallationAssignment(
+        id=uuid.uuid4(),
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+        status="assigned",
+    )
+    db_session.add(assignment)
+    db_session.flush()
+
+    result = service.cancel_assignment(
+        assignment_id=assignment.id,
+        cancelled_by=context["assigning_employee"].id,
+        reason="Admin cancellation for operational reassignment.",
+    )
+
+    assert result.id == assignment.id
+    assert result.status == "cancelled"
+    assert result.cancelled_by == context["assigning_employee"].id
+    assert result.cancellation_reason == (
+        "Admin cancellation for operational reassignment."
+    )
 
 
 def test_cancel_assignment_moves_in_progress_to_cancelled(db_session):
