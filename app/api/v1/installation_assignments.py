@@ -13,6 +13,9 @@ from app.schemas.installation_assignment import (
     InstallationAssignmentSubmit,
 )
 from app.schemas.property_installation import PropertyInstallationResponse
+from app.services.installation_assignment_query_service import (
+    InstallationAssignmentQueryService,
+)
 from app.services.installation_assignment_service import (
     InstallationAssignmentService,
 )
@@ -35,15 +38,9 @@ def list_installation_assignments(
     ),
     db: Session = Depends(get_db),
 ):
-    service = InstallationAssignmentService(db)
+    service = InstallationAssignmentQueryService(db)
 
-    try:
-        return service.list_assignments(status=status)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=str(exc),
-        ) from exc
+    return service.list_assignments(status=status)
 
 
 @router.post(
@@ -61,7 +58,7 @@ def create_installation_assignment(
     service = InstallationAssignmentService(db)
 
     try:
-        return service.create_assignment(
+        assignment = service.create_assignment(
             property_id=assignment_data.property_id,
             plate_id=assignment_data.plate_id,
             contractor_id=assignment_data.contractor_id,
@@ -69,6 +66,17 @@ def create_installation_assignment(
             assigned_by=current_employee.id,
             due_at=assignment_data.due_at,
         )
+
+        query_service = InstallationAssignmentQueryService(db)
+        result = query_service.get_assignment(assignment.id)
+
+        if result is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Created installation assignment could not be loaded.",
+            )
+
+        return result
 
     except ValueError as exc:
         status_code = (
@@ -106,11 +114,22 @@ def cancel_installation_assignment(
     service = InstallationAssignmentService(db)
 
     try:
-        return service.cancel_assignment(
+        assignment = service.cancel_assignment(
             assignment_id=assignment_id,
             cancelled_by=current_employee.id,
             reason=cancellation_data.reason,
         )
+
+        query_service = InstallationAssignmentQueryService(db)
+        result = query_service.get_assignment(assignment.id)
+
+        if result is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Cancelled installation assignment could not be loaded.",
+            )
+
+        return result
     except ValueError as exc:
         status_code = (
             404
@@ -145,10 +164,21 @@ def start_installation_assignment(
     service = InstallationAssignmentService(db)
 
     try:
-        return service.start_assignment(
+        assignment = service.start_assignment(
             assignment_id=assignment_id,
             contractor_user_id=current_user.id,
         )
+
+        query_service = InstallationAssignmentQueryService(db)
+        result = query_service.get_assignment(assignment.id)
+
+        if result is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Started installation assignment could not be loaded.",
+            )
+
+        return result
     except ValueError as exc:
         status_code = (
             404

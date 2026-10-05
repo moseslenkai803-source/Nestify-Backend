@@ -21,10 +21,15 @@ class InstallationAssignmentResponse(BaseModel):
 
     id: UUID
     property_id: UUID
+    property_name: str
     plate_id: UUID
+    plate_code: str
     contractor_id: UUID
+    contractor_name: str
     contractor_member_id: UUID
+    installer_email: str
     assigned_by: UUID
+    assigned_by_email: str
     assigned_at: datetime
     due_at: datetime | None
     status: str

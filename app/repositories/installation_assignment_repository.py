@@ -1,9 +1,14 @@
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
+from app.models.address_plate import AddressPlate
+from app.models.contractor import Contractor
+from app.models.contractor_member import ContractorMember
 from app.models.installation_assignment import InstallationAssignment
+from app.models.property import Property
+from app.models.user import User
 
 
 class InstallationAssignmentRepository:
@@ -62,6 +67,87 @@ class InstallationAssignmentRepository:
             )
             .all()
         )
+
+    def _enriched_statement(self):
+        installer = aliased(User)
+        assigned_by = aliased(User)
+
+        return (
+            select(
+                InstallationAssignment,
+                Property.name,
+                AddressPlate.plate_code,
+                Contractor.name,
+                installer.email,
+                assigned_by.email,
+            )
+            .join(
+                Property,
+                Property.id == InstallationAssignment.property_id,
+            )
+            .join(
+                AddressPlate,
+                AddressPlate.id == InstallationAssignment.plate_id,
+            )
+            .join(
+                Contractor,
+                Contractor.id == InstallationAssignment.contractor_id,
+            )
+            .join(
+                ContractorMember,
+                ContractorMember.id
+                == InstallationAssignment.contractor_member_id,
+            )
+            .join(
+                installer,
+                installer.id == ContractorMember.user_id,
+            )
+            .join(
+                assigned_by,
+                assigned_by.id == InstallationAssignment.assigned_by,
+            )
+        )
+
+    def get_enriched_record_by_id(
+        self,
+        assignment_id: UUID,
+    ) -> tuple | None:
+        statement = (
+            self._enriched_statement()
+            .where(
+                InstallationAssignment.id == assignment_id,
+            )
+        )
+
+        return self.db.execute(statement).first()
+
+    def get_enriched_records(self) -> list[tuple]:
+        statement = (
+            self._enriched_statement()
+            .order_by(
+                InstallationAssignment.created_at.desc(),
+                InstallationAssignment.id.desc(),
+            )
+        )
+
+        return self.db.execute(statement).all()
+
+    def get_enriched_records_by_status(
+        self,
+        status: str,
+    ) -> list[tuple]:
+        statement = (
+            self._enriched_statement()
+            .where(
+                InstallationAssignment.status == status,
+            )
+            .order_by(
+                InstallationAssignment.created_at.desc(),
+                InstallationAssignment.id.desc(),
+            )
+        )
+
+        return self.db.execute(statement).all()
 
     def get_active_by_property_id(
         self,

@@ -1480,3 +1480,111 @@ def test_list_assignments_unknown_status_returns_empty(db_session):
     result = service.list_assignments(status="not-a-real-status")
 
     assert result == []
+
+
+def test_query_service_returns_enriched_assignment(db_session):
+    context = create_assignment_context(db_session)
+
+    assignment = InstallationAssignment(
+        id=uuid.uuid4(),
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+        status="assigned",
+    )
+    db_session.add(assignment)
+    db_session.flush()
+
+    from app.services.installation_assignment_query_service import (
+        InstallationAssignmentQueryService,
+    )
+
+    service = InstallationAssignmentQueryService(db_session)
+
+    result = service.get_assignment(assignment.id)
+
+    assert result is not None
+    assert result["id"] == assignment.id
+    assert result["property_id"] == context["property"].id
+    assert result["property_name"] == context["property"].name
+    assert result["plate_id"] == context["plate"].id
+    assert result["plate_code"] == context["plate"].plate_code
+    assert result["contractor_id"] == context["contractor"].id
+    assert result["contractor_name"] == context["contractor"].name
+    assert result["contractor_member_id"] == context["contractor_member"].id
+    assert result["installer_email"] == context["contractor_user"].email
+    assert result["assigned_by"] == context["assigning_employee"].id
+    assert (
+        result["assigned_by_email"]
+        == context["assigning_employee"].email
+    )
+    assert result["status"] == "assigned"
+
+
+def test_query_service_returns_enriched_assignments_by_status(
+    db_session,
+):
+    context = create_assignment_context(db_session)
+
+    assigned = InstallationAssignment(
+        id=uuid.uuid4(),
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+        status="assigned",
+    )
+
+    cancelled = InstallationAssignment(
+        id=uuid.uuid4(),
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+        status="cancelled",
+    )
+
+    db_session.add_all([assigned, cancelled])
+    db_session.flush()
+
+    from app.services.installation_assignment_query_service import (
+        InstallationAssignmentQueryService,
+    )
+
+    service = InstallationAssignmentQueryService(db_session)
+
+    results = service.list_assignments(status="assigned")
+
+    matching = [
+        result
+        for result in results
+        if result["id"] == assigned.id
+    ]
+
+    assert len(matching) == 1
+    result = matching[0]
+
+    assert result["property_name"] == context["property"].name
+    assert result["plate_code"] == context["plate"].plate_code
+    assert result["contractor_name"] == context["contractor"].name
+    assert result["installer_email"] == context["contractor_user"].email
+    assert (
+        result["assigned_by_email"]
+        == context["assigning_employee"].email
+    )
+
+
+def test_query_service_returns_none_for_missing_assignment(
+    db_session,
+):
+    from app.services.installation_assignment_query_service import (
+        InstallationAssignmentQueryService,
+    )
+
+    service = InstallationAssignmentQueryService(db_session)
+
+    assert service.get_assignment(uuid.uuid4()) is None
