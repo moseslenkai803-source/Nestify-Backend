@@ -84,6 +84,9 @@ def require_employee_clearance(
     def dependency(
         current_user: User = Depends(get_current_user),
     ) -> User:
+        if current_user.role == "admin":
+            return current_user
+
         if current_user.role != "employee":
             raise HTTPException(
                 status_code=403,
