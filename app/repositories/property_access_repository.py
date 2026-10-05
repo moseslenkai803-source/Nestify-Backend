@@ -65,6 +65,28 @@ class PropertyAccessRepository:
             .all()
         )
 
+    def get_active_properties_by_user_id_and_access_type(
+        self,
+        user_id: UUID,
+        access_type: str,
+    ) -> list[Property]:
+        statement = (
+            select(Property)
+            .join(
+                PropertyAccess,
+                PropertyAccess.property_id == Property.id,
+            )
+            .where(
+                PropertyAccess.user_id == user_id,
+                PropertyAccess.access_type == access_type,
+                PropertyAccess.is_active.is_(True),
+            )
+            .distinct()
+            .order_by(Property.created_at.desc())
+        )
+
+        return list(self.db.scalars(statement).all())
+
     def get_active_properties_by_user_id(
         self,
         user_id: UUID,

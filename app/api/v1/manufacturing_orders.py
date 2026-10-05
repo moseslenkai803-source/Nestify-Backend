@@ -48,6 +48,29 @@ def create_manufacturing_order(
 
 
 @router.get(
+    "",
+    response_model=list[ManufacturingOrderResponse],
+)
+def list_manufacturing_orders(
+    status: str | None = None,
+    current_employee: User = Depends(
+        require_employee_clearance("plate_operations")
+    ),
+    db: Session = Depends(get_db),
+):
+    service = ManufacturingOrderService(db)
+
+    try:
+        return service.list_orders(status=status)
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get(
     "/{order_code}",
     response_model=ManufacturingOrderResponse,
 )

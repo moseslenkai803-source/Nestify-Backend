@@ -24,6 +24,28 @@ router = APIRouter(
 )
 
 
+@router.get(
+    "",
+    response_model=list[InstallationAssignmentResponse],
+)
+def list_installation_assignments(
+    status: str | None = None,
+    current_employee: User = Depends(
+        require_employee_clearance("plate_operations")
+    ),
+    db: Session = Depends(get_db),
+):
+    service = InstallationAssignmentService(db)
+
+    try:
+        return service.list_assignments(status=status)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+
 @router.post(
     "",
     response_model=InstallationAssignmentResponse,

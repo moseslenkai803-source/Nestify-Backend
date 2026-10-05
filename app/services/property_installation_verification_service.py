@@ -3,9 +3,13 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.models.property_installation import PropertyInstallation
+from app.models.user import User
 from app.models.property_installation_verification import (
     PropertyInstallationVerification,
 )
+from app.core.property_actions import PropertyAction
+from app.repositories.property_access_repository import PropertyAccessRepository
 from app.repositories.property_installation_repository import (
     PropertyInstallationRepository,
 )
@@ -24,6 +28,7 @@ from app.services.address_plate_lifecycle_service import (
 class PropertyInstallationVerificationService:
     def __init__(self, db: Session):
         self.db = db
+        self.property_access_repository = PropertyAccessRepository(db)
         self.property_installation_repository = (
             PropertyInstallationRepository(db)
         )
@@ -33,6 +38,27 @@ class PropertyInstallationVerificationService:
         self.installation_assignment_repository = InstallationAssignmentRepository(db)
         self.user_repository = UserRepository(db)
         self.lifecycle_service = AddressPlateLifecycleService(db)
+
+    def list_pending_installations(
+        self,
+        user: User,
+    ) -> list[PropertyInstallation]:
+        if user.role == "admin":
+            return self.property_installation_repository.get_all_submitted()
+
+        properties = (
+            self.property_access_repository
+            .get_active_properties_by_user_id_and_access_type(
+                user_id=user.id,
+                access_type=PropertyAction.INSTALLATION_VERIFICATION.value,
+            )
+        )
+
+        property_ids = [property.id for property in properties]
+
+        return self.property_installation_repository.get_submitted_by_property_ids(
+            property_ids
+        )
 
     def verify_installation(
         self,

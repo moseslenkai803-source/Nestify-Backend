@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.address_plate import AddressPlate
+from app.models.property import Property
 from app.models.address_plate_lifecycle_event import (
     AddressPlateLifecycleEvent,
 )
@@ -93,6 +94,41 @@ class AddressPlateRepository:
         )
 
         return self.db.scalar(statement)
+
+    def get_inventory_records(self) -> list[tuple]:
+        latest_event = (
+            select(AddressPlateLifecycleEvent.event_type)
+            .where(
+                AddressPlateLifecycleEvent.plate_id
+                == AddressPlate.id
+            )
+            .order_by(
+                AddressPlateLifecycleEvent.occurred_at.desc(),
+                AddressPlateLifecycleEvent.id.desc(),
+            )
+            .limit(1)
+            .scalar_subquery()
+        )
+
+        statement = (
+            select(
+                AddressPlate,
+                Property.property_code,
+                Property.name,
+                latest_event.label("lifecycle_status"),
+            )
+            .outerjoin(
+                Property,
+                Property.id == AddressPlate.property_id,
+            )
+            .order_by(
+                AddressPlate.created_at.desc(),
+                AddressPlate.id.desc(),
+            )
+        )
+
+        return self.db.execute(statement).all()
+
 
     def get_by_manufacturing_order_id(
         self,

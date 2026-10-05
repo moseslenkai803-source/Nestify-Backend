@@ -1033,3 +1033,289 @@ def test_verify_installation_rejects_assignment_property_mismatch(db_session):
             {"property_id": second_property.id},
         )
         db_session.flush()
+
+
+def test_list_pending_installations_returns_submitted_installations_for_authorized_properties(
+    db_session,
+):
+    _, installer, property_record, plate = create_installation_context(db_session)
+
+    reviewer = User(
+        id=uuid.uuid4(),
+        email=f"reviewer-queue-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        clearance="installation_verification",
+        is_active=True,
+    )
+
+    db_session.add(reviewer)
+    db_session.flush()
+
+    from app.services.property_access_service import PropertyAccessService
+
+    PropertyAccessService(db_session).grant_access(
+        user_id=reviewer.id,
+        property_id=property_record.id,
+        access_type="installation_verification",
+    )
+
+    installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        installer_id=installer.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+    )
+
+    db_session.add(installation)
+    db_session.flush()
+
+    service = PropertyInstallationVerificationService(db_session)
+
+    result = service.list_pending_installations(reviewer)
+
+    assert [item.id for item in result] == [installation.id]
+
+
+def test_list_pending_installations_returns_all_submitted_installations_for_admin(
+    db_session,
+):
+    _, installer, first_property, first_plate = create_installation_context(
+        db_session
+    )
+
+    second_property = Property(
+        id=uuid.uuid4(),
+        landlord_id=first_property.landlord_id,
+        property_code=f"NEST-QUEUE-ADMIN-SECOND-{uuid.uuid4().hex[:8].upper()}",
+        name="Second Admin Queue Property",
+        property_type="residential",
+        status="verified",
+    )
+
+    second_plate = AddressPlate(
+        id=uuid.uuid4(),
+        plate_code=f"PLATE-QUEUE-ADMIN-SECOND-{uuid.uuid4().hex[:8].upper()}",
+        status="unactivated",
+        property_id=second_property.id,
+    )
+
+    admin = User(
+        id=uuid.uuid4(),
+        email=f"admin-queue-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="admin",
+        is_active=True,
+    )
+
+    db_session.add(second_property)
+    db_session.flush()
+
+    db_session.add(second_plate)
+    db_session.add(admin)
+    db_session.flush()
+
+    first_installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=first_property.id,
+        plate_id=first_plate.id,
+        installer_id=installer.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+    )
+
+    second_installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=second_property.id,
+        plate_id=second_plate.id,
+        installer_id=installer.id,
+        latitude=-1.287000,
+        longitude=36.818000,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+    )
+
+    verified_installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=first_property.id,
+        plate_id=first_plate.id,
+        installer_id=installer.id,
+        latitude=-1.288000,
+        longitude=36.819000,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="verified",
+    )
+
+    db_session.add(first_installation)
+    db_session.add(second_installation)
+    db_session.add(verified_installation)
+    db_session.flush()
+
+    service = PropertyInstallationVerificationService(db_session)
+
+    result = service.list_pending_installations(admin)
+
+    result_ids = {item.id for item in result}
+
+    assert first_installation.id in result_ids
+    assert second_installation.id in result_ids
+    assert verified_installation.id not in result_ids
+
+
+
+def test_list_pending_installations_excludes_properties_without_verification_access(
+    db_session,
+):
+    _, installer, authorized_property, authorized_plate = create_installation_context(
+        db_session
+    )
+
+    second_property = Property(
+        id=uuid.uuid4(),
+        landlord_id=authorized_property.landlord_id,
+        property_code=f"NEST-QUEUE-SECOND-{uuid.uuid4().hex[:8].upper()}",
+        name="Second Queue Property",
+        property_type="residential",
+        status="verified",
+    )
+
+    second_plate = AddressPlate(
+        id=uuid.uuid4(),
+        plate_code=f"PLATE-QUEUE-SECOND-{uuid.uuid4().hex[:8].upper()}",
+        status="unactivated",
+        property_id=second_property.id,
+    )
+
+    reviewer = User(
+        id=uuid.uuid4(),
+        email=f"reviewer-scope-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        clearance="installation_verification",
+        is_active=True,
+    )
+
+    db_session.add(second_property)
+    db_session.flush()
+
+    db_session.add(second_plate)
+    db_session.add(reviewer)
+    db_session.flush()
+
+    from app.services.property_access_service import PropertyAccessService
+
+    PropertyAccessService(db_session).grant_access(
+        user_id=reviewer.id,
+        property_id=authorized_property.id,
+        access_type="installation_verification",
+    )
+
+    authorized_installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=authorized_property.id,
+        plate_id=authorized_plate.id,
+        installer_id=installer.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+    )
+
+    unauthorized_installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=second_property.id,
+        plate_id=second_plate.id,
+        installer_id=installer.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+    )
+
+    db_session.add(authorized_installation)
+    db_session.add(unauthorized_installation)
+    db_session.flush()
+
+    service = PropertyInstallationVerificationService(db_session)
+
+    result = service.list_pending_installations(reviewer)
+
+    result_ids = [item.id for item in result]
+
+    assert authorized_installation.id in result_ids
+    assert unauthorized_installation.id not in result_ids
+
+
+def test_list_pending_installations_excludes_non_submitted_installations(
+    db_session,
+):
+    _, installer, property_record, plate = create_installation_context(db_session)
+
+    reviewer = User(
+        id=uuid.uuid4(),
+        email=f"reviewer-status-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        clearance="installation_verification",
+        is_active=True,
+    )
+
+    db_session.add(reviewer)
+    db_session.flush()
+
+    from app.services.property_access_service import PropertyAccessService
+
+    PropertyAccessService(db_session).grant_access(
+        user_id=reviewer.id,
+        property_id=property_record.id,
+        access_type="installation_verification",
+    )
+
+    submitted_installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        installer_id=installer.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+    )
+
+    verified_installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        installer_id=installer.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="verified",
+    )
+
+    db_session.add(submitted_installation)
+    db_session.add(verified_installation)
+    db_session.flush()
+
+    service = PropertyInstallationVerificationService(db_session)
+
+    result = service.list_pending_installations(reviewer)
+
+    result_ids = [item.id for item in result]
+
+    assert submitted_installation.id in result_ids
+    assert verified_installation.id not in result_ids

@@ -361,6 +361,20 @@ def verify_property(
         ) from exc
 
 
+@router.get(
+    "/installations/pending-verification",
+    response_model=list[PropertyInstallationResponse],
+)
+def list_pending_property_installations(
+    current_user: User = Depends(
+        require_employee_clearance("installation_verification")
+    ),
+    db: Session = Depends(get_db),
+):
+    service = PropertyInstallationVerificationService(db)
+    return service.list_pending_installations(current_user)
+
+
 @router.post(
     "/{property_id}/installations",
     response_model=PropertyInstallationResponse,

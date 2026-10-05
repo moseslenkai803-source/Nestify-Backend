@@ -702,3 +702,57 @@ def test_get_manufacturing_order_plates_rejects_missing_order(
         service.get_order_plates(
             order_code="MO-NOTFOUND",
         )
+
+
+def test_list_manufacturing_orders_returns_newest_first(
+    db_session,
+):
+    employee = create_employee(db_session)
+
+    service = ManufacturingOrderService(db_session)
+
+    first_order = service.create_order(
+        quantity=10,
+        created_by=employee.id,
+    )
+
+    second_order = service.create_order(
+        quantity=20,
+        created_by=employee.id,
+    )
+
+    result = service.list_orders()
+
+    result_ids = [order.id for order in result]
+
+    assert result_ids.index(second_order.id) < result_ids.index(first_order.id)
+
+
+def test_list_manufacturing_orders_filters_by_status(
+    db_session,
+):
+    employee = create_employee(db_session)
+
+    service = ManufacturingOrderService(db_session)
+
+    draft_order = service.create_order(
+        quantity=10,
+        created_by=employee.id,
+    )
+
+    approved_order = service.create_order(
+        quantity=20,
+        created_by=employee.id,
+    )
+
+    service.approve_order(
+        order_code=approved_order.order_code,
+        approved_by=employee.id,
+    )
+
+    result = service.list_orders(status="approved")
+
+    assert len(result) == 1
+    assert result[0].id == approved_order.id
+    assert result[0].status == "approved"
+    assert result[0].id != draft_order.id

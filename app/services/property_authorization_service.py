@@ -33,6 +33,9 @@ class PropertyAuthorizationService:
         if property is None:
             raise ValueError("Property not found")
 
+        if user.role == "admin":
+            return property
+
         landlord = self.landlord_repository.get_by_id(property.landlord_id)
 
         if landlord is not None and landlord.user_id == user.id:

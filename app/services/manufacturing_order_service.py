@@ -118,6 +118,30 @@ class ManufacturingOrderService:
 
         return order
 
+    def list_orders(
+        self,
+        status: str | None = None,
+    ) -> list[ManufacturingOrder]:
+        if status is not None and status not in self.VALID_STATUSES:
+            raise ValueError("Invalid manufacturing order status")
+
+        if status is not None:
+            return self.manufacturing_order_repository.get_by_status(status)
+
+        orders = []
+        for order_status in self.VALID_STATUSES:
+            orders.extend(
+                self.manufacturing_order_repository.get_by_status(
+                    order_status
+                )
+            )
+
+        return sorted(
+            orders,
+            key=lambda order: order.created_at,
+            reverse=True,
+        )
+
     def get_order(
         self,
         order_code: str,

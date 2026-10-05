@@ -598,3 +598,211 @@ def test_create_dispatch_api_rejects_unallocated_plate(
 
     finally:
         app.dependency_overrides.clear()
+
+
+def test_list_dispatches_api(db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        employee, access_token = create_plate_operations_employee(
+            db_session
+        )
+        first_property = create_landlord_and_property(
+            db_session
+        )
+        second_property = create_landlord_and_property(
+            db_session
+        )
+
+        first_plate = create_manufactured_allocated_plate(
+            db_session,
+            first_property.id,
+            employee.id,
+        )
+        second_plate = create_manufactured_allocated_plate(
+            db_session,
+            second_property.id,
+            employee.id,
+        )
+
+        first_response = client.post(
+            "/api/v1/dispatches",
+            json={
+                "plate_ids": [str(first_plate.id)],
+                "destination": "Nairobi",
+                "recipient_name": "Jane Doe",
+                "recipient_phone": "+254711111111",
+            },
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        second_response = client.post(
+            "/api/v1/dispatches",
+            json={
+                "plate_ids": [str(second_plate.id)],
+                "destination": "Mombasa",
+                "recipient_name": "John Doe",
+                "recipient_phone": "+254722222222",
+            },
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert first_response.status_code == 201
+        assert second_response.status_code == 201
+
+        response = client.get(
+            "/api/v1/dispatches",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        dispatch_codes = [item["dispatch_code"] for item in data]
+
+        first_code = first_response.json()["dispatch_code"]
+        second_code = second_response.json()["dispatch_code"]
+
+        assert second_code in dispatch_codes
+        assert first_code in dispatch_codes
+        assert dispatch_codes.index(second_code) < dispatch_codes.index(first_code)
+
+        second_item = next(
+            item for item in data if item["dispatch_code"] == second_code
+        )
+        first_item = next(
+            item for item in data if item["dispatch_code"] == first_code
+        )
+
+        assert second_item["status"] == "draft"
+        assert first_item["status"] == "draft"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_dispatches_api_filters_by_status(db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        employee, access_token = create_plate_operations_employee(
+            db_session
+        )
+        first_property = create_landlord_and_property(
+            db_session
+        )
+        second_property = create_landlord_and_property(
+            db_session
+        )
+
+        first_plate = create_manufactured_allocated_plate(
+            db_session,
+            first_property.id,
+            employee.id,
+        )
+        second_plate = create_manufactured_allocated_plate(
+            db_session,
+            second_property.id,
+            employee.id,
+        )
+
+        first_response = client.post(
+            "/api/v1/dispatches",
+            json={
+                "plate_ids": [str(first_plate.id)],
+                "destination": "Nairobi",
+                "recipient_name": "Jane Doe",
+                "recipient_phone": "+254711111111",
+            },
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        second_response = client.post(
+            "/api/v1/dispatches",
+            json={
+                "plate_ids": [str(second_plate.id)],
+                "destination": "Mombasa",
+                "recipient_name": "John Doe",
+                "recipient_phone": "+254722222222",
+            },
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert first_response.status_code == 201
+        assert second_response.status_code == 201
+
+        first_code = first_response.json()["dispatch_code"]
+        second_code = second_response.json()["dispatch_code"]
+
+        ready_response = client.post(
+            f"/api/v1/dispatches/{first_code}/ready",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert ready_response.status_code == 200
+
+        response = client.get(
+            "/api/v1/dispatches?status=ready",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert len(data) == 1
+        assert data[0]["dispatch_code"] == first_code
+        assert data[0]["status"] == "ready"
+        assert data[0]["dispatch_code"] != second_code
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_dispatches_api_requires_plate_operations_clearance(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        access_token = create_user_access_token(
+            db_session,
+            role="employee",
+            clearance="support",
+        )
+
+        response = client.get(
+            "/api/v1/dispatches",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == (
+            "Insufficient employee clearance"
+        )
+
+    finally:
+        app.dependency_overrides.clear()

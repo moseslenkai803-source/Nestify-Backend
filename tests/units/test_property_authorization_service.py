@@ -87,6 +87,27 @@ def test_property_owner_can_authorize_own_property(db_session):
     assert authorized_property.id == property.id
 
 
+def test_admin_can_authorize_any_existing_property(db_session):
+    owner = create_user(db_session)
+    landlord = create_landlord(db_session, owner)
+    property = create_property(db_session, landlord)
+
+    admin = create_user(
+        db_session,
+        role="admin",
+    )
+
+    service = PropertyAuthorizationService(db_session)
+
+    authorized_property = service.authorize(
+        user=admin,
+        property_id=property.id,
+        action=PropertyAction.INSTALLATION_VERIFICATION,
+    )
+
+    assert authorized_property.id == property.id
+
+
 def test_landlord_cannot_authorize_another_landlords_property(db_session):
     owner = create_user(db_session)
     owner_landlord = create_landlord(db_session, owner)

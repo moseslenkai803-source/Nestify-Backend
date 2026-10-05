@@ -47,6 +47,29 @@ def create_dispatch(
 
 
 @router.get(
+    "",
+    response_model=list[DispatchResponse],
+)
+def list_dispatches(
+    status: str | None = None,
+    current_employee: User = Depends(
+        require_employee_clearance("plate_operations")
+    ),
+    db: Session = Depends(get_db),
+):
+    service = DispatchService(db)
+
+    try:
+        return service.list_dispatches(status=status)
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+
+@router.get(
     "/{dispatch_code}/plates",
     response_model=list[AddressPlateResponse],
 )

@@ -111,6 +111,15 @@ class DispatchService:
 
         return dispatch
 
+    def list_dispatches(
+        self,
+        status: str | None = None,
+    ) -> list[Dispatch]:
+        if status is None:
+            return self.dispatch_repository.get_all()
+
+        return self.dispatch_repository.get_by_status(status)
+
     def get_dispatch(
         self,
         dispatch_code: str,

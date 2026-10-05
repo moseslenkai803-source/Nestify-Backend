@@ -14,6 +14,17 @@ class AddressPlateResponse(BaseModel):
     activated_at: datetime | None
 
 
+class PlateInventoryResponse(BaseModel):
+    id: UUID
+    plate_code: str
+    property_id: UUID | None
+    property_code: str | None
+    property_name: str | None
+    status: str
+    lifecycle_status: str | None
+    activated_at: datetime | None
+
+
 class AddressPlateRequestResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

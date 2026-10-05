@@ -51,6 +51,17 @@ class DispatchRepository:
         )
         return self.db.scalar(statement)
 
+    def get_all(
+        self,
+    ) -> list[Dispatch]:
+        return (
+            self.db.query(Dispatch)
+            .order_by(
+                Dispatch.created_at.desc(),
+            )
+            .all()
+        )
+
     def get_by_status(
         self,
         status: str,

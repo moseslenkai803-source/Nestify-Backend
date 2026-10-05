@@ -39,6 +39,30 @@ class InstallationAssignmentRepository:
         )
         return self.db.scalar(statement)
 
+    def get_all(self) -> list[InstallationAssignment]:
+        return (
+            self.db.query(InstallationAssignment)
+            .order_by(
+                InstallationAssignment.created_at.desc(),
+            )
+            .all()
+        )
+
+    def get_by_status(
+        self,
+        status: str,
+    ) -> list[InstallationAssignment]:
+        return (
+            self.db.query(InstallationAssignment)
+            .filter(
+                InstallationAssignment.status == status,
+            )
+            .order_by(
+                InstallationAssignment.created_at.desc(),
+            )
+            .all()
+        )
+
     def get_active_by_property_id(
         self,
         property_id: UUID,

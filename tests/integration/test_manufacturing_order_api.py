@@ -789,3 +789,130 @@ def test_get_manufacturing_order_plates_api_returns_404_for_missing_order(
 
     finally:
         app.dependency_overrides.clear()
+
+
+def test_list_manufacturing_orders_api(db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        employee_id, access_token = create_plate_operations_employee(
+            db_session
+        )
+
+        first_order = ManufacturingOrder(
+            order_code=f"MO-LIST-{uuid.uuid4().hex[:8].upper()}",
+            quantity=10,
+            status="draft",
+            created_by=employee_id,
+        )
+
+        second_order = ManufacturingOrder(
+            order_code=f"MO-LIST-{uuid.uuid4().hex[:8].upper()}",
+            quantity=20,
+            status="approved",
+            created_by=employee_id,
+            approved_by=employee_id,
+        )
+
+        db_session.add_all([first_order, second_order])
+        db_session.flush()
+
+        response = client.get(
+            "/api/v1/manufacturing-orders",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        returned_codes = [order["order_code"] for order in data]
+
+        assert first_order.order_code in returned_codes
+        assert second_order.order_code in returned_codes
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_manufacturing_orders_api_filters_by_status(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        employee_id, access_token = create_plate_operations_employee(
+            db_session
+        )
+
+        draft_order = ManufacturingOrder(
+            order_code=f"MO-DRAFT-{uuid.uuid4().hex[:8].upper()}",
+            quantity=10,
+            status="draft",
+            created_by=employee_id,
+        )
+
+        approved_order = ManufacturingOrder(
+            order_code=f"MO-APPROVED-{uuid.uuid4().hex[:8].upper()}",
+            quantity=20,
+            status="approved",
+            created_by=employee_id,
+            approved_by=employee_id,
+        )
+
+        db_session.add_all([draft_order, approved_order])
+        db_session.flush()
+
+        response = client.get(
+            "/api/v1/manufacturing-orders",
+            params={"status": "approved"},
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert len(data) == 1
+        assert data[0]["order_code"] == approved_order.order_code
+        assert data[0]["status"] == "approved"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_manufacturing_orders_api_rejects_invalid_status(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        _, access_token = create_plate_operations_employee(
+            db_session
+        )
+
+        response = client.get(
+            "/api/v1/manufacturing-orders",
+            params={"status": "invalid"},
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == (
+            "Invalid manufacturing order status"
+        )
+
+    finally:
+        app.dependency_overrides.clear()

@@ -159,6 +159,112 @@ def test_verify_property_installation_api(db_session: Session):
 
 
 
+def test_verify_property_installation_api_allows_admin_without_property_access(
+    db_session: Session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        owner_user = User(
+            email=f"admin-verify-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+            is_active=True,
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Admin Verification Owner",
+            phone="+254700000031",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Admin Verification Property",
+            property_type="residential",
+            status="verified",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        admin = User(
+            email=f"admin-verify-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="admin",
+            is_active=True,
+        )
+        db_session.add(admin)
+        db_session.flush()
+
+        plate = AddressPlate(
+            plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+            property_id=property.id,
+            status="active",
+        )
+        db_session.add(plate)
+        db_session.flush()
+
+        for event_type in ("manufactured", "allocated", "dispatched"):
+            db_session.add(
+                AddressPlateLifecycleEvent(
+                    plate_id=plate.id,
+                    event_type=event_type,
+                    performed_by=admin.id,
+                )
+            )
+        db_session.flush()
+
+        installation = PropertyInstallation(
+            property_id=property.id,
+            plate_id=plate.id,
+            installer_id=admin.id,
+            latitude=-1.2921,
+            longitude=36.8219,
+            accuracy_meters=4.5,
+            captured_at=datetime(2026, 10, 4, 15, 0, tzinfo=UTC),
+            status="submitted",
+            notes="Admin verification regression test.",
+        )
+        db_session.add(installation)
+        db_session.flush()
+
+        access_token = create_access_token(subject=str(admin.id))
+
+        response = client.post(
+            f"/api/v1/properties/{property.id}/installations/"
+            f"{installation.id}/verify",
+            headers={"Authorization": f"Bearer {access_token}"},
+            json={
+                "status": "verified",
+                "notes": "Admin verification accepted.",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert data["installation_id"] == str(installation.id)
+        assert data["verified_by"] == str(admin.id)
+        assert data["status"] == "verified"
+        assert data["notes"] == "Admin verification accepted."
+
+        db_session.refresh(installation)
+        assert installation.status == "verified"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+
 def test_reject_property_installation_api(db_session: Session):
     app.dependency_overrides[get_db] = lambda: db_session
 
@@ -1000,6 +1106,478 @@ def test_verify_property_installation_api_rejects_invalid_status(db_session: Ses
         ).all()
 
         assert verifications == []
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_pending_property_installations_api_returns_authorized_submitted_installations(
+    db_session: Session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        owner_user = User(
+            email=f"queue-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+            is_active=True,
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Queue Owner",
+            phone="+254700000020",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Queue Test Property",
+            property_type="residential",
+            status="verified",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        reviewer = User(
+            email=f"queue-reviewer-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="installation_verification",
+            is_active=True,
+        )
+        db_session.add(reviewer)
+        db_session.flush()
+
+        PropertyAccessService(db_session).grant_access(
+            user_id=reviewer.id,
+            property_id=property.id,
+            access_type="installation_verification",
+        )
+
+        plate = AddressPlate(
+            plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+            property_id=property.id,
+            status="active",
+        )
+        db_session.add(plate)
+        db_session.flush()
+
+        installation = PropertyInstallation(
+            property_id=property.id,
+            plate_id=plate.id,
+            installer_id=reviewer.id,
+            latitude=-1.2921,
+            longitude=36.8219,
+            accuracy_meters=4.5,
+            captured_at=datetime(2026, 10, 4, 10, 30, tzinfo=UTC),
+            status="submitted",
+            notes="Pending verification.",
+        )
+        db_session.add(installation)
+        db_session.flush()
+
+        access_token = create_access_token(subject=str(reviewer.id))
+
+        response = client.get(
+            "/api/v1/properties/installations/pending-verification",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert len(data) == 1
+        assert data[0]["id"] == str(installation.id)
+        assert data[0]["property_id"] == str(property.id)
+        assert data[0]["plate_id"] == str(plate.id)
+        assert data[0]["status"] == "submitted"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_pending_property_installations_api_returns_all_submitted_installations_for_admin(
+    db_session: Session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        owner_user = User(
+            email=f"admin-queue-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+            is_active=True,
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Admin Queue Owner",
+            phone="+254700000030",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        first_property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Admin Queue Property One",
+            property_type="residential",
+            status="verified",
+        )
+        second_property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Admin Queue Property Two",
+            property_type="residential",
+            status="verified",
+        )
+        db_session.add(first_property)
+        db_session.add(second_property)
+        db_session.flush()
+
+        admin = User(
+            email=f"admin-queue-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="admin",
+            is_active=True,
+        )
+        db_session.add(admin)
+        db_session.flush()
+
+        first_plate = AddressPlate(
+            plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+            property_id=first_property.id,
+            status="active",
+        )
+        second_plate = AddressPlate(
+            plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+            property_id=second_property.id,
+            status="active",
+        )
+        db_session.add(first_plate)
+        db_session.add(second_plate)
+        db_session.flush()
+
+        first_installation = PropertyInstallation(
+            property_id=first_property.id,
+            plate_id=first_plate.id,
+            installer_id=admin.id,
+            latitude=-1.2921,
+            longitude=36.8219,
+            accuracy_meters=5.0,
+            captured_at=datetime(2026, 10, 4, 14, 0, tzinfo=UTC),
+            status="submitted",
+        )
+        second_installation = PropertyInstallation(
+            property_id=second_property.id,
+            plate_id=second_plate.id,
+            installer_id=admin.id,
+            latitude=-1.2930,
+            longitude=36.8220,
+            accuracy_meters=5.0,
+            captured_at=datetime(2026, 10, 4, 14, 5, tzinfo=UTC),
+            status="submitted",
+        )
+        verified_installation = PropertyInstallation(
+            property_id=first_property.id,
+            plate_id=first_plate.id,
+            installer_id=admin.id,
+            latitude=-1.2940,
+            longitude=36.8230,
+            accuracy_meters=5.0,
+            captured_at=datetime(2026, 10, 4, 14, 10, tzinfo=UTC),
+            status="verified",
+        )
+        db_session.add(first_installation)
+        db_session.add(second_installation)
+        db_session.add(verified_installation)
+        db_session.flush()
+
+        access_token = create_access_token(subject=str(admin.id))
+
+        response = client.get(
+            "/api/v1/properties/installations/pending-verification",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+        result_ids = {item["id"] for item in data}
+
+        assert str(first_installation.id) in result_ids
+        assert str(second_installation.id) in result_ids
+        assert str(verified_installation.id) not in result_ids
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+
+def test_list_pending_property_installations_api_excludes_unauthorized_properties(
+    db_session: Session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        owner_user = User(
+            email=f"queue-scope-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+            is_active=True,
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Queue Scope Owner",
+            phone="+254700000021",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        authorized_property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Authorized Queue Property",
+            property_type="residential",
+            status="verified",
+        )
+        unauthorized_property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Unauthorized Queue Property",
+            property_type="residential",
+            status="verified",
+        )
+        db_session.add(authorized_property)
+        db_session.flush()
+        db_session.add(unauthorized_property)
+        db_session.flush()
+
+        reviewer = User(
+            email=f"queue-scope-reviewer-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="installation_verification",
+            is_active=True,
+        )
+        db_session.add(reviewer)
+        db_session.flush()
+
+        PropertyAccessService(db_session).grant_access(
+            user_id=reviewer.id,
+            property_id=authorized_property.id,
+            access_type="installation_verification",
+        )
+
+        authorized_plate = AddressPlate(
+            plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+            property_id=authorized_property.id,
+            status="active",
+        )
+        unauthorized_plate = AddressPlate(
+            plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+            property_id=unauthorized_property.id,
+            status="active",
+        )
+        db_session.add(authorized_plate)
+        db_session.flush()
+        db_session.add(unauthorized_plate)
+        db_session.flush()
+
+        authorized_installation = PropertyInstallation(
+            property_id=authorized_property.id,
+            plate_id=authorized_plate.id,
+            installer_id=reviewer.id,
+            latitude=-1.2921,
+            longitude=36.8219,
+            accuracy_meters=5.0,
+            captured_at=datetime(2026, 10, 4, 11, 0, tzinfo=UTC),
+            status="submitted",
+        )
+        unauthorized_installation = PropertyInstallation(
+            property_id=unauthorized_property.id,
+            plate_id=unauthorized_plate.id,
+            installer_id=reviewer.id,
+            latitude=-1.2930,
+            longitude=36.8220,
+            accuracy_meters=5.0,
+            captured_at=datetime(2026, 10, 4, 11, 5, tzinfo=UTC),
+            status="submitted",
+        )
+        db_session.add(authorized_installation)
+        db_session.add(unauthorized_installation)
+        db_session.flush()
+
+        access_token = create_access_token(subject=str(reviewer.id))
+
+        response = client.get(
+            "/api/v1/properties/installations/pending-verification",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+        result_ids = {item["id"] for item in data}
+
+        assert str(authorized_installation.id) in result_ids
+        assert str(unauthorized_installation.id) not in result_ids
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_pending_property_installations_api_excludes_non_submitted_installations(
+    db_session: Session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        owner_user = User(
+            email=f"queue-status-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+            is_active=True,
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Queue Status Owner",
+            phone="+254700000022",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Queue Status Property",
+            property_type="residential",
+            status="verified",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        reviewer = User(
+            email=f"queue-status-reviewer-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="installation_verification",
+            is_active=True,
+        )
+        db_session.add(reviewer)
+        db_session.flush()
+
+        PropertyAccessService(db_session).grant_access(
+            user_id=reviewer.id,
+            property_id=property.id,
+            access_type="installation_verification",
+        )
+
+        submitted_plate = AddressPlate(
+            plate_code=f"PLATE-{uuid.uuid4().hex[:12].upper()}",
+            property_id=property.id,
+            status="active",
+        )
+        db_session.add(submitted_plate)
+        db_session.flush()
+
+        submitted_installation = PropertyInstallation(
+            property_id=property.id,
+            plate_id=submitted_plate.id,
+            installer_id=reviewer.id,
+            latitude=-1.2921,
+            longitude=36.8219,
+            accuracy_meters=5.0,
+            captured_at=datetime(2026, 10, 4, 12, 0, tzinfo=UTC),
+            status="submitted",
+        )
+        verified_installation = PropertyInstallation(
+            property_id=property.id,
+            plate_id=submitted_plate.id,
+            installer_id=reviewer.id,
+            latitude=-1.2930,
+            longitude=36.8220,
+            accuracy_meters=5.0,
+            captured_at=datetime(2026, 10, 4, 12, 5, tzinfo=UTC),
+            status="verified",
+        )
+        db_session.add(submitted_installation)
+        db_session.add(verified_installation)
+        db_session.flush()
+
+        access_token = create_access_token(subject=str(reviewer.id))
+
+        response = client.get(
+            "/api/v1/properties/installations/pending-verification",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+        result_ids = {item["id"] for item in data}
+
+        assert str(submitted_installation.id) in result_ids
+        assert str(verified_installation.id) not in result_ids
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_pending_property_installations_api_denies_wrong_clearance(
+    db_session: Session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        employee = User(
+            email=f"queue-clearance-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        access_token = create_access_token(subject=str(employee.id))
+
+        response = client.get(
+            "/api/v1/properties/installations/pending-verification",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Insufficient employee clearance"
 
     finally:
         app.dependency_overrides.clear()

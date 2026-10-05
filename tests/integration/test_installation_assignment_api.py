@@ -2489,3 +2489,293 @@ def test_cancel_installation_assignment_api_rejects_completed_assignment(db_sess
 
     finally:
         app.dependency_overrides.clear()
+
+def test_list_installation_assignments_api(db_session):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        employee = User(
+            email=f"assignment-api-list-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        owner_user = User(
+            email=f"assignment-api-list-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+            is_active=True,
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Assignment List Owner",
+            phone="+254700000050",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property_record = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-LIST-{uuid.uuid4().hex[:12].upper()}",
+            name="Assignment List Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property_record)
+        db_session.flush()
+
+        plate = AddressPlate(
+            plate_code=f"PLATE-LIST-{uuid.uuid4().hex[:12].upper()}",
+            status="unactivated",
+            property_id=property_record.id,
+        )
+        db_session.add(plate)
+        db_session.flush()
+
+        contractor = Contractor(
+            name="Assignment List Contractor",
+            contractor_type="company",
+            status="active",
+        )
+        db_session.add(contractor)
+        db_session.flush()
+
+        contractor_user = User(
+            email=f"assignment-api-list-contractor-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="contractor",
+            is_active=True,
+        )
+        db_session.add(contractor_user)
+        db_session.flush()
+
+        contractor_member = ContractorMember(
+            contractor_id=contractor.id,
+            user_id=contractor_user.id,
+            is_active=True,
+        )
+        db_session.add(contractor_member)
+        db_session.flush()
+
+        assignment = InstallationAssignment(
+            property_id=property_record.id,
+            plate_id=plate.id,
+            contractor_id=contractor.id,
+            contractor_member_id=contractor_member.id,
+            assigned_by=employee.id,
+            status="assigned",
+        )
+        db_session.add(assignment)
+        db_session.flush()
+
+        access_token = create_access_token(subject=str(employee.id))
+
+        response = client.get(
+            "/api/v1/installation-assignments",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert any(
+            item["id"] == str(assignment.id)
+            for item in data
+        )
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_installation_assignments_api_filters_by_status(db_session):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        employee = User(
+            email=f"assignment-api-filter-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        owner_user = User(
+            email=f"assignment-api-filter-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+            is_active=True,
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Assignment Filter Owner",
+            phone="+254700000051",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property_record = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-FILTER-{uuid.uuid4().hex[:12].upper()}",
+            name="Assignment Filter Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property_record)
+        db_session.flush()
+
+        plate = AddressPlate(
+            plate_code=f"PLATE-FILTER-{uuid.uuid4().hex[:12].upper()}",
+            status="unactivated",
+            property_id=property_record.id,
+        )
+        db_session.add(plate)
+        db_session.flush()
+
+        contractor = Contractor(
+            name="Assignment Filter Contractor",
+            contractor_type="company",
+            status="active",
+        )
+        db_session.add(contractor)
+        db_session.flush()
+
+        contractor_user = User(
+            email=f"assignment-api-filter-contractor-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="contractor",
+            is_active=True,
+        )
+        db_session.add(contractor_user)
+        db_session.flush()
+
+        contractor_member = ContractorMember(
+            contractor_id=contractor.id,
+            user_id=contractor_user.id,
+            is_active=True,
+        )
+        db_session.add(contractor_member)
+        db_session.flush()
+
+        assignment = InstallationAssignment(
+            property_id=property_record.id,
+            plate_id=plate.id,
+            contractor_id=contractor.id,
+            contractor_member_id=contractor_member.id,
+            assigned_by=employee.id,
+            status="cancelled",
+        )
+        db_session.add(assignment)
+        db_session.flush()
+
+        access_token = create_access_token(subject=str(employee.id))
+
+        response = client.get(
+            "/api/v1/installation-assignments?status=cancelled",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert data
+        assert all(item["status"] == "cancelled" for item in data)
+        assert any(item["id"] == str(assignment.id) for item in data)
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_installation_assignments_api_unknown_status_returns_empty(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        employee = User(
+            email=f"assignment-api-unknown-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        access_token = create_access_token(subject=str(employee.id))
+
+        response = client.get(
+            "/api/v1/installation-assignments?status=not-a-real-status",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_installation_assignments_api_requires_plate_operations_clearance(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        employee = User(
+            email=f"assignment-api-list-no-clearance-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            clearance="property_verification",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        access_token = create_access_token(subject=str(employee.id))
+
+        response = client.get(
+            "/api/v1/installation-assignments",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Insufficient employee clearance"
+
+    finally:
+        app.dependency_overrides.clear()

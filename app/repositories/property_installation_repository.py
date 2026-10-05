@@ -41,6 +41,41 @@ class PropertyInstallationRepository:
 
         return self.db.scalar(statement)
 
+    def get_all_submitted(
+        self,
+    ) -> list[PropertyInstallation]:
+        statement = (
+            select(PropertyInstallation)
+            .where(PropertyInstallation.status == "submitted")
+            .order_by(
+                PropertyInstallation.created_at.desc(),
+                PropertyInstallation.id.desc(),
+            )
+        )
+
+        return list(self.db.scalars(statement).all())
+
+    def get_submitted_by_property_ids(
+        self,
+        property_ids: list[uuid.UUID],
+    ) -> list[PropertyInstallation]:
+        if not property_ids:
+            return []
+
+        statement = (
+            select(PropertyInstallation)
+            .where(
+                PropertyInstallation.property_id.in_(property_ids),
+                PropertyInstallation.status == "submitted",
+            )
+            .order_by(
+                PropertyInstallation.created_at.desc(),
+                PropertyInstallation.id.desc(),
+            )
+        )
+
+        return list(self.db.scalars(statement).all())
+
     def get_by_property_id(
         self,
         property_id: uuid.UUID,

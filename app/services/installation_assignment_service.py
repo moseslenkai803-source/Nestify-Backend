@@ -29,6 +29,15 @@ class InstallationAssignmentService:
         self.property_installation_repository = PropertyInstallationRepository(db)
         self.user_repository = UserRepository(db)
 
+    def list_assignments(
+        self,
+        status: str | None = None,
+    ) -> list[InstallationAssignment]:
+        if status is None:
+            return self.installation_assignment_repository.get_all()
+
+        return self.installation_assignment_repository.get_by_status(status)
+
     def create_assignment(
         self,
         property_id: UUID,

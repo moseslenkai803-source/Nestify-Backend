@@ -1017,3 +1017,92 @@ def test_cancel_dispatch_does_not_create_dispatched_lifecycle_event(
 
     assert latest_event is not None
     assert latest_event.event_type == "allocated"
+
+
+def test_list_dispatches_returns_newest_first(db_session):
+    employee = create_employee(db_session)
+    _, first_property = create_landlord_and_property(db_session)
+    _, second_property = create_landlord_and_property(db_session)
+
+    first_plate = create_manufactured_allocated_plate(
+        db_session,
+        first_property.id,
+        employee.id,
+    )
+    second_plate = create_manufactured_allocated_plate(
+        db_session,
+        second_property.id,
+        employee.id,
+    )
+
+    service = DispatchService(db_session)
+
+    first_dispatch = service.create_dispatch(
+        plate_ids=[first_plate.id],
+        destination="Nairobi",
+        recipient_name="Jane Doe",
+        recipient_phone="+254711111111",
+        created_by=employee.id,
+    )
+
+    second_dispatch = service.create_dispatch(
+        plate_ids=[second_plate.id],
+        destination="Mombasa",
+        recipient_name="John Doe",
+        recipient_phone="+254722222222",
+        created_by=employee.id,
+    )
+
+    result = service.list_dispatches()
+
+    result_ids = [dispatch.id for dispatch in result]
+
+    assert second_dispatch.id in result_ids
+    assert first_dispatch.id in result_ids
+    assert result_ids.index(second_dispatch.id) < result_ids.index(
+        first_dispatch.id
+    )
+
+
+def test_list_dispatches_filters_by_status(db_session):
+    employee = create_employee(db_session)
+    _, first_property = create_landlord_and_property(db_session)
+    _, second_property = create_landlord_and_property(db_session)
+
+    first_plate = create_manufactured_allocated_plate(
+        db_session,
+        first_property.id,
+        employee.id,
+    )
+    second_plate = create_manufactured_allocated_plate(
+        db_session,
+        second_property.id,
+        employee.id,
+    )
+
+    service = DispatchService(db_session)
+
+    first_dispatch = service.create_dispatch(
+        plate_ids=[first_plate.id],
+        destination="Nairobi",
+        recipient_name="Jane Doe",
+        recipient_phone="+254711111111",
+        created_by=employee.id,
+    )
+
+    second_dispatch = service.create_dispatch(
+        plate_ids=[second_plate.id],
+        destination="Mombasa",
+        recipient_name="John Doe",
+        recipient_phone="+254722222222",
+        created_by=employee.id,
+    )
+
+    service.mark_ready(first_dispatch.dispatch_code)
+
+    result = service.list_dispatches(status="ready")
+
+    assert len(result) == 1
+    assert result[0].id == first_dispatch.id
+    assert result[0].status == "ready"
+    assert result[0].id != second_dispatch.id
