@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.contractor import Contractor
+from app.models.user import User
 
 
 class ContractorRepository:
@@ -45,6 +46,21 @@ class ContractorRepository:
             )
             .all()
         )
+
+    def get_candidate_users(self) -> list[User]:
+        statement = (
+            select(User)
+            .where(
+                User.role == "contractor",
+                User.is_active.is_(True),
+            )
+            .order_by(
+                User.created_at.asc(),
+                User.id.asc(),
+            )
+        )
+
+        return list(self.db.scalars(statement).all())
 
     def get_active(self) -> list[Contractor]:
         return (

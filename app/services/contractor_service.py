@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.models.contractor import Contractor
+from app.models.user import User
 from app.models.contractor_member import ContractorMember
 from app.repositories.contractor_member_repository import (
     ContractorMemberRepository,
@@ -17,6 +18,9 @@ class ContractorService:
         self.contractor_repository = ContractorRepository(db)
         self.contractor_member_repository = ContractorMemberRepository(db)
         self.user_repository = UserRepository(db)
+
+    def list_contractor_candidates(self) -> list[User]:
+        return self.contractor_repository.get_candidate_users()
 
     def create_contractor(
         self,

@@ -668,3 +668,182 @@ def test_deactivate_contractor_api_rejects_already_inactive_contractor(
 
     finally:
         app.dependency_overrides.clear()
+
+
+def test_list_contractor_candidates_returns_safe_active_contractor_users(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        _, access_token = create_employee_access_token(
+            db_session
+        )
+
+        contractor_user = create_user(
+            db_session,
+            role="contractor",
+            is_active=True,
+        )
+        inactive_contractor = create_user(
+            db_session,
+            role="contractor",
+            is_active=False,
+        )
+        employee_user = create_user(
+            db_session,
+            role="employee",
+            is_active=True,
+        )
+
+        response = client.get(
+            "/api/v1/contractors/candidates",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        candidate_ids = {candidate["id"] for candidate in data}
+
+        assert str(contractor_user.id) in candidate_ids
+        assert str(inactive_contractor.id) not in candidate_ids
+        assert str(employee_user.id) not in candidate_ids
+
+        assert all(
+            set(candidate.keys()) == {"id", "email"}
+            for candidate in data
+        )
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_contractor_candidates_allows_existing_contractor_members(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        _, access_token = create_employee_access_token(
+            db_session
+        )
+
+        contractor = Contractor(
+            name="Existing Contractor",
+            contractor_type="company",
+            status="active",
+        )
+        contractor_user = create_user(
+            db_session,
+            role="contractor",
+            is_active=True,
+        )
+
+        db_session.add(contractor)
+        db_session.flush()
+
+        db_session.add(
+            ContractorMember(
+                contractor_id=contractor.id,
+                user_id=contractor_user.id,
+                is_active=True,
+            )
+        )
+        db_session.flush()
+
+        response = client.get(
+            "/api/v1/contractors/candidates",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+        candidate_ids = {candidate["id"] for candidate in data}
+
+        assert str(contractor_user.id) in candidate_ids
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_contractor_candidates_requires_contractor_management_clearance(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        _, access_token = create_employee_access_token(
+            db_session,
+            clearance="support",
+        )
+
+        response = client.get(
+            "/api/v1/contractors/candidates",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == (
+            "Insufficient employee clearance"
+        )
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_contractor_candidates_requires_authentication(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        response = client.get(
+            "/api/v1/contractors/candidates",
+        )
+
+        assert response.status_code == 401
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_candidates_route_is_not_captured_by_contractor_id(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        _, access_token = create_employee_access_token(
+            db_session
+        )
+
+        response = client.get(
+            "/api/v1/contractors/candidates",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+    finally:
+        app.dependency_overrides.clear()

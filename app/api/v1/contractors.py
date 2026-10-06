@@ -8,6 +8,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.contractor import (
     ContractorCreate,
+    ContractorMemberCandidateResponse,
     ContractorMemberCreate,
     ContractorMemberResponse,
     ContractorResponse,
@@ -93,6 +94,21 @@ def list_contractors(
     return service.list_contractors(
         active_only=active_only,
     )
+
+
+@router.get(
+    "/candidates",
+    response_model=list[ContractorMemberCandidateResponse],
+)
+def list_contractor_candidates(
+    current_employee: User = Depends(
+        require_employee_clearance("contractor_management")
+    ),
+    db: Session = Depends(get_db),
+):
+    service = ContractorService(db)
+
+    return service.list_contractor_candidates()
 
 
 @router.get(

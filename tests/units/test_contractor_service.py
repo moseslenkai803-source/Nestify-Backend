@@ -431,3 +431,23 @@ def test_list_contractors_active_only_returns_active_contractors(
 
     assert active.id in result_ids
     assert inactive.id not in result_ids
+
+
+def test_list_contractor_candidates_delegates_to_repository(db_session):
+    from app.models.user import User
+    from app.services.contractor_service import ContractorService
+
+    contractor_user = User(
+        email="candidate@example.com",
+        password_hash="hashed",
+        role="contractor",
+        is_active=True,
+    )
+    db_session.add(contractor_user)
+    db_session.flush()
+
+    service = ContractorService(db_session)
+
+    candidates = service.list_contractor_candidates()
+
+    assert contractor_user in candidates

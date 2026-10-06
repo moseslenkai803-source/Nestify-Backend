@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class ContractorCreate(BaseModel):
@@ -19,6 +19,13 @@ class ContractorCreate(BaseModel):
         default=None,
         max_length=30,
     )
+
+
+class ContractorMemberCandidateResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    email: EmailStr
 
 
 class ContractorResponse(BaseModel):

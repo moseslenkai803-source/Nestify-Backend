@@ -114,3 +114,78 @@ def test_get_active_returns_only_active_contractors_newest_first(
         first_active.id,
     ]
     assert inactive.id not in result_ids
+
+
+def test_get_candidate_users_returns_active_contractor_users(db_session):
+    from app.models.user import User
+    from app.repositories.contractor_repository import ContractorRepository
+
+    contractor_user = User(
+        email="contractor-candidate@example.com",
+        password_hash="hashed",
+        role="contractor",
+        is_active=True,
+    )
+    inactive_contractor = User(
+        email="inactive-contractor@example.com",
+        password_hash="hashed",
+        role="contractor",
+        is_active=False,
+    )
+    employee_user = User(
+        email="employee@example.com",
+        password_hash="hashed",
+        role="employee",
+        is_active=True,
+    )
+
+    db_session.add_all(
+        [
+            contractor_user,
+            inactive_contractor,
+            employee_user,
+        ]
+    )
+    db_session.flush()
+
+    candidates = ContractorRepository(db_session).get_candidate_users()
+
+    assert contractor_user in candidates
+    assert inactive_contractor not in candidates
+    assert employee_user not in candidates
+
+
+def test_get_candidate_users_includes_contractor_user_with_existing_membership(
+    db_session,
+):
+    from app.models.contractor import Contractor
+    from app.models.contractor_member import ContractorMember
+    from app.models.user import User
+    from app.repositories.contractor_repository import ContractorRepository
+
+    contractor = Contractor(
+        name="Existing Contractor",
+        contractor_type="company",
+        status="active",
+    )
+    contractor_user = User(
+        email="existing-member@example.com",
+        password_hash="hashed",
+        role="contractor",
+        is_active=True,
+    )
+
+    db_session.add_all([contractor, contractor_user])
+    db_session.flush()
+
+    membership = ContractorMember(
+        contractor_id=contractor.id,
+        user_id=contractor_user.id,
+        is_active=True,
+    )
+    db_session.add(membership)
+    db_session.flush()
+
+    candidates = ContractorRepository(db_session).get_candidate_users()
+
+    assert contractor_user in candidates
