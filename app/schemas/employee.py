@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class EmployeeCreate(BaseModel):
@@ -21,6 +21,13 @@ class EmployeeCreate(BaseModel):
     clearances: list[str] = Field(
         default_factory=list,
     )
+
+
+class EmployeeCandidateResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    email: EmailStr
 
 
 class EmployeeResponse(BaseModel):

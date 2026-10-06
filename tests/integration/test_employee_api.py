@@ -364,6 +364,339 @@ def test_create_employee_api_rejects_non_employee_target_user(
         app.dependency_overrides.clear()
 
 
+def test_list_employee_candidates_api_returns_eligible_employee_users(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        admin = create_user(
+            db_session,
+            role="admin",
+        )
+
+        candidate = create_user(
+            db_session,
+            role="employee",
+        )
+
+        access_token = create_access_token_for_user(admin)
+
+        response = client.get(
+            "/api/v1/employees/candidates",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        returned_by_id = {
+            item["id"]: item
+            for item in data
+        }
+
+        assert str(candidate.id) in returned_by_id
+        assert returned_by_id[str(candidate.id)] == {
+            "id": str(candidate.id),
+            "email": candidate.email,
+        }
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_employee_candidates_api_excludes_non_employee_users(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        admin = create_user(
+            db_session,
+            role="admin",
+        )
+
+        landlord = create_user(
+            db_session,
+            role="landlord",
+        )
+
+        contractor = create_user(
+            db_session,
+            role="contractor",
+        )
+
+        employee = create_user(
+            db_session,
+            role="employee",
+        )
+
+        access_token = create_access_token_for_user(admin)
+
+        response = client.get(
+            "/api/v1/employees/candidates",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        returned_ids = {item["id"] for item in data}
+
+        assert str(employee.id) in returned_ids
+        assert str(landlord.id) not in returned_ids
+        assert str(contractor.id) not in returned_ids
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_employee_candidates_api_excludes_inactive_employee_users(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        admin = create_user(
+            db_session,
+            role="admin",
+        )
+
+        inactive_employee = create_user(
+            db_session,
+            role="employee",
+            is_active=False,
+        )
+
+        active_employee = create_user(
+            db_session,
+            role="employee",
+        )
+
+        access_token = create_access_token_for_user(admin)
+
+        response = client.get(
+            "/api/v1/employees/candidates",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        returned_ids = {item["id"] for item in data}
+
+        assert str(active_employee.id) in returned_ids
+        assert str(inactive_employee.id) not in returned_ids
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_employee_candidates_api_excludes_users_with_employee_records(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        admin = create_user(
+            db_session,
+            role="admin",
+        )
+
+        existing_employee_user = create_user(
+            db_session,
+            role="employee",
+        )
+
+        candidate = create_user(
+            db_session,
+            role="employee",
+        )
+
+        employee = Employee(
+            id=uuid.uuid4(),
+            user_id=existing_employee_user.id,
+            employee_number=f"EMP-CANDIDATE-{uuid.uuid4()}",
+            department="Operations",
+            position="Field Officer",
+        )
+
+        db_session.add(employee)
+        db_session.flush()
+
+        access_token = create_access_token_for_user(admin)
+
+        response = client.get(
+            "/api/v1/employees/candidates",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        returned_ids = {item["id"] for item in data}
+
+        assert str(candidate.id) in returned_ids
+        assert str(existing_employee_user.id) not in returned_ids
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_employee_candidates_api_rejects_non_admin(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        employee = create_user(
+            db_session,
+            role="employee",
+        )
+
+        access_token = create_access_token_for_user(employee)
+
+        response = client.get(
+            "/api/v1/employees/candidates",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Admin access required"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_employee_candidates_api_rejects_unauthenticated_request(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        response = client.get(
+            "/api/v1/employees/candidates",
+        )
+
+        assert response.status_code == 401
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_employee_candidates_api_returns_only_safe_fields(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        admin = create_user(
+            db_session,
+            role="admin",
+        )
+
+        candidate = create_user(
+            db_session,
+            role="employee",
+        )
+
+        access_token = create_access_token_for_user(admin)
+
+        response = client.get(
+            "/api/v1/employees/candidates",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        candidate_items = [
+            item
+            for item in data
+            if item["id"] == str(candidate.id)
+        ]
+
+        assert len(candidate_items) == 1
+        assert set(candidate_items[0].keys()) == {"id", "email"}
+        assert candidate_items[0]["id"] == str(candidate.id)
+        assert candidate_items[0]["email"] == candidate.email
+        assert "password_hash" not in candidate_items[0]
+        assert "role" not in candidate_items[0]
+        assert "is_active" not in candidate_items[0]
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_employee_candidates_api_route_is_not_captured_by_employee_id(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        admin = create_user(
+            db_session,
+            role="admin",
+        )
+
+        candidate = create_user(
+            db_session,
+            role="employee",
+        )
+
+        access_token = create_access_token_for_user(admin)
+
+        response = client.get(
+            "/api/v1/employees/candidates",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+        returned_ids = {item["id"] for item in data}
+
+        assert str(candidate.id) in returned_ids
+
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_list_employees_api(db_session):
     app.dependency_overrides[get_db] = lambda: db_session
 

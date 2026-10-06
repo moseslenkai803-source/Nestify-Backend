@@ -7,6 +7,7 @@ from app.api.dependencies import require_admin
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.employee import (
+    EmployeeCandidateResponse,
     EmployeeClearanceCreate,
     EmployeeClearanceResponse,
     EmployeeCreate,
@@ -62,6 +63,19 @@ def list_employees(
     return service.list_employees(
         active_only=active_only,
     )
+
+
+@router.get(
+    "/candidates",
+    response_model=list[EmployeeCandidateResponse],
+)
+def list_employee_candidates(
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    service = EmployeeService(db)
+
+    return service.list_employee_candidates()
 
 
 @router.get(

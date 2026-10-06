@@ -67,6 +67,26 @@ class EmployeeRepository:
             .all()
         )
 
+    def get_candidate_users(self) -> list[User]:
+        statement = (
+            select(User)
+            .outerjoin(
+                Employee,
+                Employee.user_id == User.id,
+            )
+            .where(
+                User.role == "employee",
+                User.is_active.is_(True),
+                Employee.id.is_(None),
+            )
+            .order_by(
+                User.created_at.asc(),
+                User.id.asc(),
+            )
+        )
+
+        return list(self.db.scalars(statement).all())
+
     def get_active(self) -> list[Employee]:
         statement = (
             select(Employee)

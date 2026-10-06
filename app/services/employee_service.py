@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.employee import Employee
 from app.models.employee_clearance import EmployeeClearance
+from app.models.user import User
 from app.repositories.employee_clearance_repository import (
     EmployeeClearanceRepository,
 )
@@ -118,6 +119,9 @@ class EmployeeService:
             return self.employee_repository.get_active()
 
         return self.employee_repository.get_all()
+
+    def list_employee_candidates(self) -> list[User]:
+        return self.employee_repository.get_candidate_users()
 
     def add_clearance(
         self,
