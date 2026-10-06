@@ -21,6 +21,8 @@ from app.models.contractor import Contractor
 from app.models.contractor_member import ContractorMember
 from app.models.installation_assignment import InstallationAssignment
 from app.models.listing import Listing
+from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 
 __all__ = [
     "Base",
@@ -46,4 +48,6 @@ __all__ = [
     "ContractorMember",
     "InstallationAssignment",
     "Listing",
+    "Employee",
+    "EmployeeClearance",
 ]
