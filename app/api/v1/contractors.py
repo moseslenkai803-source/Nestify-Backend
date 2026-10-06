@@ -78,6 +78,34 @@ def deactivate_contractor(
         ) from exc
 
 
+@router.post(
+    "/{contractor_id}/reactivate",
+    response_model=ContractorResponse,
+)
+def reactivate_contractor(
+    contractor_id: UUID,
+    current_employee: User = Depends(
+        require_employee_clearance("contractor_management")
+    ),
+    db: Session = Depends(get_db),
+):
+    service = ContractorService(db)
+
+    try:
+        return service.reactivate_contractor(contractor_id)
+    except ValueError as exc:
+        status_code = (
+            404
+            if str(exc) == "Contractor not found"
+            else 400
+        )
+
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
+
+
 @router.get(
     "",
     response_model=list[ContractorResponse],

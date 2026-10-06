@@ -372,6 +372,52 @@ def test_deactivate_contractor_rejects_missing_contractor(db_session):
         service.deactivate_contractor(uuid.uuid4())
 
 
+def test_reactivate_contractor_sets_active_status(db_session):
+    contractor = Contractor(
+        name="Test Contractor",
+        contractor_type="company",
+        status="inactive",
+    )
+    db_session.add(contractor)
+    db_session.commit()
+
+    service = ContractorService(db_session)
+
+    result = service.reactivate_contractor(contractor.id)
+
+    assert result.status == "active"
+
+    db_session.refresh(contractor)
+    assert contractor.status == "active"
+
+
+def test_reactivate_contractor_rejects_missing_contractor(db_session):
+    service = ContractorService(db_session)
+
+    with pytest.raises(ValueError, match="Contractor not found"):
+        service.reactivate_contractor(uuid.uuid4())
+
+
+def test_reactivate_contractor_rejects_already_active_contractor(
+    db_session,
+):
+    contractor = Contractor(
+        name="Test Contractor",
+        contractor_type="company",
+        status="active",
+    )
+    db_session.add(contractor)
+    db_session.commit()
+
+    service = ContractorService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Contractor is already active",
+    ):
+        service.reactivate_contractor(contractor.id)
+
+
 def test_deactivate_contractor_rejects_already_inactive_contractor(
     db_session,
 ):
