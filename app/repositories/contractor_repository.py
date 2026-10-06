@@ -35,3 +35,24 @@ class ContractorRepository:
             .with_for_update()
         )
         return self.db.scalar(statement)
+
+    def get_all(self) -> list[Contractor]:
+        return (
+            self.db.query(Contractor)
+            .order_by(
+                Contractor.created_at.desc(),
+                Contractor.id.desc(),
+            )
+            .all()
+        )
+
+    def get_active(self) -> list[Contractor]:
+        return (
+            self.db.query(Contractor)
+            .filter(Contractor.status == "active")
+            .order_by(
+                Contractor.created_at.desc(),
+                Contractor.id.desc(),
+            )
+            .all()
+        )

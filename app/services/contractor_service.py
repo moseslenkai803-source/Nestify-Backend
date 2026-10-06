@@ -129,6 +129,15 @@ class ContractorService:
 
         return contractor
 
+    def list_contractors(
+        self,
+        active_only: bool = False,
+    ) -> list[Contractor]:
+        if active_only:
+            return self.contractor_repository.get_active()
+
+        return self.contractor_repository.get_all()
+
     def list_members(
         self,
         contractor_id: UUID,

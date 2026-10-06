@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import require_employee_clearance
@@ -75,6 +75,24 @@ def deactivate_contractor(
             status_code=status_code,
             detail=str(exc),
         ) from exc
+
+
+@router.get(
+    "",
+    response_model=list[ContractorResponse],
+)
+def list_contractors(
+    active_only: bool = Query(default=False),
+    current_employee: User = Depends(
+        require_employee_clearance("contractor_management")
+    ),
+    db: Session = Depends(get_db),
+):
+    service = ContractorService(db)
+
+    return service.list_contractors(
+        active_only=active_only,
+    )
 
 
 @router.get(

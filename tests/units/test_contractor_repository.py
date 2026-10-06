@@ -72,3 +72,45 @@ def test_get_by_id_for_update_returns_none_for_missing_contractor(
     result = repository.get_by_id_for_update(uuid.uuid4())
 
     assert result is None
+
+
+def test_get_all_returns_contractors_newest_first(db_session):
+    first = create_contractor(db_session)
+    second = create_contractor(db_session)
+
+    repository = ContractorRepository(db_session)
+
+    result = repository.get_all()
+
+    result_ids = [contractor.id for contractor in result]
+
+    assert result_ids[:2] == [second.id, first.id]
+
+
+def test_get_active_returns_only_active_contractors_newest_first(
+    db_session,
+):
+    first_active = create_contractor(
+        db_session,
+        status="active",
+    )
+    inactive = create_contractor(
+        db_session,
+        status="inactive",
+    )
+    second_active = create_contractor(
+        db_session,
+        status="active",
+    )
+
+    repository = ContractorRepository(db_session)
+
+    result = repository.get_active()
+
+    result_ids = [contractor.id for contractor in result]
+
+    assert result_ids[:2] == [
+        second_active.id,
+        first_active.id,
+    ]
+    assert inactive.id not in result_ids

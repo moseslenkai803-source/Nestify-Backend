@@ -387,3 +387,47 @@ def test_deactivate_contractor_rejects_already_inactive_contractor(
         match="Contractor is already inactive",
     ):
         service.deactivate_contractor(contractor.id)
+
+
+def test_list_contractors_returns_all_contractors_by_default(
+    db_session,
+):
+    active = create_contractor(
+        db_session,
+        status="active",
+    )
+    inactive = create_contractor(
+        db_session,
+        status="inactive",
+    )
+
+    service = ContractorService(db_session)
+
+    result = service.list_contractors()
+
+    result_ids = {contractor.id for contractor in result}
+
+    assert active.id in result_ids
+    assert inactive.id in result_ids
+
+
+def test_list_contractors_active_only_returns_active_contractors(
+    db_session,
+):
+    active = create_contractor(
+        db_session,
+        status="active",
+    )
+    inactive = create_contractor(
+        db_session,
+        status="inactive",
+    )
+
+    service = ContractorService(db_session)
+
+    result = service.list_contractors(active_only=True)
+
+    result_ids = {contractor.id for contractor in result}
+
+    assert active.id in result_ids
+    assert inactive.id not in result_ids

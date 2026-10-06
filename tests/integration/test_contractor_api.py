@@ -165,6 +165,130 @@ def test_create_contractor_api_rejects_non_employee(
         app.dependency_overrides.clear()
 
 
+
+def test_list_contractors_api(db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        _, access_token = create_employee_access_token(
+            db_session
+        )
+
+        first = Contractor(
+            name="First Contractor",
+            contractor_type="company",
+            status="active",
+        )
+        second = Contractor(
+            name="Second Contractor",
+            contractor_type="company",
+            status="inactive",
+        )
+
+        db_session.add_all([first, second])
+        db_session.flush()
+
+        response = client.get(
+            "/api/v1/contractors",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        contractors_by_id = {
+            item["id"]: item
+            for item in data
+        }
+
+        assert str(first.id) in contractors_by_id
+        assert str(second.id) in contractors_by_id
+        assert contractors_by_id[str(first.id)]["status"] == "active"
+        assert contractors_by_id[str(second.id)]["status"] == "inactive"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_contractors_api_active_only(db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        _, access_token = create_employee_access_token(
+            db_session
+        )
+
+        active = Contractor(
+            name="Active Contractor",
+            contractor_type="company",
+            status="active",
+        )
+        inactive = Contractor(
+            name="Inactive Contractor",
+            contractor_type="company",
+            status="inactive",
+        )
+
+        db_session.add_all([active, inactive])
+        db_session.flush()
+
+        response = client.get(
+            "/api/v1/contractors?active_only=true",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        returned_ids = {item["id"] for item in data}
+
+        assert str(active.id) in returned_ids
+        assert str(inactive.id) not in returned_ids
+        assert all(item["status"] == "active" for item in data)
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_contractors_api_requires_contractor_management_clearance(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+
+        _, access_token = create_employee_access_token(
+            db_session,
+            clearance="property_verification",
+        )
+
+        response = client.get(
+            "/api/v1/contractors",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == (
+            "Insufficient employee clearance"
+        )
+
+    finally:
+        app.dependency_overrides.clear()
+
+
 def test_get_contractor_api(db_session):
     app.dependency_overrides[get_db] = lambda: db_session
 
