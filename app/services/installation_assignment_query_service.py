@@ -2,6 +2,9 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.repositories.address_plate_repository import (
+    AddressPlateRepository,
+)
 from app.repositories.installation_assignment_repository import (
     InstallationAssignmentRepository,
 )
@@ -12,6 +15,25 @@ class InstallationAssignmentQueryService:
         self.installation_assignment_repository = (
             InstallationAssignmentRepository(db)
         )
+        self.address_plate_repository = AddressPlateRepository(db)
+
+    def list_dispatched_plates(
+        self,
+        property_id: UUID,
+    ) -> list[dict]:
+        plates = (
+            self.address_plate_repository
+            .get_dispatched_by_property_id(property_id)
+        )
+
+        return [
+            {
+                "id": plate.id,
+                "plate_code": plate.plate_code,
+                "property_id": plate.property_id,
+            }
+            for plate in plates
+        ]
 
     def get_assignment(
         self,

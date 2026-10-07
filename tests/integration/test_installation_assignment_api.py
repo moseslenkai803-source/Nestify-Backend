@@ -12,7 +12,752 @@ from app.models.contractor_member import ContractorMember
 from app.models.installation_assignment import InstallationAssignment
 from app.models.landlord import Landlord
 from app.models.property import Property
+from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 from app.models.user import User
+
+
+
+def test_list_installation_assignment_property_plates_api(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        employee = User(
+            email=f"assignment-api-property-plates-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
+        db_session.flush()
+
+        owner_user = User(
+            email=f"assignment-api-property-plates-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+            is_active=True,
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Assignment Property Plates Owner",
+            phone="+254700000060",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property_record = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-PLATES-{uuid.uuid4().hex[:12].upper()}",
+            name="Assignment Property Plates Property",
+            property_type="residential",
+            status="draft",
+        )
+        other_property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-OTHER-{uuid.uuid4().hex[:12].upper()}",
+            name="Other Assignment Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add_all([property_record, other_property])
+        db_session.flush()
+
+        dispatched_plate = AddressPlate(
+            plate_code=f"PLATE-DISPATCHED-{uuid.uuid4().hex[:12].upper()}",
+            status="unactivated",
+            property_id=property_record.id,
+        )
+        other_property_plate = AddressPlate(
+            plate_code=f"PLATE-OTHER-{uuid.uuid4().hex[:12].upper()}",
+            status="unactivated",
+            property_id=other_property.id,
+        )
+        db_session.add_all([dispatched_plate, other_property_plate])
+        db_session.flush()
+
+        from app.models.address_plate_lifecycle_event import (
+            AddressPlateLifecycleEvent,
+        )
+
+        db_session.add_all(
+            [
+                AddressPlateLifecycleEvent(
+                    plate_id=dispatched_plate.id,
+                    event_type="manufactured",
+                    performed_by=employee.id,
+                ),
+                AddressPlateLifecycleEvent(
+                    plate_id=dispatched_plate.id,
+                    event_type="allocated",
+                    performed_by=employee.id,
+                ),
+                AddressPlateLifecycleEvent(
+                    plate_id=dispatched_plate.id,
+                    event_type="dispatched",
+                    performed_by=employee.id,
+                ),
+                AddressPlateLifecycleEvent(
+                    plate_id=other_property_plate.id,
+                    event_type="manufactured",
+                    performed_by=employee.id,
+                ),
+                AddressPlateLifecycleEvent(
+                    plate_id=other_property_plate.id,
+                    event_type="allocated",
+                    performed_by=employee.id,
+                ),
+                AddressPlateLifecycleEvent(
+                    plate_id=other_property_plate.id,
+                    event_type="dispatched",
+                    performed_by=employee.id,
+                ),
+            ]
+        )
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
+
+        response = client.get(
+            f"/api/v1/installation-assignments/properties/{property_record.id}/plates",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert data == [
+            {
+                "id": str(dispatched_plate.id),
+                "plate_code": dispatched_plate.plate_code,
+                "property_id": str(property_record.id),
+            }
+        ]
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_installation_assignment_property_plates_api_excludes_non_dispatched_latest_event(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        employee = User(
+            email=f"assignment-api-property-plates-latest-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
+        db_session.flush()
+
+        owner_user = User(
+            email=f"assignment-api-property-plates-latest-owner-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+            is_active=True,
+        )
+        db_session.add(owner_user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=owner_user.id,
+            display_name="Assignment Latest Event Owner",
+            phone="+254700000061",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property_record = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-LATEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Assignment Latest Event Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property_record)
+        db_session.flush()
+
+        plate = AddressPlate(
+            plate_code=f"PLATE-LATEST-{uuid.uuid4().hex[:12].upper()}",
+            status="unactivated",
+            property_id=property_record.id,
+        )
+        db_session.add(plate)
+        db_session.flush()
+
+        from app.models.address_plate_lifecycle_event import (
+            AddressPlateLifecycleEvent,
+        )
+
+        db_session.add_all(
+            [
+                AddressPlateLifecycleEvent(
+                    plate_id=plate.id,
+                    event_type="manufactured",
+                    performed_by=employee.id,
+                ),
+                AddressPlateLifecycleEvent(
+                    plate_id=plate.id,
+                    event_type="allocated",
+                    performed_by=employee.id,
+                ),
+                AddressPlateLifecycleEvent(
+                    plate_id=plate.id,
+                    event_type="dispatched",
+                    performed_by=employee.id,
+                ),
+                AddressPlateLifecycleEvent(
+                    plate_id=plate.id,
+                    event_type="installed",
+                    performed_by=employee.id,
+                ),
+            ]
+        )
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
+
+        response = client.get(
+            f"/api/v1/installation-assignments/properties/{property_record.id}/plates",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+        assert response.json() == []
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_installation_assignment_property_plates_api_requires_plate_operations_clearance(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        employee = User(
+            email=f"assignment-api-property-plates-restricted-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="property_verification",
+            is_active=True,
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
+
+        response = client.get(
+            f"/api/v1/installation-assignments/properties/{uuid.uuid4()}/plates",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == (
+            "Insufficient employee clearance"
+        )
+
+    finally:
+        app.dependency_overrides.clear()
+
+def test_list_installation_assignment_contractors_api(db_session):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        employee = User(
+            email=f"assignment-api-contractors-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
+        db_session.flush()
+
+        active_contractor = Contractor(
+            name="Active Assignment Contractor",
+            contractor_type="company",
+            status="active",
+        )
+        inactive_contractor = Contractor(
+            name="Inactive Assignment Contractor",
+            contractor_type="company",
+            status="inactive",
+        )
+        db_session.add_all([active_contractor, inactive_contractor])
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
+
+        response = client.get(
+            "/api/v1/installation-assignments/contractors",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        returned_ids = {item["id"] for item in data}
+
+        assert str(active_contractor.id) in returned_ids
+        assert str(inactive_contractor.id) not in returned_ids
+        assert all(item["status"] == "active" for item in data)
+
+        contractors_by_id = {
+            item["id"]: item
+            for item in data
+        }
+
+        assert (
+            contractors_by_id[str(active_contractor.id)]["name"]
+            == "Active Assignment Contractor"
+        )
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_installation_assignment_contractors_api_requires_plate_operations_clearance(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        employee = User(
+            email=f"assignment-api-contractors-restricted-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="contractor_management",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
+
+        response = client.get(
+            "/api/v1/installation-assignments/contractors",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == (
+            "Insufficient employee clearance"
+        )
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_installation_assignment_contractor_members_api(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        employee = User(
+            email=f"assignment-api-members-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
+        db_session.flush()
+
+        contractor = Contractor(
+            name="Assignment Member Contractor",
+            contractor_type="company",
+            status="active",
+        )
+        db_session.add(contractor)
+        db_session.flush()
+
+        active_user = User(
+            email=f"assignment-api-active-member-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="contractor",
+            is_active=True,
+        )
+        inactive_user = User(
+            email=f"assignment-api-inactive-member-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="contractor",
+            is_active=True,
+        )
+        db_session.add_all([active_user, inactive_user])
+        db_session.flush()
+
+        active_member = ContractorMember(
+            contractor_id=contractor.id,
+            user_id=active_user.id,
+            is_active=True,
+        )
+        inactive_member = ContractorMember(
+            contractor_id=contractor.id,
+            user_id=inactive_user.id,
+            is_active=False,
+        )
+        db_session.add_all([active_member, inactive_member])
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
+
+        response = client.get(
+            f"/api/v1/installation-assignments/contractors/{contractor.id}/members",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 200
+
+        data = response.json()
+
+        assert [item["id"] for item in data] == [str(active_member.id)]
+        assert data[0]["contractor_id"] == str(contractor.id)
+        assert data[0]["user_id"] == str(active_user.id)
+        assert data[0]["email"] == active_user.email
+        assert data[0]["is_active"] is True
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_installation_assignment_contractor_members_api_returns_404_for_missing_contractor(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        employee = User(
+            email=f"assignment-api-members-missing-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
+
+        response = client.get(
+            f"/api/v1/installation-assignments/contractors/{uuid.uuid4()}/members",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Contractor not found"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_installation_assignment_contractor_members_api_rejects_inactive_contractor(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        employee = User(
+            email=f"assignment-api-members-inactive-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
+        db_session.flush()
+
+        contractor = Contractor(
+            name="Inactive Assignment Member Contractor",
+            contractor_type="company",
+            status="inactive",
+        )
+        db_session.add(contractor)
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
+
+        response = client.get(
+            f"/api/v1/installation-assignments/contractors/{contractor.id}/members",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "Contractor is inactive"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_list_installation_assignment_contractor_members_api_requires_plate_operations_clearance(
+    db_session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+
+        employee = User(
+            email=f"assignment-api-members-restricted-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+            is_active=True,
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="contractor_management",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
+        db_session.flush()
+
+        access_token = create_access_token(
+            subject=str(employee.id),
+        )
+
+        response = client.get(
+            f"/api/v1/installation-assignments/contractors/{uuid.uuid4()}/members",
+            headers={
+                "Authorization": f"Bearer {access_token}",
+            },
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == (
+            "Insufficient employee clearance"
+        )
+
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_create_installation_assignment_api(db_session):
@@ -56,10 +801,26 @@ def test_create_installation_assignment_api(db_session):
             email=f"assignment-api-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         contractor = Contractor(
@@ -303,10 +1064,26 @@ def test_create_installation_assignment_api_requires_plate_operations_clearance(
             email=f"assignment-api-restricted-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="contractor_management",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="contractor_management",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         access_token = create_access_token(
@@ -396,10 +1173,26 @@ def test_create_installation_assignment_api_returns_404_for_missing_property(
             email=f"assignment-api-missing-property-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         access_token = create_access_token(
@@ -441,10 +1234,26 @@ def test_create_installation_assignment_api_returns_404_for_missing_plate(
             email=f"assignment-api-missing-plate-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         owner_user = User(
@@ -577,10 +1386,26 @@ def test_create_installation_assignment_api_rejects_plate_from_different_propert
             email=f"assignment-api-mismatch-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         contractor = Contractor(
@@ -657,10 +1482,26 @@ def test_create_installation_assignment_api_returns_404_for_missing_contractor(
             email=f"assignment-api-missing-contractor-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         owner_user = User(
@@ -740,10 +1581,26 @@ def test_create_installation_assignment_api_returns_404_for_missing_contractor_m
             email=f"assignment-api-missing-member-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         owner_user = User(
@@ -829,10 +1686,26 @@ def test_create_installation_assignment_api_rejects_member_from_different_contra
             email=f"assignment-api-member-mismatch-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         owner_user = User(
@@ -945,10 +1818,26 @@ def test_create_installation_assignment_api_rejects_inactive_contractor(
             email=f"assignment-api-inactive-contractor-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         owner_user = User(
@@ -1051,10 +1940,26 @@ def test_create_installation_assignment_api_rejects_inactive_contractor_member(
             email=f"assignment-api-inactive-member-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         owner_user = User(
@@ -1157,10 +2062,26 @@ def test_create_installation_assignment_api_rejects_inactive_contractor_member_u
             email=f"assignment-api-inactive-member-user-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         owner_user = User(
@@ -1265,10 +2186,27 @@ def test_create_installation_assignment_api_rejects_inactive_assigning_employee(
             email=f"assignment-api-inactive-assigner-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=False,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance="plate_operations",
+                is_active=True,
+            )
+        )
         db_session.flush()
 
         owner_user = User(
@@ -1370,10 +2308,26 @@ def test_create_installation_assignment_api_rejects_duplicate_active_property_as
             email=f"assignment-api-duplicate-property-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         owner_user = User(
@@ -1518,10 +2472,26 @@ def test_start_installation_assignment_api(
             email=f"assignment-api-start-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         contractor = Contractor(
@@ -1639,10 +2609,26 @@ def test_start_installation_assignment_api_rejects_wrong_contractor_user(
             email=f"assignment-api-start-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         contractor = Contractor(
@@ -1759,10 +2745,26 @@ def test_start_installation_assignment_api_rejects_user_whose_role_is_no_longer_
             email=f"assignment-api-role-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         contractor = Contractor(
@@ -1876,10 +2878,26 @@ def test_submit_installation_assignment_api_rejects_user_whose_role_is_no_longer
             email=f"assignment-api-submit-role-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         contractor = Contractor(
@@ -2000,10 +3018,26 @@ def test_submit_installation_assignment_api(db_session):
             email=f"assignment-api-submit-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         contractor = Contractor(
@@ -2131,10 +3165,26 @@ def test_submit_installation_assignment_api_rejects_wrong_contractor_user(db_ses
             email=f"assignment-api-submit-wrong-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         contractor = Contractor(
@@ -2255,10 +3305,26 @@ def test_submit_installation_assignment_api_rejects_assignment_not_in_progress(d
             email=f"assignment-api-submit-state-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         contractor = Contractor(
@@ -2374,10 +3440,26 @@ def test_cancel_installation_assignment_api(db_session):
             email=f"assignment-api-cancel-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         contractor = Contractor(
@@ -2581,10 +3663,26 @@ def test_cancel_installation_assignment_api_requires_plate_operations_clearance(
             email=f"assignment-api-cancel-restricted-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="contractor_management",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="contractor_management",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         access_token = create_access_token(subject=str(employee.id))
@@ -2648,10 +3746,26 @@ def test_cancel_installation_assignment_api_rejects_completed_assignment(db_sess
             email=f"assignment-api-cancel-completed-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         contractor = Contractor(
@@ -2756,10 +3870,26 @@ def test_list_installation_assignments_api(db_session):
             email=f"assignment-api-list-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         owner_user = User(
@@ -2867,10 +3997,26 @@ def test_list_installation_assignments_api_filters_by_status(db_session):
             email=f"assignment-api-filter-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         owner_user = User(
@@ -2979,10 +4125,26 @@ def test_list_installation_assignments_api_unknown_status_returns_empty(
             email=f"assignment-api-unknown-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         access_token = create_access_token(subject=str(employee.id))
@@ -3014,10 +4176,26 @@ def test_list_installation_assignments_api_requires_plate_operations_clearance(
             email=f"assignment-api-list-no-clearance-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="property_verification",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="property_verification",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         access_token = create_access_token(subject=str(employee.id))

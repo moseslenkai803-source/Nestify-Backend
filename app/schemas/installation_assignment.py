@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class InstallationAssignmentCreate(BaseModel):
@@ -10,6 +10,22 @@ class InstallationAssignmentCreate(BaseModel):
     contractor_id: UUID
     contractor_member_id: UUID
     due_at: datetime | None = None
+
+
+class InstallationAssignmentMemberResponse(BaseModel):
+    id: UUID
+    contractor_id: UUID
+    user_id: UUID
+    email: EmailStr
+    is_active: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class InstallationAssignmentPlateResponse(BaseModel):
+    id: UUID
+    plate_code: str
+    property_id: UUID
 
 
 class InstallationAssignmentCancel(BaseModel):

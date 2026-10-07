@@ -201,6 +201,224 @@ def test_get_active_by_property_id_returns_only_active_plate(db_session):
     assert result.status == "active"
 
 
+def test_get_dispatched_by_property_id_returns_only_dispatched_plates(
+    db_session,
+):
+    from app.models.address_plate_lifecycle_event import (
+        AddressPlateLifecycleEvent,
+    )
+
+    user = User(
+        id=uuid.uuid4(),
+        email=f"dispatched-property-test-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    landlord = Landlord(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        display_name="Dispatched Plate Test Landlord",
+        phone="+254700000010",
+        landlord_type="individual",
+    )
+    db_session.add(landlord)
+    db_session.flush()
+
+    property_record = Property(
+        id=uuid.uuid4(),
+        landlord_id=landlord.id,
+        property_code=f"NEST-DISPATCHED-PROP-{uuid.uuid4().hex[:8]}",
+        name="Dispatched Plate Test Property",
+        property_type="residential",
+        status="active",
+    )
+
+    other_property = Property(
+        id=uuid.uuid4(),
+        landlord_id=landlord.id,
+        property_code=f"NEST-OTHER-PROP-{uuid.uuid4().hex[:8]}",
+        name="Other Property",
+        property_type="residential",
+        status="active",
+    )
+
+    db_session.add_all([property_record, other_property])
+    db_session.flush()
+
+    dispatched_plate = AddressPlate(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_code=f"NEST-DISPATCHED-{uuid.uuid4().hex[:8]}",
+        status="unactivated",
+    )
+
+    allocated_plate = AddressPlate(
+        id=uuid.uuid4(),
+        property_id=other_property.id,
+        plate_code=f"NEST-ALLOCATED-{uuid.uuid4().hex[:8]}",
+        status="unactivated",
+    )
+
+    other_dispatched_plate = AddressPlate(
+        id=uuid.uuid4(),
+        property_id=uuid.uuid4(),
+        plate_code=f"NEST-OTHER-DISPATCHED-{uuid.uuid4().hex[:8]}",
+        status="unactivated",
+    )
+
+    third_property = Property(
+        id=other_dispatched_plate.property_id,
+        landlord_id=landlord.id,
+        property_code=f"NEST-THIRD-PROP-{uuid.uuid4().hex[:8]}",
+        name="Third Property",
+        property_type="residential",
+        status="active",
+    )
+    db_session.add(third_property)
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            dispatched_plate,
+            allocated_plate,
+            other_dispatched_plate,
+        ]
+    )
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            AddressPlateLifecycleEvent(
+                plate_id=dispatched_plate.id,
+                event_type="manufactured",
+                performed_by=user.id,
+            ),
+            AddressPlateLifecycleEvent(
+                plate_id=dispatched_plate.id,
+                event_type="allocated",
+                performed_by=user.id,
+            ),
+            AddressPlateLifecycleEvent(
+                plate_id=dispatched_plate.id,
+                event_type="dispatched",
+                performed_by=user.id,
+            ),
+            AddressPlateLifecycleEvent(
+                plate_id=allocated_plate.id,
+                event_type="manufactured",
+                performed_by=user.id,
+            ),
+            AddressPlateLifecycleEvent(
+                plate_id=allocated_plate.id,
+                event_type="allocated",
+                performed_by=user.id,
+            ),
+            AddressPlateLifecycleEvent(
+                plate_id=other_dispatched_plate.id,
+                event_type="manufactured",
+                performed_by=user.id,
+            ),
+            AddressPlateLifecycleEvent(
+                plate_id=other_dispatched_plate.id,
+                event_type="allocated",
+                performed_by=user.id,
+            ),
+            AddressPlateLifecycleEvent(
+                plate_id=other_dispatched_plate.id,
+                event_type="dispatched",
+                performed_by=user.id,
+            ),
+        ]
+    )
+    db_session.flush()
+
+    repository = AddressPlateRepository(db_session)
+
+    result = repository.get_dispatched_by_property_id(
+        property_record.id,
+    )
+
+    assert [plate.id for plate in result] == [
+        dispatched_plate.id,
+    ]
+
+
+def test_get_dispatched_by_property_id_excludes_plate_when_dispatched_is_not_latest_event(
+    db_session,
+):
+    from app.models.address_plate_lifecycle_event import (
+        AddressPlateLifecycleEvent,
+    )
+
+    user = User(
+        id=uuid.uuid4(),
+        email=f"dispatched-latest-test-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    landlord = Landlord(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        display_name="Latest Event Test Landlord",
+        phone="+254700000011",
+        landlord_type="individual",
+    )
+    db_session.add(landlord)
+    db_session.flush()
+
+    property_record = Property(
+        id=uuid.uuid4(),
+        landlord_id=landlord.id,
+        property_code=f"NEST-LATEST-PROP-{uuid.uuid4().hex[:8]}",
+        name="Latest Event Test Property",
+        property_type="residential",
+        status="active",
+    )
+    db_session.add(property_record)
+    db_session.flush()
+
+    plate = AddressPlate(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_code=f"NEST-LATEST-PLATE-{uuid.uuid4().hex[:8]}",
+        status="unactivated",
+    )
+    db_session.add(plate)
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            AddressPlateLifecycleEvent(
+                plate_id=plate.id,
+                event_type="dispatched",
+                performed_by=user.id,
+            ),
+            AddressPlateLifecycleEvent(
+                plate_id=plate.id,
+                event_type="installed",
+                performed_by=user.id,
+            ),
+        ]
+    )
+    db_session.flush()
+
+    repository = AddressPlateRepository(db_session)
+
+    result = repository.get_dispatched_by_property_id(
+        property_record.id,
+    )
+
+    assert result == []
+
+
 def test_get_by_id_returns_address_plate(db_session):
     plate = AddressPlate(
         plate_code="NEST-PLATE-ID-001",

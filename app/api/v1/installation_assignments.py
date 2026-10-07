@@ -6,13 +6,17 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user, require_employee_clearance
 from app.db.session import get_db
 from app.models.user import User
+from app.schemas.contractor import ContractorResponse
 from app.schemas.installation_assignment import (
     InstallationAssignmentCancel,
     InstallationAssignmentCreate,
+    InstallationAssignmentMemberResponse,
+    InstallationAssignmentPlateResponse,
     InstallationAssignmentResponse,
     InstallationAssignmentSubmit,
 )
 from app.schemas.property_installation import PropertyInstallationResponse
+from app.services.contractor_service import ContractorService
 from app.services.installation_assignment_query_service import (
     InstallationAssignmentQueryService,
 )
@@ -41,6 +45,65 @@ def list_installation_assignments(
     service = InstallationAssignmentQueryService(db)
 
     return service.list_assignments(status=status)
+
+
+@router.get(
+    "/properties/{property_id}/plates",
+    response_model=list[InstallationAssignmentPlateResponse],
+)
+def list_installation_assignment_property_plates(
+    property_id: UUID,
+    current_employee: User = Depends(
+        require_employee_clearance("plate_operations")
+    ),
+    db: Session = Depends(get_db),
+):
+    service = InstallationAssignmentQueryService(db)
+
+    return service.list_dispatched_plates(property_id)
+
+
+@router.get(
+    "/contractors",
+    response_model=list[ContractorResponse],
+)
+def list_installation_assignment_contractors(
+    current_employee: User = Depends(
+        require_employee_clearance("plate_operations")
+    ),
+    db: Session = Depends(get_db),
+):
+    service = ContractorService(db)
+
+    return service.list_active_installation_contractors()
+
+
+@router.get(
+    "/contractors/{contractor_id}/members",
+    response_model=list[InstallationAssignmentMemberResponse],
+)
+def list_installation_assignment_contractor_members(
+    contractor_id: UUID,
+    current_employee: User = Depends(
+        require_employee_clearance("plate_operations")
+    ),
+    db: Session = Depends(get_db),
+):
+    service = ContractorService(db)
+
+    try:
+        return service.list_active_installation_members(contractor_id)
+    except ValueError as exc:
+        status_code = (
+            404
+            if str(exc) == "Contractor not found"
+            else 400
+        )
+
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post(

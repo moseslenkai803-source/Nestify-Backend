@@ -161,6 +161,43 @@ class ContractorService:
 
         return self.contractor_repository.get_all()
 
+    def list_active_installation_contractors(self) -> list[Contractor]:
+        return self.contractor_repository.get_active()
+
+    def list_active_installation_members(
+        self,
+        contractor_id: UUID,
+    ) -> list[dict]:
+        contractor = self.contractor_repository.get_by_id(
+            contractor_id
+        )
+
+        if contractor is None:
+            raise ValueError("Contractor not found")
+
+        if contractor.status != "active":
+            raise ValueError("Contractor is inactive")
+
+        records = (
+            self.contractor_member_repository
+            .get_active_with_user_email_by_contractor_id(
+                contractor_id
+            )
+        )
+
+        return [
+            {
+                "id": member.id,
+                "contractor_id": member.contractor_id,
+                "user_id": member.user_id,
+                "email": email,
+                "is_active": member.is_active,
+                "created_at": member.created_at,
+                "updated_at": member.updated_at,
+            }
+            for member, email in records
+        ]
+
     def list_members(
         self,
         contractor_id: UUID,

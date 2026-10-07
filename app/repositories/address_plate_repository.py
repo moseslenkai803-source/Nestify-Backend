@@ -130,6 +130,37 @@ class AddressPlateRepository:
         return self.db.execute(statement).all()
 
 
+    def get_dispatched_by_property_id(
+        self,
+        property_id: UUID,
+    ) -> list[AddressPlate]:
+        latest_event = (
+            select(AddressPlateLifecycleEvent.event_type)
+            .where(
+                AddressPlateLifecycleEvent.plate_id == AddressPlate.id,
+            )
+            .order_by(
+                AddressPlateLifecycleEvent.occurred_at.desc(),
+                AddressPlateLifecycleEvent.id.desc(),
+            )
+            .limit(1)
+            .scalar_subquery()
+        )
+
+        statement = (
+            select(AddressPlate)
+            .where(
+                AddressPlate.property_id == property_id,
+                latest_event == "dispatched",
+            )
+            .order_by(
+                AddressPlate.created_at.desc(),
+                AddressPlate.id.desc(),
+            )
+        )
+
+        return list(self.db.scalars(statement).all())
+
     def get_by_manufacturing_order_id(
         self,
         manufacturing_order_id: UUID,

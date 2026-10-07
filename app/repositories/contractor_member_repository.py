@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.contractor_member import ContractorMember
+from app.models.user import User
 
 
 class ContractorMemberRepository:
@@ -59,6 +60,44 @@ class ContractorMemberRepository:
             )
             .first()
         )
+
+    def get_active_by_contractor_id(
+        self,
+        contractor_id: UUID,
+    ) -> list[ContractorMember]:
+        return (
+            self.db.query(ContractorMember)
+            .filter(
+                ContractorMember.contractor_id == contractor_id,
+                ContractorMember.is_active.is_(True),
+            )
+            .order_by(
+                ContractorMember.created_at.desc(),
+                ContractorMember.id.desc(),
+            )
+            .all()
+        )
+
+    def get_active_with_user_email_by_contractor_id(
+        self,
+        contractor_id: UUID,
+    ) -> list[tuple[ContractorMember, str]]:
+        statement = (
+            select(ContractorMember, User.email)
+            .join(User, User.id == ContractorMember.user_id)
+            .where(
+                ContractorMember.contractor_id == contractor_id,
+                ContractorMember.is_active.is_(True),
+                User.is_active.is_(True),
+                User.role == "contractor",
+            )
+            .order_by(
+                ContractorMember.created_at.desc(),
+                ContractorMember.id.desc(),
+            )
+        )
+
+        return list(self.db.execute(statement).all())
 
     def get_by_contractor_id(
         self,
