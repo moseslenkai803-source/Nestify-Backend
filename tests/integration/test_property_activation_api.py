@@ -11,6 +11,8 @@ from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_address import PropertyAddress
 from app.models.user import User
+from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 from app.services.property_access_service import PropertyAccessService
 
 
@@ -87,9 +89,26 @@ def test_activate_property_api(db_session):
                     email=f"activation-employee-{uuid.uuid4()}@example.com",
                     password_hash="test-hash",
                     role="employee",
-                    clearance="plate_operations",
                 )
                 db_session.add(employee)
+                db_session.flush()
+
+                employee_record = Employee(
+                    user_id=employee.id,
+                    employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+                    department="Operations",
+                    position="Test Employee",
+                )
+                db_session.add(employee_record)
+                db_session.flush()
+
+                db_session.add(
+                    EmployeeClearance(
+                        employee_id=employee_record.id,
+                        clearance="plate_operations",
+                        is_active=True,
+                    )
+                )
                 db_session.flush()
 
 
@@ -179,9 +198,26 @@ def test_activate_property_api_allows_employee_across_landlord_ownership(
         email=f"activation-employee-{uuid.uuid4()}@example.com",
         password_hash="test-hash",
         role="employee",
-        clearance="plate_operations",
     )
     db_session.add(employee)
+    db_session.flush()
+
+    employee_record = Employee(
+        user_id=employee.id,
+        employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+        department="Operations",
+        position="Test Employee",
+    )
+    db_session.add(employee_record)
+    db_session.flush()
+
+    db_session.add(
+        EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+    )
     db_session.flush()
 
     for event_type in ("manufactured", "allocated", "dispatched", "installed", "verified"):
@@ -285,9 +321,26 @@ def test_activate_property_api_requires_property_access(db_session):
         email=f"activation-unauthorized-{uuid.uuid4()}@example.com",
         password_hash="test-hash",
         role="employee",
-        clearance="plate_operations",
     )
     db_session.add(employee)
+    db_session.flush()
+
+    employee_record = Employee(
+        user_id=employee.id,
+        employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+        department="Operations",
+        position="Test Employee",
+    )
+    db_session.add(employee_record)
+    db_session.flush()
+
+    db_session.add(
+        EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+    )
     db_session.flush()
 
     def override_get_db():
@@ -377,9 +430,26 @@ def test_activate_property_api_requires_address(db_session):
                     email=f"activation-employee-{uuid.uuid4()}@example.com",
                     password_hash="test-hash",
                     role="employee",
-                    clearance="plate_operations",
                 )
                 db_session.add(employee)
+                db_session.flush()
+
+                employee_record = Employee(
+                    user_id=employee.id,
+                    employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+                    department="Operations",
+                    position="Test Employee",
+                )
+                db_session.add(employee_record)
+                db_session.flush()
+
+                db_session.add(
+                    EmployeeClearance(
+                        employee_id=employee_record.id,
+                        clearance="plate_operations",
+                        is_active=True,
+                    )
+                )
                 db_session.flush()
 
 
@@ -465,9 +535,26 @@ def test_activate_property_api_returns_404_for_missing_plate(
             email=f"activation-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance="plate_operations",
+                is_active=True,
+            )
+        )
         db_session.flush()
 
 
@@ -561,9 +648,26 @@ def test_activate_property_api_rejects_unverified_plate(
             email=f"activation-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance="plate_operations",
+                is_active=True,
+            )
+        )
         db_session.flush()
         for event_type in ("manufactured", "allocated", "dispatched", "installed"):
             db_session.add(
@@ -673,9 +777,26 @@ def test_activate_property_api_rejects_already_active_plate(
             email=f"activation-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance="plate_operations",
+                is_active=True,
+            )
+        )
         db_session.flush()
 
         for event_type in ("manufactured", "allocated", "dispatched", "installed", "verified"):

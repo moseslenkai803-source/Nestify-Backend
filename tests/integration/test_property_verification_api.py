@@ -11,6 +11,8 @@ from app.models.property import Property
 from app.models.property_address import PropertyAddress
 from app.models.property_verification import PropertyVerification
 from app.models.user import User
+from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 from app.services.property_access_service import PropertyAccessService
 
 
@@ -56,10 +58,27 @@ def create_property_verification_fixture(
         email=f"verification-api-reviewer-{uuid.uuid4()}@example.com",
         password_hash="test-hash",
         role="employee",
-        clearance="property_verification",
         is_active=True,
     )
     db_session.add(reviewer)
+    db_session.flush()
+
+    employee_record = Employee(
+        user_id=reviewer.id,
+        employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+        department="Operations",
+        position="Test Employee",
+    )
+    db_session.add(employee_record)
+    db_session.flush()
+
+    db_session.add(
+        EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="property_verification",
+            is_active=True,
+        )
+    )
     db_session.flush()
 
     if grant_access:

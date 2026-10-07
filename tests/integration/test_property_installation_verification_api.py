@@ -16,6 +16,8 @@ from app.models.property_installation import PropertyInstallation
 from app.models.property_installation_verification import (
     PropertyInstallationVerification,
 )
+from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 from app.models.user import User
 from app.services.property_access_service import PropertyAccessService
 
@@ -58,10 +60,26 @@ def test_verify_property_installation_api(db_session: Session):
             email=f"verification-reviewer-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="installation_verification",
             is_active=True,
         )
         db_session.add(reviewer)
+        db_session.flush()
+
+        reviewer_record = Employee(
+            user_id=reviewer.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(reviewer_record)
+        db_session.flush()
+
+        reviewer_clearance = EmployeeClearance(
+            employee_id=reviewer_record.id,
+            clearance="installation_verification",
+            is_active=True,
+        )
+        db_session.add(reviewer_clearance)
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(
@@ -303,10 +321,26 @@ def test_reject_property_installation_api(db_session: Session):
             email=f"rejection-reviewer-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="installation_verification",
             is_active=True,
         )
         db_session.add(reviewer)
+        db_session.flush()
+
+        reviewer_record = Employee(
+            user_id=reviewer.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(reviewer_record)
+        db_session.flush()
+
+        reviewer_clearance = EmployeeClearance(
+            employee_id=reviewer_record.id,
+            clearance="installation_verification",
+            is_active=True,
+        )
+        db_session.add(reviewer_clearance)
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(
@@ -413,10 +447,26 @@ def test_verify_property_installation_api_denies_user_without_property_access(db
             email=f"access-reviewer-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="installation_verification",
             is_active=True,
         )
         db_session.add(reviewer)
+        db_session.flush()
+
+        reviewer_record = Employee(
+            user_id=reviewer.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(reviewer_record)
+        db_session.flush()
+
+        reviewer_clearance = EmployeeClearance(
+            employee_id=reviewer_record.id,
+            clearance="installation_verification",
+            is_active=True,
+        )
+        db_session.add(reviewer_clearance)
         db_session.flush()
 
         plate = AddressPlate(
@@ -510,10 +560,26 @@ def test_verify_property_installation_api_denies_wrong_clearance(db_session: Ses
             email=f"clearance-reviewer-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(reviewer)
+        db_session.flush()
+
+        reviewer_record = Employee(
+            user_id=reviewer.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(reviewer_record)
+        db_session.flush()
+
+        reviewer_clearance = EmployeeClearance(
+            employee_id=reviewer_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(reviewer_clearance)
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(
@@ -613,7 +679,6 @@ def test_verify_property_installation_api_denies_non_employee(db_session: Sessio
             email=f"role-reviewer-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="landlord",
-            clearance="installation_verification",
             is_active=True,
         )
         db_session.add(reviewer)
@@ -692,10 +757,26 @@ def test_verify_property_installation_api_missing_property(db_session: Session):
             email=f"missing-property-reviewer-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="installation_verification",
             is_active=True,
         )
         db_session.add(reviewer)
+        db_session.flush()
+
+        reviewer_record = Employee(
+            user_id=reviewer.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(reviewer_record)
+        db_session.flush()
+
+        reviewer_clearance = EmployeeClearance(
+            employee_id=reviewer_record.id,
+            clearance="installation_verification",
+            is_active=True,
+        )
+        db_session.add(reviewer_clearance)
         db_session.flush()
 
         missing_property_id = uuid.uuid4()
@@ -755,10 +836,26 @@ def test_verify_property_installation_api_missing_installation(db_session: Sessi
             email=f"missing-installation-reviewer-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="installation_verification",
             is_active=True,
         )
         db_session.add(reviewer)
+        db_session.flush()
+
+        reviewer_record = Employee(
+            user_id=reviewer.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(reviewer_record)
+        db_session.flush()
+
+        reviewer_clearance = EmployeeClearance(
+            employee_id=reviewer_record.id,
+            clearance="installation_verification",
+            is_active=True,
+        )
+        db_session.add(reviewer_clearance)
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(
@@ -842,10 +939,26 @@ def test_verify_property_installation_api_rejects_wrong_property(db_session: Ses
             email=f"wrong-property-reviewer-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="installation_verification",
             is_active=True,
         )
         db_session.add(reviewer)
+        db_session.flush()
+
+        reviewer_record = Employee(
+            user_id=reviewer.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(reviewer_record)
+        db_session.flush()
+
+        reviewer_clearance = EmployeeClearance(
+            employee_id=reviewer_record.id,
+            clearance="installation_verification",
+            is_active=True,
+        )
+        db_session.add(reviewer_clearance)
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(
@@ -945,10 +1058,26 @@ def test_verify_property_installation_api_rejects_already_verified(db_session: S
             email=f"already-verified-reviewer-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="installation_verification",
             is_active=True,
         )
         db_session.add(reviewer)
+        db_session.flush()
+
+        reviewer_record = Employee(
+            user_id=reviewer.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(reviewer_record)
+        db_session.flush()
+
+        reviewer_clearance = EmployeeClearance(
+            employee_id=reviewer_record.id,
+            clearance="installation_verification",
+            is_active=True,
+        )
+        db_session.add(reviewer_clearance)
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(
@@ -1048,10 +1177,26 @@ def test_verify_property_installation_api_rejects_invalid_status(db_session: Ses
             email=f"invalid-status-reviewer-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="installation_verification",
             is_active=True,
         )
         db_session.add(reviewer)
+        db_session.flush()
+
+        reviewer_record = Employee(
+            user_id=reviewer.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(reviewer_record)
+        db_session.flush()
+
+        reviewer_clearance = EmployeeClearance(
+            employee_id=reviewer_record.id,
+            clearance="installation_verification",
+            is_active=True,
+        )
+        db_session.add(reviewer_clearance)
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(
@@ -1151,10 +1296,26 @@ def test_list_pending_property_installations_api_returns_authorized_submitted_in
             email=f"queue-reviewer-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="installation_verification",
             is_active=True,
         )
         db_session.add(reviewer)
+        db_session.flush()
+
+        reviewer_record = Employee(
+            user_id=reviewer.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(reviewer_record)
+        db_session.flush()
+
+        reviewer_clearance = EmployeeClearance(
+            employee_id=reviewer_record.id,
+            clearance="installation_verification",
+            is_active=True,
+        )
+        db_session.add(reviewer_clearance)
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(
@@ -1378,10 +1539,26 @@ def test_list_pending_property_installations_api_excludes_unauthorized_propertie
             email=f"queue-scope-reviewer-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="installation_verification",
             is_active=True,
         )
         db_session.add(reviewer)
+        db_session.flush()
+
+        reviewer_record = Employee(
+            user_id=reviewer.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(reviewer_record)
+        db_session.flush()
+
+        reviewer_clearance = EmployeeClearance(
+            employee_id=reviewer_record.id,
+            clearance="installation_verification",
+            is_active=True,
+        )
+        db_session.add(reviewer_clearance)
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(
@@ -1488,10 +1665,26 @@ def test_list_pending_property_installations_api_excludes_non_submitted_installa
             email=f"queue-status-reviewer-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="installation_verification",
             is_active=True,
         )
         db_session.add(reviewer)
+        db_session.flush()
+
+        reviewer_record = Employee(
+            user_id=reviewer.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(reviewer_record)
+        db_session.flush()
+
+        reviewer_clearance = EmployeeClearance(
+            employee_id=reviewer_record.id,
+            clearance="installation_verification",
+            is_active=True,
+        )
+        db_session.add(reviewer_clearance)
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(
@@ -1563,10 +1756,26 @@ def test_list_pending_property_installations_api_denies_wrong_clearance(
             email=f"queue-clearance-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        employee_clearance = EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+        db_session.add(employee_clearance)
         db_session.flush()
 
         access_token = create_access_token(subject=str(employee.id))

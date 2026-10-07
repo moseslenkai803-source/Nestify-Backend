@@ -13,6 +13,8 @@ from app.models.address_plate_lifecycle_event import (
 from app.models.address_plate_request import AddressPlateRequest
 from app.models.landlord import Landlord
 from app.models.property import Property
+from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 from app.models.user import User
 from app.services.property_access_service import PropertyAccessService
 
@@ -27,11 +29,29 @@ def create_user(
         email=f"allocation-api-{uuid.uuid4()}@example.com",
         password_hash="test-hash",
         role=role,
-        clearance=clearance,
         is_active=True,
     )
     db_session.add(user)
     db_session.flush()
+
+    if role == "employee":
+        employee_record = Employee(
+            user_id=user.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        if clearance is not None:
+            employee_clearance = EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance=clearance,
+                is_active=True,
+            )
+            db_session.add(employee_clearance)
+            db_session.flush()
 
     return user
 

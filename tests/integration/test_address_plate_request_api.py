@@ -9,6 +9,8 @@ from app.main import app
 from app.models.address_plate_request import AddressPlateRequest
 from app.models.landlord import Landlord
 from app.models.user import User
+from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 from app.services.property_service import PropertyService
 
 
@@ -285,11 +287,28 @@ def create_plate_operations_employee(db_session: Session):
         email=f"plate-employee-{uuid.uuid4()}@example.com",
         password_hash="test-hash",
         role="employee",
-        clearance="plate_operations",
         is_active=True,
     )
 
     db_session.add(employee)
+    db_session.flush()
+
+    employee_record = Employee(
+        user_id=employee.id,
+        employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+        department="Operations",
+        position="Test Employee",
+    )
+    db_session.add(employee_record)
+    db_session.flush()
+
+    db_session.add(
+        EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+    )
     db_session.flush()
 
     return employee, create_access_token(
@@ -478,10 +497,27 @@ def test_list_address_plate_requests_api_denies_employee_without_plate_operation
             email=f"no-plate-clearance-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="property_verification",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance="property_verification",
+                is_active=True,
+            )
+        )
         db_session.flush()
 
         access_token = create_access_token(

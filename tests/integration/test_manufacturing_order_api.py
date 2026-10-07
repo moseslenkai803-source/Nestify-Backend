@@ -8,6 +8,8 @@ from app.main import app
 from app.models.manufacturing_order import ManufacturingOrder
 from app.models.address_plate import AddressPlate
 from app.models.address_plate_lifecycle_event import AddressPlateLifecycleEvent
+from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 from app.models.user import User
 
 
@@ -16,11 +18,27 @@ def create_plate_operations_employee(db_session):
         email=f"manufacturing-api-{uuid.uuid4()}@example.com",
         password_hash="test-hash",
         role="employee",
-        clearance="plate_operations",
         is_active=True,
     )
 
     db_session.add(employee)
+    db_session.flush()
+
+    employee_record = Employee(
+        user_id=employee.id,
+        employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+        department="Operations",
+        position="Test Employee",
+    )
+    db_session.add(employee_record)
+    db_session.flush()
+
+    employee_clearance = EmployeeClearance(
+        employee_id=employee_record.id,
+        clearance="plate_operations",
+        is_active=True,
+    )
+    db_session.add(employee_clearance)
     db_session.flush()
 
     return employee.id, create_access_token(
@@ -89,12 +107,30 @@ def create_user_access_token(
         email=f"manufacturing-auth-{uuid.uuid4()}@example.com",
         password_hash="test-hash",
         role=role,
-        clearance=clearance,
         is_active=True,
     )
 
     db_session.add(user)
     db_session.flush()
+
+    if role == "employee":
+        employee_record = Employee(
+            user_id=user.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        if clearance is not None:
+            employee_clearance = EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance=clearance,
+                is_active=True,
+            )
+            db_session.add(employee_clearance)
+            db_session.flush()
 
     return create_access_token(
         subject=str(user.id),

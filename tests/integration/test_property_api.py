@@ -14,6 +14,8 @@ from app.models.address_plate_lifecycle_event import AddressPlateLifecycleEvent
 from app.models.property import Property
 from app.models.property_address import PropertyAddress
 from app.models.user import User
+from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 from app.services.property_access_service import PropertyAccessService
 from app.services.property_service import PropertyService
 from app.services.property_location_service import PropertyLocationService
@@ -962,10 +964,27 @@ def test_activate_property_api(db_session: Session):
             email=f"activate-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance="plate_operations",
+                is_active=True,
+            )
+        )
         db_session.flush()
 
         for event_type in ("manufactured", "allocated", "dispatched", "installed", "verified"):
@@ -1491,9 +1510,26 @@ def test_list_accessible_properties_api_returns_active_properties(
             email=f"accessible-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance="plate_operations",
+                is_active=True,
+            )
+        )
         db_session.flush()
 
         access_service = PropertyAccessService(db_session)
@@ -1573,9 +1609,26 @@ def test_list_accessible_properties_api_deduplicates_multiple_access_types(
             email=f"accessible-duplicate-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance="plate_operations",
+                is_active=True,
+            )
+        )
         db_session.flush()
 
         access_service = PropertyAccessService(db_session)
@@ -1655,9 +1708,26 @@ def test_list_accessible_properties_api_excludes_inactive_access(
             email=f"accessible-inactive-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance="plate_operations",
+                is_active=True,
+            )
+        )
         db_session.flush()
 
         access_service = PropertyAccessService(db_session)
@@ -1702,9 +1772,26 @@ def test_list_accessible_properties_api_returns_empty_for_employee_without_acces
             email=f"accessible-none-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance="plate_operations",
+                is_active=True,
+            )
+        )
         db_session.flush()
         db_session.commit()
 

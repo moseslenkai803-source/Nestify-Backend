@@ -8,6 +8,8 @@ from app.main import app
 from app.models.address_plate import AddressPlate
 from app.models.landlord import Landlord
 from app.models.property import Property
+from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 from app.models.user import User
 from app.services.address_plate_lifecycle_service import (
     AddressPlateLifecycleService,
@@ -23,11 +25,27 @@ def create_employee(
         email=f"plate-inventory-api-{uuid.uuid4()}@example.com",
         password_hash="test-hash",
         role="employee",
-        clearance=clearance,
         is_active=True,
     )
 
     db_session.add(employee)
+    db_session.flush()
+
+    employee_record = Employee(
+        user_id=employee.id,
+        employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+        department="Operations",
+        position="Test Employee",
+    )
+    db_session.add(employee_record)
+    db_session.flush()
+
+    employee_clearance = EmployeeClearance(
+        employee_id=employee_record.id,
+        clearance=clearance,
+        is_active=True,
+    )
+    db_session.add(employee_clearance)
     db_session.flush()
 
     return employee

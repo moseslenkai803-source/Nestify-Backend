@@ -4,41 +4,172 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.dependencies import get_current_landlord, get_current_user, require_employee_clearance
+from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 from app.models.user import User
 
 
 def test_employee_with_required_clearance_is_allowed():
+    from unittest.mock import Mock, patch
+
     user = User(
+        id=uuid.uuid4(),
         email="employee@example.com",
         password_hash="test-hash",
         role="employee",
+        is_active=True,
+    )
+
+    employee = Employee(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        employee_number="NEST-TEST-001",
+        department="Operations",
+        position="Plate Operations",
+    )
+
+    clearance = EmployeeClearance(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
         clearance="plate_operations",
         is_active=True,
     )
 
-    dependency = require_employee_clearance("plate_operations")
+    db = Mock()
 
-    result = dependency(user)
+    with patch(
+        "app.api.dependencies.EmployeeRepository",
+    ) as employee_repository_class, patch(
+        "app.api.dependencies.EmployeeClearanceRepository",
+    ) as clearance_repository_class:
+        employee_repository_class.return_value.get_by_user_id.return_value = (
+            employee
+        )
+        clearance_repository_class.return_value.get_active_by_employee_id.return_value = [
+            clearance
+        ]
+
+        dependency = require_employee_clearance("plate_operations")
+
+        result = dependency(user, db=db)
 
     assert result is user
 
 
 def test_employee_with_wrong_clearance_is_rejected():
+    from unittest.mock import Mock, patch
+
     user = User(
+        id=uuid.uuid4(),
         email="employee@example.com",
         password_hash="test-hash",
         role="employee",
+        is_active=True,
+    )
+
+    employee = Employee(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        employee_number="NEST-TEST-002",
+        department="Operations",
+        position="Support",
+    )
+
+    clearance = EmployeeClearance(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
         clearance="support",
         is_active=True,
     )
 
-    dependency = require_employee_clearance("plate_operations")
+    db = Mock()
 
-    with pytest.raises(HTTPException) as exc_info:
-        dependency(user)
+    with patch(
+        "app.api.dependencies.EmployeeRepository",
+    ) as employee_repository_class, patch(
+        "app.api.dependencies.EmployeeClearanceRepository",
+    ) as clearance_repository_class:
+        employee_repository_class.return_value.get_by_user_id.return_value = (
+            employee
+        )
+        clearance_repository_class.return_value.get_active_by_employee_id.return_value = [
+            clearance
+        ]
+
+        dependency = require_employee_clearance("plate_operations")
+
+        with pytest.raises(HTTPException) as exc_info:
+            dependency(user, db=db)
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "Insufficient employee clearance"
+
+
+def test_employee_with_inactive_required_clearance_is_rejected():
+    from unittest.mock import Mock, patch
+
+    user = User(
+        id=uuid.uuid4(),
+        email="employee-inactive-clearance@example.com",
+        password_hash="test-hash",
+        role="employee",
+        is_active=True,
+    )
+
+    employee = Employee(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        employee_number="NEST-TEST-003",
+        department="Operations",
+        position="Plate Operations",
+    )
+
+    db = Mock()
+
+    with patch(
+        "app.api.dependencies.EmployeeRepository",
+    ) as employee_repository_class, patch(
+        "app.api.dependencies.EmployeeClearanceRepository",
+    ) as clearance_repository_class:
+        employee_repository_class.return_value.get_by_user_id.return_value = (
+            employee
+        )
+        clearance_repository_class.return_value.get_active_by_employee_id.return_value = []
+
+        dependency = require_employee_clearance("plate_operations")
+
+        with pytest.raises(HTTPException) as exc_info:
+            dependency(user, db=db)
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Insufficient employee clearance"
+
+
+def test_employee_without_employee_profile_is_rejected():
+    from unittest.mock import Mock, patch
+
+    user = User(
+        id=uuid.uuid4(),
+        email="employee-without-profile@example.com",
+        password_hash="test-hash",
+        role="employee",
+        is_active=True,
+    )
+
+    db = Mock()
+
+    with patch(
+        "app.api.dependencies.EmployeeRepository",
+    ) as employee_repository_class:
+        employee_repository_class.return_value.get_by_user_id.return_value = None
+
+        dependency = require_employee_clearance("plate_operations")
+
+        with pytest.raises(HTTPException) as exc_info:
+            dependency(user, db=db)
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Employee access required"
 
 
 def test_landlord_is_rejected_from_employee_clearance():
@@ -267,16 +398,47 @@ def test_access_token_for_missing_user_is_rejected():
 
 
 def test_employee_with_contractor_management_clearance_is_allowed():
+    from unittest.mock import Mock, patch
+
     user = User(
+        id=uuid.uuid4(),
         email="contractor-manager@example.com",
         password_hash="test-hash",
         role="employee",
+        is_active=True,
+    )
+
+    employee = Employee(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        employee_number="NEST-TEST-004",
+        department="Operations",
+        position="Contractor Manager",
+    )
+
+    clearance = EmployeeClearance(
+        id=uuid.uuid4(),
+        employee_id=employee.id,
         clearance="contractor_management",
         is_active=True,
     )
 
-    dependency = require_employee_clearance("contractor_management")
+    db = Mock()
 
-    result = dependency(user)
+    with patch(
+        "app.api.dependencies.EmployeeRepository",
+    ) as employee_repository_class, patch(
+        "app.api.dependencies.EmployeeClearanceRepository",
+    ) as clearance_repository_class:
+        employee_repository_class.return_value.get_by_user_id.return_value = (
+            employee
+        )
+        clearance_repository_class.return_value.get_active_by_employee_id.return_value = [
+            clearance
+        ]
+
+        dependency = require_employee_clearance("contractor_management")
+
+        result = dependency(user, db=db)
 
     assert result is user

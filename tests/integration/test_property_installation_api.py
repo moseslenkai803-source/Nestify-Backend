@@ -13,6 +13,8 @@ from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_installation import PropertyInstallation
 from app.models.user import User
+from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 from app.services.property_access_service import PropertyAccessService
 
 
@@ -56,10 +58,27 @@ def test_create_property_installation_api(db_session: Session):
             email=f"installer-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance="plate_operations",
+                is_active=True,
+            )
+        )
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(
@@ -185,10 +204,27 @@ def test_create_property_installation_api_allows_authorized_employee(
             email=f"installation-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance="plate_operations",
+                is_active=True,
+            )
+        )
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(
@@ -282,10 +318,27 @@ def test_create_property_installation_api_denies_employee_without_property_acces
             email=f"installation-denied-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance="plate_operations",
+                is_active=True,
+            )
+        )
         db_session.flush()
 
         plate = AddressPlate(
@@ -338,10 +391,27 @@ def test_create_property_installation_api_returns_404_for_missing_property(
             email=f"installation-missing-property-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance="plate_operations",
+                is_active=True,
+            )
+        )
         db_session.flush()
 
         token = create_access_token(
@@ -413,10 +483,27 @@ def test_create_property_installation_api_returns_404_for_missing_plate(
             email=f"installation-missing-plate-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance="plate_operations",
+                is_active=True,
+            )
+        )
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(
@@ -502,10 +589,27 @@ def test_create_property_installation_api_rejects_plate_linked_to_another_proper
             email=f"installation-mismatch-employee-{uuid.uuid4()}@example.com",
             password_hash="test-hash",
             role="employee",
-            clearance="plate_operations",
             is_active=True,
         )
         db_session.add(employee)
+        db_session.flush()
+
+        employee_record = Employee(
+            user_id=employee.id,
+            employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee_record)
+        db_session.flush()
+
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee_record.id,
+                clearance="plate_operations",
+                is_active=True,
+            )
+        )
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(

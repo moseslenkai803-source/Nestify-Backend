@@ -7,6 +7,8 @@ from app.db.session import get_db
 from app.main import app
 from app.models.contractor import Contractor
 from app.models.contractor_member import ContractorMember
+from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 from app.models.user import User
 
 
@@ -19,11 +21,27 @@ def create_employee_access_token(
         email=f"contractor-api-{uuid.uuid4()}@example.com",
         password_hash="test-hash",
         role="employee",
-        clearance=clearance,
         is_active=True,
     )
 
     db_session.add(employee)
+    db_session.flush()
+
+    employee_record = Employee(
+        user_id=employee.id,
+        employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+        department="Operations",
+        position="Test Employee",
+    )
+    db_session.add(employee_record)
+    db_session.flush()
+
+    employee_clearance = EmployeeClearance(
+        employee_id=employee_record.id,
+        clearance=clearance,
+        is_active=True,
+    )
+    db_session.add(employee_clearance)
     db_session.flush()
 
     return employee.id, create_access_token(

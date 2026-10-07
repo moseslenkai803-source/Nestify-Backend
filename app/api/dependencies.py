@@ -10,6 +10,10 @@ from app.models.landlord import Landlord
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
 from app.repositories.landlord_repository import LandlordRepository
+from app.repositories.employee_repository import EmployeeRepository
+from app.repositories.employee_clearance_repository import (
+    EmployeeClearanceRepository,
+)
 
 
 bearer_scheme = HTTPBearer()
@@ -95,6 +99,7 @@ def require_employee_clearance(
 ):
     def dependency(
         current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db),
     ) -> User:
         if current_user.role == "admin":
             return current_user
@@ -105,7 +110,28 @@ def require_employee_clearance(
                 detail="Employee access required",
             )
 
-        if current_user.clearance != required_clearance:
+        employee_repository = EmployeeRepository(db)
+        employee_clearance_repository = EmployeeClearanceRepository(db)
+
+        employee = employee_repository.get_by_user_id(
+            current_user.id
+        )
+
+        if employee is None or employee.ended_at is not None:
+            raise HTTPException(
+                status_code=403,
+                detail="Employee access required",
+            )
+
+        active_clearances = (
+            employee_clearance_repository
+            .get_active_by_employee_id(employee.id)
+        )
+
+        if not any(
+            clearance.clearance == required_clearance
+            for clearance in active_clearances
+        ):
             raise HTTPException(
                 status_code=403,
                 detail="Insufficient employee clearance",
