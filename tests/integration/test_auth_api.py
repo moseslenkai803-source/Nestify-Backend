@@ -6,6 +6,8 @@ from fastapi.testclient import TestClient
 from app.core.security import create_access_token
 from app.db.session import get_db
 from app.main import app
+from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 from app.models.landlord import Landlord
 from app.models.user import User
 
@@ -434,6 +436,164 @@ def test_get_me_returns_landlord_identity(client, db_session):
         assert data["role"] == "landlord"
         assert data["clearance"] is None
         assert data["is_active"] is True
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_me_returns_only_active_employee_clearances(db_session):
+
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        user = User(
+            email=f"employee-permissions-{uuid4()}@example.com",
+            password_hash="not-used",
+            role="employee",
+            clearance="legacy_clearance",
+            is_active=True,
+        )
+        db_session.add(user)
+        db_session.flush()
+
+        employee = Employee(
+            user_id=user.id,
+            employee_number=f"EMP-{uuid4()}",
+            department="Operations",
+            position="Officer",
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        db_session.add_all([
+            EmployeeClearance(
+                employee_id=employee.id,
+                clearance="plate_operations",
+                is_active=True,
+            ),
+            EmployeeClearance(
+                employee_id=employee.id,
+                clearance="property_verification",
+                is_active=False,
+            ),
+            EmployeeClearance(
+                employee_id=employee.id,
+                clearance="contractor_management",
+                is_active=True,
+            ),
+        ])
+        db_session.commit()
+
+        token = create_access_token(subject=str(user.id))
+        response = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["permissions"] == [
+            "contractor_management",
+            "plate_operations",
+        ]
+        assert data["clearance"] == "legacy_clearance"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_me_returns_no_permissions_for_ended_employee(db_session):
+    from datetime import UTC, datetime
+
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        user = User(
+            email=f"ended-employee-{uuid4()}@example.com",
+            password_hash="not-used",
+            role="employee",
+            is_active=True,
+        )
+        db_session.add(user)
+        db_session.flush()
+
+        employee = Employee(
+            user_id=user.id,
+            employee_number=f"EMP-{uuid4()}",
+            department="Operations",
+            position="Officer",
+            ended_at=datetime.now(UTC),
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+        db_session.add(EmployeeClearance(
+            employee_id=employee.id,
+            clearance="plate_operations",
+            is_active=True,
+        ))
+        db_session.commit()
+
+        token = create_access_token(subject=str(user.id))
+        response = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["permissions"] == []
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_me_returns_admin_permission(db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        admin = User(
+            email=f"admin-permissions-{uuid4()}@example.com",
+            password_hash="not-used",
+            role="admin",
+            is_active=True,
+        )
+        db_session.add(admin)
+        db_session.commit()
+
+        token = create_access_token(subject=str(admin.id))
+        response = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["permissions"] == ["admin"]
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_get_me_returns_empty_permissions_for_landlord(db_session):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        landlord = User(
+            email=f"landlord-permissions-{uuid4()}@example.com",
+            password_hash="not-used",
+            role="landlord",
+            is_active=True,
+        )
+        db_session.add(landlord)
+        db_session.commit()
+
+        token = create_access_token(subject=str(landlord.id))
+        response = client.get(
+            "/api/v1/auth/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["permissions"] == []
 
     finally:
         app.dependency_overrides.clear()

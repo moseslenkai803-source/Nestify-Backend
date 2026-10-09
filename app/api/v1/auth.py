@@ -5,6 +5,10 @@ from app.api.dependencies import get_current_user
 from app.core.security import create_access_token
 from app.db.session import get_db
 from app.models.user import User
+from app.repositories.employee_repository import EmployeeRepository
+from app.repositories.employee_clearance_repository import (
+    EmployeeClearanceRepository,
+)
 from app.schemas.auth import (
     CurrentUserResponse,
     LandlordRegistrationRequest,
@@ -95,5 +99,32 @@ def login(
 )
 def get_me(
     current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
-    return current_user
+    permissions: list[str] = []
+
+    if current_user.role == "admin":
+        permissions.append("admin")
+
+    elif current_user.role == "employee":
+        employee = EmployeeRepository(db).get_by_user_id(
+            current_user.id
+        )
+
+        if employee is not None and employee.ended_at is None:
+            clearances = (
+                EmployeeClearanceRepository(db)
+                .get_active_by_employee_id(employee.id)
+            )
+            permissions.extend(
+                sorted({item.clearance for item in clearances})
+            )
+
+    return {
+        "id": current_user.id,
+        "email": current_user.email,
+        "role": current_user.role,
+        "clearance": current_user.clearance,
+        "is_active": current_user.is_active,
+        "permissions": permissions,
+    }

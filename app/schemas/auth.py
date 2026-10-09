@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class LandlordRegistrationRequest(BaseModel):
@@ -40,3 +40,4 @@ class CurrentUserResponse(BaseModel):
     role: str
     clearance: str | None
     is_active: bool
+    permissions: list[str] = Field(default_factory=list)
