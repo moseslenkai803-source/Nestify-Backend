@@ -15,6 +15,7 @@ from app.models.property import Property
 from app.models.employee import Employee
 from app.models.employee_clearance import EmployeeClearance
 from app.models.user import User
+from app.services.address_plate_lifecycle_service import AddressPlateLifecycleService
 
 
 
@@ -2527,6 +2528,23 @@ def test_start_installation_assignment_api(
         db_session.add(plate)
         db_session.flush()
 
+        lifecycle_service = AddressPlateLifecycleService(db_session)
+        lifecycle_service.record_event(
+            plate_id=plate.id,
+            event_type="manufactured",
+            performed_by=employee.id,
+        )
+        lifecycle_service.record_event(
+            plate_id=plate.id,
+            event_type="allocated",
+            performed_by=employee.id,
+        )
+        lifecycle_service.record_event(
+            plate_id=plate.id,
+            event_type="dispatched",
+            performed_by=employee.id,
+        )
+
         assignment = InstallationAssignment(
             property_id=property.id,
             plate_id=plate.id,
@@ -3072,6 +3090,23 @@ def test_submit_installation_assignment_api(db_session):
         )
         db_session.add(plate)
         db_session.flush()
+
+        lifecycle_service = AddressPlateLifecycleService(db_session)
+        lifecycle_service.record_event(
+            plate_id=plate.id,
+            event_type="manufactured",
+            performed_by=employee.id,
+        )
+        lifecycle_service.record_event(
+            plate_id=plate.id,
+            event_type="allocated",
+            performed_by=employee.id,
+        )
+        lifecycle_service.record_event(
+            plate_id=plate.id,
+            event_type="dispatched",
+            performed_by=employee.id,
+        )
 
         assignment = InstallationAssignment(
             property_id=property.id,

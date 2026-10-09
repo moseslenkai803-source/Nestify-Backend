@@ -214,6 +214,7 @@ def test_get_floor_returns_floor(db_session):
     result = service.get_floor(
         user=user,
         property_id=property_record.id,
+        building_id=building.id,
         floor_id=floor.id,
     )
 
@@ -233,6 +234,7 @@ def test_get_floor_raises_when_floor_does_not_exist(db_session):
         service.get_floor(
             user=user,
             property_id=property_record.id,
+            building_id=uuid.uuid4(),
             floor_id=uuid.uuid4(),
         )
 
@@ -264,6 +266,33 @@ def test_get_floor_rejects_wrong_parent_property(db_session):
         service.get_floor(
             user=user,
             property_id=property_two.id,
+            building_id=building.id,
+            floor_id=floor.id,
+        )
+
+
+def test_get_floor_rejects_wrong_parent_building(db_session):
+    user = create_user(db_session)
+    landlord = create_landlord(db_session, user)
+    property_record = create_property(db_session, landlord)
+
+    building_one = create_building(db_session, property_record)
+    building_two = create_building(
+        db_session,
+        property_record,
+        building_number="2",
+        name="Second Building",
+    )
+
+    floor = create_floor(db_session, building_one)
+
+    service = FloorService(db_session)
+
+    with pytest.raises(ValueError, match="Floor not found"):
+        service.get_floor(
+            user=user,
+            property_id=property_record.id,
+            building_id=building_two.id,
             floor_id=floor.id,
         )
 

@@ -63,6 +63,7 @@ class FloorService:
         self,
         user: User,
         property_id: uuid.UUID,
+        building_id: uuid.UUID,
         floor_id: uuid.UUID,
     ) -> Floor:
         floor = self.floor_repository.get_by_id(floor_id)
@@ -76,6 +77,9 @@ class FloorService:
             raise ValueError("Building not found")
 
         if building.property_id != property_id:
+            raise ValueError("Floor not found")
+
+        if floor.building_id != building_id:
             raise ValueError("Floor not found")
 
         self.property_authorization_service.authorize(

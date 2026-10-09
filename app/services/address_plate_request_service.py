@@ -66,6 +66,12 @@ class AddressPlateRequestService:
 
         return self.address_plate_request_repository.add(request)
 
+    def list_requests(
+        self,
+        status: str,
+    ) -> list[AddressPlateRequest]:
+        return self.address_plate_request_repository.get_by_status(status)
+
     def approve_request(
         self,
         request_id: uuid.UUID,

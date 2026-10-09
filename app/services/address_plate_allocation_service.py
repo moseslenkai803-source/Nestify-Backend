@@ -2,8 +2,12 @@ import uuid
 
 from sqlalchemy.orm import Session
 
+from app.core.exceptions import (
+    AddressPlateRequestNotFoundError,
+    PropertyAccessDeniedError,
+)
 from app.models.address_plate import AddressPlate
-from app.models.address_plate_request import AddressPlateRequest
+from app.models.user import User
 from app.repositories.address_plate_repository import AddressPlateRepository
 from app.repositories.address_plate_request_repository import (
     AddressPlateRequestRepository,
@@ -12,6 +16,7 @@ from app.repositories.property_repository import PropertyRepository
 from app.services.address_plate_lifecycle_service import (
     AddressPlateLifecycleService,
 )
+from app.services.property_access_service import PropertyAccessService
 
 
 class AddressPlateAllocationService:
@@ -23,18 +28,30 @@ class AddressPlateAllocationService:
         )
         self.property_repository = PropertyRepository(db)
         self.lifecycle_service = AddressPlateLifecycleService(db)
+        self.property_access_service = PropertyAccessService(db)
 
     def allocate_plate(
         self,
         request_id: uuid.UUID,
-        performed_by: uuid.UUID,
+        user: User,
     ) -> AddressPlate:
         request = self.address_plate_request_repository.get_by_id(
             request_id
         )
 
         if request is None:
-            raise ValueError("Address plate request not found")
+            raise AddressPlateRequestNotFoundError(
+                "Address plate request not found"
+            )
+
+        try:
+            self.property_access_service.authorize(
+                user_id=user.id,
+                property_id=request.property_id,
+                access_type="plate_operations",
+            )
+        except ValueError as exc:
+            raise PropertyAccessDeniedError(str(exc)) from exc
 
         if request.status != "approved":
             raise ValueError(
@@ -71,7 +88,7 @@ class AddressPlateAllocationService:
 
         self.lifecycle_service.record_allocation(
             plate_id=plate.id,
-            performed_by=performed_by,
+            performed_by=user.id,
         )
 
         request.status = "fulfilled"

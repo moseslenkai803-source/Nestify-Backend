@@ -9,12 +9,15 @@ from app.models.address_plate_lifecycle_event import (
     AddressPlateLifecycleEvent,
 )
 from app.models.address_plate_request import AddressPlateRequest
+from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.user import User
 from app.services.address_plate_allocation_service import (
     AddressPlateAllocationService,
 )
+from app.services.property_access_service import PropertyAccessService
 
 
 def create_landlord_and_property(db_session):
@@ -45,7 +48,40 @@ def create_landlord_and_property(db_session):
     db_session.add(property)
     db_session.flush()
 
-    return user, property
+    employee = User(
+        email=f"allocation-employee-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="employee",
+        is_active=True,
+    )
+    db_session.add(employee)
+    db_session.flush()
+
+    employee_record = Employee(
+        user_id=employee.id,
+        employee_number=f"NEST-TEST-{uuid.uuid4().hex[:12].upper()}",
+        department="Operations",
+        position="Test Employee",
+    )
+    db_session.add(employee_record)
+    db_session.flush()
+
+    db_session.add(
+        EmployeeClearance(
+            employee_id=employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+    )
+    db_session.flush()
+
+    PropertyAccessService(db_session).grant_access(
+        user_id=employee.id,
+        property_id=property.id,
+        access_type="plate_operations",
+    )
+
+    return user, property, employee
 
 
 def create_manufactured_plate(
@@ -75,7 +111,7 @@ def create_manufactured_plate(
 
 
 def test_allocate_plate_to_approved_request(db_session):
-    user, property = create_landlord_and_property(db_session)
+    user, property, employee = create_landlord_and_property(db_session)
 
     request = AddressPlateRequest(
         property_id=property.id,
@@ -91,7 +127,7 @@ def test_allocate_plate_to_approved_request(db_session):
 
     result = service.allocate_plate(
         request_id=request.id,
-        performed_by=user.id,
+        user=employee,
     )
 
     assert result.property_id == property.id
@@ -109,10 +145,12 @@ def test_allocate_plate_to_approved_request(db_session):
     )
 
     assert event is not None
-    assert event.performed_by == user.id
+    assert event.performed_by == employee.id
 
 
 def test_allocate_plate_rejects_missing_request(db_session):
+    _, _, employee = create_landlord_and_property(db_session)
+
     service = AddressPlateAllocationService(db_session)
 
     with pytest.raises(
@@ -121,12 +159,12 @@ def test_allocate_plate_rejects_missing_request(db_session):
     ):
         service.allocate_plate(
             request_id=uuid.uuid4(),
-            performed_by=uuid.uuid4(),
+            user=employee,
         )
 
 
 def test_allocate_plate_rejects_unapproved_request(db_session):
-    user, property = create_landlord_and_property(db_session)
+    user, property, employee = create_landlord_and_property(db_session)
 
     request = AddressPlateRequest(
         property_id=property.id,
@@ -144,12 +182,12 @@ def test_allocate_plate_rejects_unapproved_request(db_session):
     ):
         service.allocate_plate(
             request_id=request.id,
-            performed_by=user.id,
+            user=employee,
         )
 
 
 def test_allocate_plate_rejects_property_with_existing_plate(db_session):
-    user, property = create_landlord_and_property(db_session)
+    user, property, employee = create_landlord_and_property(db_session)
 
     request = AddressPlateRequest(
         property_id=property.id,
@@ -182,12 +220,12 @@ def test_allocate_plate_rejects_property_with_existing_plate(db_session):
     ):
         service.allocate_plate(
             request_id=request.id,
-            performed_by=user.id,
+            user=employee,
         )
 
 
 def test_allocate_plate_rejects_when_no_plates_are_available(db_session):
-    user, property = create_landlord_and_property(db_session)
+    user, property, employee = create_landlord_and_property(db_session)
 
     request = AddressPlateRequest(
         property_id=property.id,
@@ -219,12 +257,12 @@ def test_allocate_plate_rejects_when_no_plates_are_available(db_session):
     ):
         service.allocate_plate(
             request_id=request.id,
-            performed_by=user.id,
+            user=employee,
         )
 
 
 def test_allocate_plate_rejects_unmanufactured_plate(db_session):
-    user, property = create_landlord_and_property(db_session)
+    user, property, employee = create_landlord_and_property(db_session)
 
     request = AddressPlateRequest(
         property_id=property.id,
@@ -257,7 +295,7 @@ def test_allocate_plate_rejects_unmanufactured_plate(db_session):
     ):
         service.allocate_plate(
             request_id=request.id,
-            performed_by=user.id,
+            user=employee,
         )
 
     assert plate.property_id is None
@@ -265,7 +303,7 @@ def test_allocate_plate_rejects_unmanufactured_plate(db_session):
 
 
 def test_allocate_plate_rejects_fulfilled_request(db_session):
-    user, property = create_landlord_and_property(db_session)
+    user, property, employee = create_landlord_and_property(db_session)
 
     request = AddressPlateRequest(
         property_id=property.id,
@@ -282,7 +320,7 @@ def test_allocate_plate_rejects_fulfilled_request(db_session):
 
     result = service.allocate_plate(
         request_id=request.id,
-        performed_by=user.id,
+        user=employee,
     )
 
     assert result.property_id == property.id
@@ -295,7 +333,7 @@ def test_allocate_plate_rejects_fulfilled_request(db_session):
     ):
         service.allocate_plate(
             request_id=request.id,
-            performed_by=user.id,
+            user=employee,
         )
 
     db_session.refresh(first_plate)
@@ -312,7 +350,7 @@ def test_allocate_plate_rejects_fulfilled_request(db_session):
 
 
 def test_allocate_plate_uses_only_available_inventory(db_session):
-    user, property = create_landlord_and_property(db_session)
+    user, property, employee = create_landlord_and_property(db_session)
 
     request = AddressPlateRequest(
         property_id=property.id,
@@ -330,7 +368,7 @@ def test_allocate_plate_uses_only_available_inventory(db_session):
         synchronize_session="fetch",
     )
 
-    _, assigned_property = create_landlord_and_property(db_session)
+    _, assigned_property, _ = create_landlord_and_property(db_session)
 
     assigned_plate = create_manufactured_plate(
         db_session,
@@ -356,7 +394,7 @@ def test_allocate_plate_uses_only_available_inventory(db_session):
 
     result = service.allocate_plate(
         request_id=request.id,
-        performed_by=user.id,
+        user=employee,
     )
 
     assert result.id == available_plate.id
@@ -376,7 +414,7 @@ def test_allocate_plate_uses_only_available_inventory(db_session):
 def test_allocate_plate_serializes_concurrent_allocations_for_same_property(
     db_session,
 ):
-    user, property = create_landlord_and_property(db_session)
+    user, property, employee = create_landlord_and_property(db_session)
 
     first_request = AddressPlateRequest(
         property_id=property.id,
@@ -403,12 +441,18 @@ def test_allocate_plate_serializes_concurrent_allocations_for_same_property(
     property_id = property.id
     first_request_id = first_request.id
     second_request_id = second_request.id
-    user_id = user.id
+    employee_id = employee.id
 
     db_session.commit()
 
     first_session = SessionLocal()
     second_session = SessionLocal()
+
+    first_employee = first_session.get(User, employee_id)
+    second_employee = second_session.get(User, employee_id)
+
+    assert first_employee is not None
+    assert second_employee is not None
 
     second_started = Event()
     second_finished = Event()
@@ -436,7 +480,7 @@ def test_allocate_plate_serializes_concurrent_allocations_for_same_property(
 
                 result = second_service.allocate_plate(
                     request_id=second_request_id,
-                    performed_by=user_id,
+                    user=second_employee,
                 )
 
                 second_result["plate_id"] = result.id
@@ -453,7 +497,7 @@ def test_allocate_plate_serializes_concurrent_allocations_for_same_property(
 
         first_result = first_service.allocate_plate(
             request_id=first_request_id,
-            performed_by=user_id,
+            user=first_employee,
         )
 
         assert first_result.property_id == property_id

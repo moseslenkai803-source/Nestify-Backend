@@ -12,12 +12,18 @@ from app.models.installation_assignment import InstallationAssignment
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.user import User
+from app.services.address_plate_lifecycle_service import (
+    AddressPlateLifecycleService,
+)
+from app.services.installation_assignment_query_service import (
+    InstallationAssignmentQueryService,
+)
 from app.services.installation_assignment_service import (
     InstallationAssignmentService,
 )
 
 
-def create_assignment_context(db_session):
+def create_assignment_context(db_session, lifecycle_stage="allocated"):
     landlord_user = User(
         id=uuid.uuid4(),
         email=f"landlord-{uuid.uuid4()}@example.com",
@@ -98,6 +104,31 @@ def create_assignment_context(db_session):
 
     db_session.add(contractor_member)
     db_session.flush()
+
+    lifecycle_service = AddressPlateLifecycleService(db_session)
+
+    lifecycle_service.record_event(
+        plate_id=plate.id,
+        event_type="manufactured",
+        performed_by=assigning_employee.id,
+    )
+
+    lifecycle_service.record_event(
+        plate_id=plate.id,
+        event_type="allocated",
+        performed_by=assigning_employee.id,
+    )
+
+    if lifecycle_stage == "dispatched":
+        lifecycle_service.record_event(
+            plate_id=plate.id,
+            event_type="dispatched",
+            performed_by=assigning_employee.id,
+        )
+    elif lifecycle_stage != "allocated":
+        raise ValueError(
+            f"Unsupported assignment fixture lifecycle stage: {lifecycle_stage}"
+        )
 
     return {
         "landlord_user": landlord_user,
@@ -762,7 +793,10 @@ def test_database_allows_new_active_assignment_after_completed_assignment(
     assert active.status == "assigned"
 
 def test_start_assignment_moves_assigned_to_in_progress(db_session):
-    context = create_assignment_context(db_session)
+    context = create_assignment_context(
+        db_session,
+        lifecycle_stage="dispatched",
+    )
 
     service = InstallationAssignmentService(db_session)
 
@@ -790,8 +824,39 @@ def test_start_assignment_moves_assigned_to_in_progress(db_session):
 
 
 
-def test_submit_assignment_rejects_wrong_contractor_user(db_session):
+def test_start_assignment_requires_dispatched_plate(db_session):
     context = create_assignment_context(db_session)
+
+    service = InstallationAssignmentService(db_session)
+
+    assignment = service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Address plate must be dispatched before installation",
+    ):
+        service.start_assignment(
+            assignment_id=assignment.id,
+            contractor_user_id=context["contractor_user"].id,
+        )
+
+    fetched = db_session.get(InstallationAssignment, assignment.id)
+
+    assert fetched is not None
+    assert fetched.status == "assigned"
+
+
+def test_submit_assignment_rejects_wrong_contractor_user(db_session):
+    context = create_assignment_context(
+        db_session,
+        lifecycle_stage="dispatched",
+    )
 
     other_user = User(
         id=uuid.uuid4(),
@@ -837,7 +902,10 @@ def test_submit_assignment_rejects_wrong_contractor_user(db_session):
     assert fetched_assignment.status == "in_progress"
 
 def test_submit_assignment_rejects_user_whose_role_is_no_longer_contractor(db_session):
-    context = create_assignment_context(db_session)
+    context = create_assignment_context(
+        db_session,
+        lifecycle_stage="dispatched",
+    )
 
     service = InstallationAssignmentService(db_session)
 
@@ -877,7 +945,10 @@ def test_submit_assignment_rejects_user_whose_role_is_no_longer_contractor(db_se
 
 
 def test_submit_assignment_creates_installation_and_moves_to_submitted(db_session):
-    context = create_assignment_context(db_session)
+    context = create_assignment_context(
+        db_session,
+        lifecycle_stage="dispatched",
+    )
 
     service = InstallationAssignmentService(db_session)
 
@@ -1148,7 +1219,10 @@ def test_cancel_assignment_allows_admin_actor(db_session):
 
 
 def test_cancel_assignment_moves_in_progress_to_cancelled(db_session):
-    context = create_assignment_context(db_session)
+    context = create_assignment_context(
+        db_session,
+        lifecycle_stage="dispatched",
+    )
     service = InstallationAssignmentService(db_session)
 
     assignment = service.create_assignment(
@@ -1177,7 +1251,10 @@ def test_cancel_assignment_moves_in_progress_to_cancelled(db_session):
 def test_cancel_assignment_moves_submitted_to_cancelled_without_removing_installation(db_session):
     from app.models.property_installation import PropertyInstallation
 
-    context = create_assignment_context(db_session)
+    context = create_assignment_context(
+        db_session,
+        lifecycle_stage="dispatched",
+    )
     service = InstallationAssignmentService(db_session)
 
     assignment = service.create_assignment(
@@ -1401,11 +1478,12 @@ def test_cancelled_assignment_releases_property_and_plate_for_new_assignment(db_
     assert replacement.id != assignment.id
     assert replacement.status == "assigned"
 
-def test_list_assignments_returns_newest_first(db_session):
+def test_query_service_lists_assignments_newest_first(db_session):
     context = create_assignment_context(db_session)
-    service = InstallationAssignmentService(db_session)
+    command_service = InstallationAssignmentService(db_session)
+    query_service = InstallationAssignmentQueryService(db_session)
 
-    first_assignment = service.create_assignment(
+    first_assignment = command_service.create_assignment(
         property_id=context["property"].id,
         plate_id=context["plate"].id,
         contractor_id=context["contractor"].id,
@@ -1415,13 +1493,13 @@ def test_list_assignments_returns_newest_first(db_session):
 
     # The first assignment must be released before the same property/plate
     # can be used for another active assignment.
-    service.cancel_assignment(
+    command_service.cancel_assignment(
         assignment_id=first_assignment.id,
         cancelled_by=context["assigning_employee"].id,
         reason="Reassigning installation.",
     )
 
-    second_assignment = service.create_assignment(
+    second_assignment = command_service.create_assignment(
         property_id=context["property"].id,
         plate_id=context["plate"].id,
         contractor_id=context["contractor"].id,
@@ -1429,20 +1507,21 @@ def test_list_assignments_returns_newest_first(db_session):
         assigned_by=context["assigning_employee"].id,
     )
 
-    result = service.list_assignments()
+    result = query_service.list_assignments()
 
-    result_ids = [assignment.id for assignment in result]
+    result_ids = [item["id"] for item in result]
 
     assert second_assignment.id in result_ids
     assert first_assignment.id in result_ids
     assert result_ids.index(second_assignment.id) < result_ids.index(first_assignment.id)
 
 
-def test_list_assignments_filters_by_status(db_session):
+def test_query_service_lists_assignments_by_status(db_session):
     context = create_assignment_context(db_session)
-    service = InstallationAssignmentService(db_session)
+    command_service = InstallationAssignmentService(db_session)
+    query_service = InstallationAssignmentQueryService(db_session)
 
-    assignment = service.create_assignment(
+    assignment = command_service.create_assignment(
         property_id=context["property"].id,
         plate_id=context["plate"].id,
         contractor_id=context["contractor"].id,
@@ -1450,26 +1529,27 @@ def test_list_assignments_filters_by_status(db_session):
         assigned_by=context["assigning_employee"].id,
     )
 
-    service.cancel_assignment(
+    command_service.cancel_assignment(
         assignment_id=assignment.id,
         cancelled_by=context["assigning_employee"].id,
         reason="Testing status filtering.",
     )
 
-    assigned_results = service.list_assignments(status="assigned")
-    cancelled_results = service.list_assignments(status="cancelled")
+    assigned_results = query_service.list_assignments(status="assigned")
+    cancelled_results = query_service.list_assignments(status="cancelled")
 
-    assert all(item.status == "assigned" for item in assigned_results)
-    assert all(item.status == "cancelled" for item in cancelled_results)
-    assert assignment.id not in [item.id for item in assigned_results]
-    assert assignment.id in [item.id for item in cancelled_results]
+    assert all(item["status"] == "assigned" for item in assigned_results)
+    assert all(item["status"] == "cancelled" for item in cancelled_results)
+    assert assignment.id not in [item["id"] for item in assigned_results]
+    assert assignment.id in [item["id"] for item in cancelled_results]
 
 
-def test_list_assignments_unknown_status_returns_empty(db_session):
+def test_query_service_unknown_status_returns_empty(db_session):
     context = create_assignment_context(db_session)
-    service = InstallationAssignmentService(db_session)
+    command_service = InstallationAssignmentService(db_session)
+    query_service = InstallationAssignmentQueryService(db_session)
 
-    service.create_assignment(
+    command_service.create_assignment(
         property_id=context["property"].id,
         plate_id=context["plate"].id,
         contractor_id=context["contractor"].id,
@@ -1477,7 +1557,7 @@ def test_list_assignments_unknown_status_returns_empty(db_session):
         assigned_by=context["assigning_employee"].id,
     )
 
-    result = service.list_assignments(status="not-a-real-status")
+    result = query_service.list_assignments(status="not-a-real-status")
 
     assert result == []
 
@@ -1496,10 +1576,6 @@ def test_query_service_returns_enriched_assignment(db_session):
     )
     db_session.add(assignment)
     db_session.flush()
-
-    from app.services.installation_assignment_query_service import (
-        InstallationAssignmentQueryService,
-    )
 
     service = InstallationAssignmentQueryService(db_session)
 
@@ -1551,10 +1627,6 @@ def test_query_service_returns_enriched_assignments_by_status(
     db_session.add_all([assigned, cancelled])
     db_session.flush()
 
-    from app.services.installation_assignment_query_service import (
-        InstallationAssignmentQueryService,
-    )
-
     service = InstallationAssignmentQueryService(db_session)
 
     results = service.list_assignments(status="assigned")
@@ -1581,10 +1653,6 @@ def test_query_service_returns_enriched_assignments_by_status(
 def test_query_service_returns_none_for_missing_assignment(
     db_session,
 ):
-    from app.services.installation_assignment_query_service import (
-        InstallationAssignmentQueryService,
-    )
-
     service = InstallationAssignmentQueryService(db_session)
 
     assert service.get_assignment(uuid.uuid4()) is None

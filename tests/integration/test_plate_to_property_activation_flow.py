@@ -8,6 +8,7 @@ from app.models.contractor import Contractor
 from app.models.contractor_member import ContractorMember
 from app.models.landlord import Landlord
 from app.models.property import Property
+from app.models.property_access import PropertyAccess
 from app.models.property_address import PropertyAddress
 from app.models.user import User
 from app.services.address_plate_allocation_service import (
@@ -106,6 +107,16 @@ def test_plate_to_property_activation_flow(db_session):
         status="draft",
     )
     db_session.add(property)
+    db_session.flush()
+
+    db_session.add(
+        PropertyAccess(
+            user_id=plate_employee.id,
+            property_id=property.id,
+            access_type="plate_operations",
+            is_active=True,
+        )
+    )
     db_session.flush()
 
     address = PropertyAddress(
@@ -213,7 +224,7 @@ def test_plate_to_property_activation_flow(db_session):
 
     plate = allocation_service.allocate_plate(
         request_id=plate_request.id,
-        performed_by=plate_employee.id,
+        user=plate_employee,
     )
 
     assert plate.property_id == property.id

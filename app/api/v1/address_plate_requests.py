@@ -6,9 +6,6 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import require_employee_clearance
 from app.db.session import get_db
 from app.models.user import User
-from app.repositories.address_plate_request_repository import (
-    AddressPlateRequestRepository,
-)
 from app.schemas.address_plate import AddressPlateRequestResponse
 from app.services.address_plate_request_service import AddressPlateRequestService
 
@@ -30,8 +27,8 @@ def list_address_plate_requests(
     ),
     db: Session = Depends(get_db),
 ):
-    repository = AddressPlateRequestRepository(db)
-    return repository.get_by_status(status)
+    service = AddressPlateRequestService(db)
+    return service.list_requests(status)
 
 
 @router.post(

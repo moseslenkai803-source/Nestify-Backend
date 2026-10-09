@@ -6,6 +6,7 @@ import pytest
 
 from app.db.session import SessionLocal
 from app.models.landlord import Landlord
+from app.models.property_access import PropertyAccess
 from app.models.property_address import PropertyAddress
 from app.models.user import User
 from app.services.address_plate_lifecycle_service import AddressPlateLifecycleService
@@ -66,6 +67,16 @@ def test_activate_property_activates_verified_plate(db_session):
     db_session.add(reviewer)
     db_session.flush()
 
+    db_session.add(
+        PropertyAccess(
+            user_id=employee.id,
+            property_id=property.id,
+            access_type="plate_operations",
+            is_active=True,
+        )
+    )
+    db_session.flush()
+
     manufacturing_service = ManufacturingOrderService(db_session)
 
     manufacturing_order = manufacturing_service.create_order(
@@ -110,7 +121,7 @@ def test_activate_property_activates_verified_plate(db_session):
     allocation_service = AddressPlateAllocationService(db_session)
     allocated_plate = allocation_service.allocate_plate(
         request_id=request.id,
-        performed_by=employee.id,
+        user=employee,
     )
 
     from app.services.dispatch_service import DispatchService
@@ -393,6 +404,24 @@ def test_activate_property_serializes_concurrent_activation_attempts(
     db_session.add(employee_two)
     db_session.flush()
 
+    db_session.add(
+        PropertyAccess(
+            user_id=employee_one.id,
+            property_id=property.id,
+            access_type="plate_operations",
+            is_active=True,
+        )
+    )
+    db_session.add(
+        PropertyAccess(
+            user_id=employee_two.id,
+            property_id=property.id,
+            access_type="plate_operations",
+            is_active=True,
+        )
+    )
+    db_session.flush()
+
     manufacturing_service = ManufacturingOrderService(db_session)
 
     manufacturing_order = manufacturing_service.create_order(
@@ -437,7 +466,7 @@ def test_activate_property_serializes_concurrent_activation_attempts(
     allocation_service = AddressPlateAllocationService(db_session)
     allocated_plate = allocation_service.allocate_plate(
         request_id=request.id,
-        performed_by=employee_one.id,
+        user=employee_one,
     )
 
     from app.services.dispatch_service import DispatchService

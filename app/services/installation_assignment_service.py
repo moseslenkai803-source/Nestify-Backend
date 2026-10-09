@@ -14,6 +14,7 @@ from app.repositories.installation_assignment_repository import (
 from app.repositories.property_installation_repository import PropertyInstallationRepository
 from app.repositories.property_repository import PropertyRepository
 from app.repositories.user_repository import UserRepository
+from app.services.address_plate_lifecycle_service import AddressPlateLifecycleService
 
 
 class InstallationAssignmentService:
@@ -28,15 +29,15 @@ class InstallationAssignmentService:
         )
         self.property_installation_repository = PropertyInstallationRepository(db)
         self.user_repository = UserRepository(db)
+        self.lifecycle_service = AddressPlateLifecycleService(db)
 
-    def list_assignments(
-        self,
-        status: str | None = None,
-    ) -> list[InstallationAssignment]:
-        if status is None:
-            return self.installation_assignment_repository.get_all()
+    def _require_plate_dispatched(self, plate_id: UUID) -> None:
+        latest_event = self.lifecycle_service.get_latest_event(plate_id)
 
-        return self.installation_assignment_repository.get_by_status(status)
+        if latest_event is None or latest_event.event_type != "dispatched":
+            raise ValueError(
+                "Address plate must be dispatched before installation"
+            )
 
     def create_assignment(
         self,
@@ -187,6 +188,8 @@ class InstallationAssignmentService:
         if contractor_member_user.role != "contractor":
             raise ValueError("Contractor member user must be a contractor")
 
+        self._require_plate_dispatched(assignment.plate_id)
+
         assignment.status = "in_progress"
         self.db.flush()
 
@@ -282,6 +285,8 @@ class InstallationAssignmentService:
 
         if contractor_member_user.role != "contractor":
             raise ValueError("Contractor member user must be a contractor")
+
+        self._require_plate_dispatched(assignment.plate_id)
 
         if not -90 <= latitude <= 90:
             raise ValueError("Latitude must be between -90 and 90")

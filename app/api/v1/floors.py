@@ -110,16 +110,12 @@ def get_floor(
     service = FloorService(db)
 
     try:
-        floor = service.get_floor(
+        return service.get_floor(
             user=current_user,
             property_id=property_id,
+            building_id=building_id,
             floor_id=floor_id,
         )
-
-        if floor.building_id != building_id:
-            raise ValueError("Floor not found")
-
-        return floor
 
     except ValueError as exc:
         status_code = (
