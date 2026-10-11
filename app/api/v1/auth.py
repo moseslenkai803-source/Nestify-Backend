@@ -11,12 +11,15 @@ from app.repositories.employee_clearance_repository import (
 )
 from app.schemas.auth import (
     CurrentUserResponse,
+    EmployeeInvitationAcceptRequest,
+    EmployeeInvitationAcceptResponse,
     LandlordRegistrationRequest,
     LandlordRegistrationResponse,
     LoginRequest,
     TokenResponse,
 )
 from app.services.registration_service import RegistrationService
+from app.services.employee_invitation_service import EmployeeInvitationService
 from app.services.user_service import UserService
 
 
@@ -60,6 +63,45 @@ def register_landlord(
             status_code=400,
             detail=str(exc),
         ) from exc
+
+
+@router.post(
+    "/employee-invitations/accept",
+    response_model=EmployeeInvitationAcceptResponse,
+    status_code=201,
+)
+def accept_employee_invitation(
+    invitation_data: EmployeeInvitationAcceptRequest,
+    db: Session = Depends(get_db),
+):
+    service = EmployeeInvitationService(db)
+
+    try:
+        user, employee = service.accept_invitation(
+            token=invitation_data.token,
+            password=invitation_data.password,
+        )
+    except ValueError as exc:
+        db.rollback()
+        detail = str(exc)
+        status_code = 400
+
+        if detail in {
+            "Invitation is invalid or has expired",
+            "Invitation has already been used",
+        }:
+            status_code = 400
+
+        raise HTTPException(
+            status_code=status_code,
+            detail=detail,
+        ) from exc
+
+    return EmployeeInvitationAcceptResponse(
+        user_id=user.id,
+        employee_id=employee.id,
+        email=user.email,
+    )
 
 
 @router.post(

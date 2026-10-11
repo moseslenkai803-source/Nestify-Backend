@@ -60,3 +60,21 @@ class EmployeeClearanceResponse(BaseModel):
     is_active: bool
     created_at: datetime
     updated_at: datetime
+
+
+class EmployeeInvitationCreate(BaseModel):
+    email: EmailStr
+    employee_number: str = Field(min_length=1, max_length=100)
+    department: str = Field(min_length=1, max_length=100)
+    position: str = Field(min_length=1, max_length=100)
+    clearances: list[str] = Field(default_factory=list)
+
+
+class EmployeeInvitationResponse(BaseModel):
+    id: UUID
+    email: EmailStr
+    employee_number: str
+    department: str
+    position: str
+    expires_at: datetime
+    invitation_url: str | None = None

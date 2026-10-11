@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     cors_allowed_origins: list[str] = ["http://localhost:5173"]
+    frontend_base_url: str = "http://localhost:5173"
 
     model_config = SettingsConfigDict(
         env_file=".env",

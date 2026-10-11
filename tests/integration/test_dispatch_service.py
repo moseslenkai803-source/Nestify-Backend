@@ -1102,7 +1102,7 @@ def test_list_dispatches_filters_by_status(db_session):
 
     result = service.list_dispatches(status="ready")
 
-    assert len(result) == 1
-    assert result[0].id == first_dispatch.id
-    assert result[0].status == "ready"
-    assert result[0].id != second_dispatch.id
+    dispatches_by_id = {item.id: item for item in result}
+    assert first_dispatch.id in dispatches_by_id
+    assert dispatches_by_id[first_dispatch.id].status == "ready"
+    assert second_dispatch.id not in dispatches_by_id

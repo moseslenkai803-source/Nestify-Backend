@@ -23,6 +23,7 @@ from app.models.installation_assignment import InstallationAssignment
 from app.models.listing import Listing
 from app.models.employee import Employee
 from app.models.employee_clearance import EmployeeClearance
+from app.models.employee_invitation import EmployeeInvitation
 
 __all__ = [
     "Base",
@@ -50,4 +51,5 @@ __all__ = [
     "Listing",
     "Employee",
     "EmployeeClearance",
+    "EmployeeInvitation",
 ]

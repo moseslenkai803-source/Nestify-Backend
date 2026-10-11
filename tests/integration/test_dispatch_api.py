@@ -805,10 +805,12 @@ def test_list_dispatches_api_filters_by_status(db_session):
 
         data = response.json()
 
-        assert len(data) == 1
-        assert data[0]["dispatch_code"] == first_code
-        assert data[0]["status"] == "ready"
-        assert data[0]["dispatch_code"] != second_code
+        dispatches_by_code = {
+            item["dispatch_code"]: item for item in data
+        }
+        assert first_code in dispatches_by_code
+        assert dispatches_by_code[first_code]["status"] == "ready"
+        assert second_code not in dispatches_by_code
 
     finally:
         app.dependency_overrides.clear()

@@ -209,6 +209,38 @@ def test_create_employee_rejects_blank_required_fields(
         )
 
 
+@pytest.mark.parametrize("clearance", ["unknown_permission", "admin"])
+def test_create_employee_rejects_unsupported_clearance(db_session, clearance):
+    user = create_employee_user(db_session)
+    service = EmployeeService(db_session)
+
+    with pytest.raises(ValueError, match="Unsupported employee clearance"):
+        service.create_employee(
+            user_id=user.id,
+            employee_number="EMP-INVALID",
+            department="Operations",
+            position="Officer",
+            clearances=[clearance],
+        )
+
+
+def test_add_clearance_rejects_unsupported_clearance(db_session):
+    user = create_employee_user(db_session)
+    service = EmployeeService(db_session)
+    employee = service.create_employee(
+        user_id=user.id,
+        employee_number="EMP-INVALID-ADD",
+        department="Operations",
+        position="Officer",
+    )
+
+    with pytest.raises(ValueError, match="Unsupported employee clearance"):
+        service.add_clearance(
+            employee_id=employee.id,
+            clearance="unknown_permission",
+        )
+
+
 def test_get_employee(db_session):
     user = create_employee_user(db_session)
 

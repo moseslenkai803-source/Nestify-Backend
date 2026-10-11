@@ -1,9 +1,12 @@
 from uuid import UUID
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import require_admin
+from app.core.config import settings
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.employee import (
@@ -11,9 +14,12 @@ from app.schemas.employee import (
     EmployeeClearanceCreate,
     EmployeeClearanceResponse,
     EmployeeCreate,
+    EmployeeInvitationCreate,
+    EmployeeInvitationResponse,
     EmployeeResponse,
 )
 from app.services.employee_service import EmployeeService
+from app.services.employee_invitation_service import EmployeeInvitationService
 
 
 router = APIRouter(
@@ -47,6 +53,55 @@ def create_employee(
             status_code=400,
             detail=str(exc),
         ) from exc
+
+
+@router.post(
+    "/invitations",
+    response_model=EmployeeInvitationResponse,
+    status_code=201,
+)
+def create_employee_invitation(
+    invitation_data: EmployeeInvitationCreate,
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    if settings.environment.strip().lower() != "development":
+        raise HTTPException(
+            status_code=503,
+            detail="Employee invitation delivery is not configured",
+        )
+
+    service = EmployeeInvitationService(db)
+
+    try:
+        invitation, token = service.create_invitation(
+            email=str(invitation_data.email),
+            employee_number=invitation_data.employee_number,
+            department=invitation_data.department,
+            position=invitation_data.position,
+            clearances=invitation_data.clearances,
+            invited_by_user_id=current_admin.id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    invitation_url = (
+        f"{settings.frontend_base_url.rstrip('/')}/accept-employee-invitation"
+        f"?token={quote(token, safe='')}"
+    )
+
+    return EmployeeInvitationResponse(
+        id=invitation.id,
+        email=invitation.email,
+        employee_number=invitation.employee_number,
+        department=invitation.department,
+        position=invitation.position,
+        expires_at=invitation.expires_at,
+        invitation_url=invitation_url,
+    )
 
 
 @router.get(

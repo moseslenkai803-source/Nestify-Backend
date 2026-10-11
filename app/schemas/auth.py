@@ -41,3 +41,15 @@ class CurrentUserResponse(BaseModel):
     clearance: str | None
     is_active: bool
     permissions: list[str] = Field(default_factory=list)
+
+
+class EmployeeInvitationAcceptRequest(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+    password: str = Field(min_length=12, max_length=128)
+
+
+class EmployeeInvitationAcceptResponse(BaseModel):
+    user_id: UUID
+    employee_id: UUID
+    email: EmailStr
+    message: str = "Employee account created successfully"

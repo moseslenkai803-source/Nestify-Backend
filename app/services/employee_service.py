@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.core.employee_clearances import validate_employee_clearance
 from app.models.employee import Employee
 from app.models.employee_clearance import EmployeeClearance
 from app.models.user import User
@@ -79,10 +80,7 @@ class EmployeeService:
         normalized_clearances = []
 
         for clearance in requested_clearances:
-            normalized_clearance = clearance.strip()
-
-            if not normalized_clearance:
-                raise ValueError("Clearance is required")
+            normalized_clearance = validate_employee_clearance(clearance)
 
             if normalized_clearance not in normalized_clearances:
                 normalized_clearances.append(normalized_clearance)
@@ -128,10 +126,7 @@ class EmployeeService:
         employee_id: UUID,
         clearance: str,
     ) -> EmployeeClearance:
-        clearance = clearance.strip()
-
-        if not clearance:
-            raise ValueError("Clearance is required")
+        clearance = validate_employee_clearance(clearance)
 
         employee = self.employee_repository.get_by_id_for_update(
             employee_id
