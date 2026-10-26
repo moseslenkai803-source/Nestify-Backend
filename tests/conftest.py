@@ -1,8 +1,22 @@
+from collections.abc import Generator
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, engine
+
+
+# Tests must use their isolated database, never development or shared test data.
+_EXPECTED_TEST_DATABASE = "nestify_pytest"
+_CONFIGURED_DATABASE = engine.url.database
+
+if _CONFIGURED_DATABASE != _EXPECTED_TEST_DATABASE:
+    raise RuntimeError(
+        "Refusing to run tests against database "
+        f"{_CONFIGURED_DATABASE!r}. "
+        "Set DATABASE_URL to the dedicated 'nestify_pytest' database."
+    )
 
 
 def cleanup_installation_test_context(
@@ -94,7 +108,7 @@ def cleanup_installation_test_context(
 
 
 @pytest.fixture
-def db_session() -> Session:
+def db_session() -> Generator[Session, None, None]:
     db = SessionLocal()
 
     try:
