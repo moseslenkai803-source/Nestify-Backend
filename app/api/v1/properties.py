@@ -8,6 +8,7 @@ from app.core.property_actions import PropertyAction
 from app.api.dependencies import (
     get_current_landlord,
     get_current_user,
+    require_admin,
     require_employee,
     require_employee_clearance,
 )
@@ -66,7 +67,7 @@ router = APIRouter(
 def create_property(
     property_data: PropertyCreate,
     current_landlord: Landlord = Depends(get_current_landlord),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = PropertyService(db)
 
@@ -84,12 +85,24 @@ def create_property(
 
 
 @router.get(
+    "/portfolio",
+    response_model=list[PropertyResponse],
+)
+def list_property_portfolio(
+    current_admin: User = Depends(require_admin),
+    db: Session = Depends(get_db, scope='function'),
+):
+    service = PropertyService(db)
+    return service.list_all_properties()
+
+
+@router.get(
     "/accessible",
     response_model=list[PropertyResponse],
 )
 def list_accessible_properties(
     current_employee: User = Depends(require_employee),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = PropertyAccessService(db)
     return service.list_accessible_properties(current_employee.id)
@@ -105,7 +118,7 @@ def activate_property(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     authorization_service = PropertyAuthorizationService(db)
     service = PropertyActivationService(db)
@@ -150,7 +163,7 @@ def create_property_address(
     property_id: UUID,
     address_data: PropertyAddressCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = PropertyAddressService(db)
     authorization_service = PropertyAuthorizationService(db)
@@ -190,7 +203,7 @@ def create_property_location(
     property_id: UUID,
     location_data: PropertyLocationCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = PropertyLocationService(db)
     authorization_service = PropertyAuthorizationService(db)
@@ -235,7 +248,7 @@ def create_property_location(
 def get_property_location(
     property_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = PropertyLocationService(db)
     authorization_service = PropertyAuthorizationService(db)
@@ -268,7 +281,7 @@ def get_property_location(
 def get_property_address(
     property_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = PropertyAddressService(db)
     authorization_service = PropertyAuthorizationService(db)
@@ -300,7 +313,7 @@ def get_property_address(
 )
 def list_properties(
     current_landlord: Landlord = Depends(get_current_landlord),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = PropertyService(db)
 
@@ -325,7 +338,7 @@ def verify_property(
     current_employee: User = Depends(
         require_employee_clearance("property_verification")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     authorization_service = PropertyAuthorizationService(db)
     service = PropertyVerificationService(db)
@@ -369,7 +382,7 @@ def list_pending_property_installations(
     current_user: User = Depends(
         require_employee_clearance("installation_verification")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = PropertyInstallationVerificationService(db)
     return service.list_pending_installations(current_user)
@@ -386,7 +399,7 @@ def create_property_installation(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     authorization_service = PropertyAuthorizationService(db)
     service = PropertyInstallationService(db)
@@ -438,7 +451,7 @@ def create_property_installation(
 def get_property(
     property_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = PropertyService(db)
     authorization_service = PropertyAuthorizationService(db)
@@ -472,7 +485,7 @@ def get_property(
 def create_address_plate_request(
     property_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     authorization_service = PropertyAuthorizationService(db)
     service = AddressPlateRequestService(db)
@@ -515,7 +528,7 @@ def verify_property_installation(
     current_employee: User = Depends(
         require_employee_clearance("installation_verification")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     authorization_service = PropertyAuthorizationService(db)
     service = PropertyInstallationVerificationService(db)

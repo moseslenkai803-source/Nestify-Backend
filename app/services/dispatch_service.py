@@ -53,7 +53,8 @@ class DispatchService:
         if len(set(plate_ids)) != len(plate_ids):
             raise ValueError("Dispatch cannot contain duplicate plates")
 
-        for plate_id in plate_ids:
+        # Acquire plate row locks in a deterministic order to reduce deadlocks.
+        for plate_id in sorted(plate_ids, key=str):
             plate = self.address_plate_repository.get_by_id_for_update(plate_id)
 
             if plate is None:
@@ -151,6 +152,7 @@ class DispatchService:
     def mark_ready(
         self,
         dispatch_code: str,
+        performed_by: uuid.UUID,
     ) -> Dispatch:
         dispatch = self.dispatch_repository.get_by_dispatch_code_for_update(
             dispatch_code
@@ -174,6 +176,8 @@ class DispatchService:
             )
 
         dispatch.status = "ready"
+        dispatch.ready_by = performed_by
+        dispatch.ready_at = datetime.now(UTC)
         self.db.flush()
 
         return dispatch
@@ -220,6 +224,8 @@ class DispatchService:
                 )
 
         dispatch.status = "dispatched"
+        dispatch.dispatched_by = performed_by
+        dispatch.dispatched_at = datetime.now(UTC)
 
         for item in items:
             self.lifecycle_service.record_event(
@@ -236,6 +242,7 @@ class DispatchService:
     def mark_delivered(
         self,
         dispatch_code: str,
+        performed_by: uuid.UUID,
     ) -> Dispatch:
         dispatch = self.dispatch_repository.get_by_dispatch_code_for_update(
             dispatch_code
@@ -250,6 +257,8 @@ class DispatchService:
         )
 
         dispatch.status = "delivered"
+        dispatch.delivered_by = performed_by
+        dispatch.delivered_at = datetime.now(UTC)
         self.db.flush()
 
         return dispatch
@@ -257,6 +266,7 @@ class DispatchService:
     def cancel_dispatch(
         self,
         dispatch_code: str,
+        performed_by: uuid.UUID,
     ) -> Dispatch:
         dispatch = self.dispatch_repository.get_by_dispatch_code_for_update(
             dispatch_code
@@ -280,6 +290,8 @@ class DispatchService:
             )
 
         dispatch.status = "cancelled"
+        dispatch.cancelled_by = performed_by
+        dispatch.cancelled_at = datetime.now(UTC)
 
         for item in items:
             item.released_at = datetime.now(UTC)

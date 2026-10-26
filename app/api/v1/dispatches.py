@@ -25,7 +25,7 @@ def create_dispatch(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = DispatchService(db)
 
@@ -55,7 +55,7 @@ def list_dispatches(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = DispatchService(db)
 
@@ -78,7 +78,7 @@ def get_dispatch_plates(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = DispatchService(db)
 
@@ -101,7 +101,7 @@ def get_dispatch(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = DispatchService(db)
 
@@ -124,12 +124,15 @@ def mark_dispatch_ready(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = DispatchService(db)
 
     try:
-        return service.mark_ready(dispatch_code)
+        return service.mark_ready(
+            dispatch_code=dispatch_code,
+            performed_by=current_employee.id,
+        )
 
     except ValueError as exc:
         status_code = (
@@ -153,7 +156,7 @@ def mark_dispatch_dispatched(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = DispatchService(db)
 
@@ -185,12 +188,15 @@ def mark_dispatch_delivered(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = DispatchService(db)
 
     try:
-        return service.mark_delivered(dispatch_code)
+        return service.mark_delivered(
+            dispatch_code=dispatch_code,
+            performed_by=current_employee.id,
+        )
 
     except ValueError as exc:
         status_code = (
@@ -214,12 +220,15 @@ def cancel_dispatch(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = DispatchService(db)
 
     try:
-        return service.cancel_dispatch(dispatch_code)
+        return service.cancel_dispatch(
+            dispatch_code=dispatch_code,
+            performed_by=current_employee.id,
+        )
 
     except ValueError as exc:
         status_code = (

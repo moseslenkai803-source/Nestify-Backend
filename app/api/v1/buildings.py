@@ -29,7 +29,7 @@ def create_building(
     property_id: UUID,
     building_data: BuildingCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = BuildingService(db)
 
@@ -63,7 +63,7 @@ def create_building(
 def list_buildings(
     property_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = BuildingService(db)
 
@@ -96,7 +96,7 @@ def get_building(
     property_id: UUID,
     building_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     authorization_service = PropertyAuthorizationService(db)
     service = BuildingService(db)

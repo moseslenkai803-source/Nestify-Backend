@@ -31,7 +31,7 @@ def create_manufacturing_order(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ManufacturingOrderService(db)
 
@@ -57,7 +57,7 @@ def list_manufacturing_orders(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ManufacturingOrderService(db)
 
@@ -80,7 +80,7 @@ def get_manufacturing_order(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ManufacturingOrderService(db)
 
@@ -103,7 +103,7 @@ def approve_manufacturing_order(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ManufacturingOrderService(db)
 
@@ -134,7 +134,7 @@ def start_manufacturing_order(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ManufacturingOrderService(db)
 
@@ -164,7 +164,7 @@ def complete_manufacturing_order(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ManufacturingOrderService(db)
 
@@ -185,6 +185,7 @@ def complete_manufacturing_order(
             status_code=status_code,
             detail=str(exc),
         ) from exc
+
 
 @router.post(
     "/{order_code}/cancel",
@@ -219,6 +220,7 @@ def cancel_manufacturing_order(
             detail=str(exc),
         ) from exc
 
+
 @router.get(
     "/{order_code}/plates",
     response_model=list[AddressPlateResponse],
@@ -228,7 +230,7 @@ def get_manufacturing_order_plates(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ManufacturingOrderService(db)
 

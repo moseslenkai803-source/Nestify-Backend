@@ -105,11 +105,10 @@ class PropertyInstallationVerificationService:
             if assignment.plate_id != installation.plate_id:
                 raise ValueError("Installation assignment does not belong to this plate")
 
-            if assignment.status == "cancelled":
-                raise ValueError("Installation assignment is cancelled")
-
-            if assignment.status != "submitted":
-                raise ValueError("Installation assignment is not awaiting verification")
+            if assignment.status not in {"submitted", "cancelled"}:
+                raise ValueError(
+                    "Installation assignment is not awaiting verification"
+                )
         else:
             installation = self.property_installation_repository.get_by_id_for_update(
                 installation_id
@@ -146,7 +145,7 @@ class PropertyInstallationVerificationService:
 
         installation.status = status
 
-        if assignment is not None:
+        if assignment is not None and assignment.status != "cancelled":
             if status == "verified":
                 assignment.status = "completed"
             else:

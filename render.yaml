@@ -1,0 +1,137 @@
+services:
+  - type: web
+    name: nestify-api
+    runtime: python
+    plan: starter
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    preDeployCommand: alembic upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /ready
+    envVars:
+      - key: APP_NAME
+        value: Nestify Backend
+      - key: APP_VERSION
+        value: 0.1.0
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nestify-postgres
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: FRONTEND_BASE_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM_EMAIL
+        sync: false
+      - key: SMTP_USE_SSL
+        value: "false"
+      - key: SMTP_STARTTLS
+        value: "true"
+      - key: OUTBOX_ENCRYPTION_KEYS
+        sync: false
+      - key: OUTBOX_ACTIVE_ENCRYPTION_KEY_VERSION
+        value: v1
+
+  - type: worker
+    name: nestify-email-worker
+    runtime: python
+    plan: starter
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m app.workers.email_outbox
+    envVars:
+      - key: APP_NAME
+        value: Nestify Backend
+      - key: APP_VERSION
+        value: 0.1.0
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nestify-postgres
+          property: connectionString
+      - key: JWT_SECRET_KEY
+        fromService:
+          type: web
+          name: nestify-api
+          envVarKey: JWT_SECRET_KEY
+      - key: FRONTEND_BASE_URL
+        fromService:
+          type: web
+          name: nestify-api
+          envVarKey: FRONTEND_BASE_URL
+      - key: CORS_ALLOWED_ORIGINS
+        fromService:
+          type: web
+          name: nestify-api
+          envVarKey: CORS_ALLOWED_ORIGINS
+      - key: SMTP_HOST
+        fromService:
+          type: web
+          name: nestify-api
+          envVarKey: SMTP_HOST
+      - key: SMTP_PORT
+        fromService:
+          type: web
+          name: nestify-api
+          envVarKey: SMTP_PORT
+      - key: SMTP_USERNAME
+        fromService:
+          type: web
+          name: nestify-api
+          envVarKey: SMTP_USERNAME
+      - key: SMTP_PASSWORD
+        fromService:
+          type: web
+          name: nestify-api
+          envVarKey: SMTP_PASSWORD
+      - key: SMTP_FROM_EMAIL
+        fromService:
+          type: web
+          name: nestify-api
+          envVarKey: SMTP_FROM_EMAIL
+      - key: SMTP_USE_SSL
+        fromService:
+          type: web
+          name: nestify-api
+          envVarKey: SMTP_USE_SSL
+      - key: SMTP_STARTTLS
+        fromService:
+          type: web
+          name: nestify-api
+          envVarKey: SMTP_STARTTLS
+      - key: OUTBOX_ENCRYPTION_KEYS
+        fromService:
+          type: web
+          name: nestify-api
+          envVarKey: OUTBOX_ENCRYPTION_KEYS
+      - key: OUTBOX_ACTIVE_ENCRYPTION_KEY_VERSION
+        fromService:
+          type: web
+          name: nestify-api
+          envVarKey: OUTBOX_ACTIVE_ENCRYPTION_KEY_VERSION
+
+databases:
+  - name: nestify-postgres
+    region: frankfurt
+    ipAllowList: []
+    plan: basic-1gb
+    databaseName: nestify
+    user: nestify_app
+    postgresMajorVersion: "17"

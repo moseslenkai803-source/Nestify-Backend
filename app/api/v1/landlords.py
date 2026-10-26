@@ -13,7 +13,7 @@ router = APIRouter(prefix="/landlords", tags=["landlords"])
 @router.post("/onboard", response_model=LandlordResponse, status_code=201)
 def onboard_landlord(
     payload: LandlordOnboardRequest,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
     current_user: User = Depends(get_current_user),
 ):
     """

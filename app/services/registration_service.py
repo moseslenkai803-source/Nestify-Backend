@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.models.landlord import Landlord
 from app.models.user import User
 from app.repositories.landlord_repository import LandlordRepository
+from app.repositories.employee_repository import EmployeeRepository
 from app.services.user_service import UserService
 
 
@@ -11,6 +12,7 @@ class RegistrationService:
     def __init__(self, db: Session):
         self.user_service = UserService(db)
         self.landlord_repository = LandlordRepository(db)
+        self.employee_repository = EmployeeRepository(db)
 
     def register_landlord(
         self,
@@ -46,10 +48,15 @@ class RegistrationService:
     ) -> Landlord:
         import uuid
         
-        # 1. Verify user existence
-        user = self.user_service.user_repository.get_by_id(user_id)
+        # Lock the user row so employee creation and landlord onboarding serialize.
+        user = self.user_service.user_repository.get_by_id_for_update(user_id)
         if user is None:
             raise ValueError("User not found")
+
+        # Employee identities cannot be converted into landlord accounts.
+        employee = self.employee_repository.get_by_user_id(user_id)
+        if employee is not None:
+            raise ValueError("Employee accounts cannot be onboarded as landlords")
 
         # 2. Guard against duplicate landlord profiles
         existing_landlord = self.landlord_repository.get_by_user_id(user_id)

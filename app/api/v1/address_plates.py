@@ -20,7 +20,7 @@ router = APIRouter(
 )
 def get_address_plate(
     plate_code: str,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = AddressPlateService(db)
 

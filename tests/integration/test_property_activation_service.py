@@ -1,10 +1,15 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from threading import Event, Thread
 
 import pytest
 
 from app.db.session import SessionLocal
+from app.models.address_plate import AddressPlate
+from app.models.address_plate_lifecycle_event import AddressPlateLifecycleEvent
+from app.models.employee import Employee
+from app.models.property_installation import PropertyInstallation
+from app.models.property_installation_verification import PropertyInstallationVerification
 from app.models.landlord import Landlord
 from app.models.property_access import PropertyAccess
 from app.models.property_address import PropertyAddress
@@ -65,6 +70,22 @@ def test_activate_property_activates_verified_plate(db_session):
     )
     db_session.add(employee)
     db_session.add(reviewer)
+    db_session.flush()
+
+    db_session.add_all([
+        Employee(
+            user_id=employee.id,
+            employee_number=f"EMP-ACT-{uuid.uuid4().hex}",
+            department="Operations",
+            position="Plate Operations",
+        ),
+        Employee(
+            user_id=reviewer.id,
+            employee_number=f"EMP-REV-{uuid.uuid4().hex}",
+            department="Operations",
+            position="Installation Verification",
+        ),
+    ])
     db_session.flush()
 
     db_session.add(
@@ -135,7 +156,7 @@ def test_activate_property_activates_verified_plate(db_session):
         created_by=employee.id,
     )
 
-    dispatch_service.mark_ready(dispatch.dispatch_code)
+    dispatch_service.mark_ready(dispatch.dispatch_code, performed_by=employee.id)
     dispatch_service.mark_dispatched(
         dispatch_code=dispatch.dispatch_code,
         performed_by=employee.id,
@@ -404,6 +425,22 @@ def test_activate_property_serializes_concurrent_activation_attempts(
     db_session.add(employee_two)
     db_session.flush()
 
+    db_session.add_all([
+        Employee(
+            user_id=employee_one.id,
+            employee_number=f"EMP-CONC1-{uuid.uuid4().hex}",
+            department="Operations",
+            position="Plate Operations",
+        ),
+        Employee(
+            user_id=employee_two.id,
+            employee_number=f"EMP-CONC2-{uuid.uuid4().hex}",
+            department="Operations",
+            position="Plate Operations",
+        ),
+    ])
+    db_session.flush()
+
     db_session.add(
         PropertyAccess(
             user_id=employee_one.id,
@@ -480,7 +517,7 @@ def test_activate_property_serializes_concurrent_activation_attempts(
         created_by=employee_one.id,
     )
 
-    dispatch_service.mark_ready(dispatch.dispatch_code)
+    dispatch_service.mark_ready(dispatch.dispatch_code, performed_by=employee_one.id)
     dispatch_service.mark_dispatched(
         dispatch_code=dispatch.dispatch_code,
         performed_by=employee_one.id,
@@ -596,3 +633,212 @@ def test_activate_property_serializes_concurrent_activation_attempts(
         second_session.rollback()
         first_session.close()
         second_session.close()
+
+
+def _create_activation_evidence_context(db_session):
+    """Create a verified property and lifecycle-verified plate for guard tests."""
+    user = User(
+        email=f"activation-evidence-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="landlord",
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    landlord = Landlord(
+        user_id=user.id,
+        display_name="Activation Evidence Landlord",
+        phone="+254700000010",
+        landlord_type="individual",
+    )
+    db_session.add(landlord)
+    db_session.flush()
+
+    property = PropertyService(db_session).create_property(
+        landlord_id=landlord.id,
+        name="Activation Evidence Property",
+        property_type="residential",
+    )
+    property.status = "verified"
+    db_session.add(
+        PropertyAddress(
+            property_id=property.id,
+            formatted_address="Activation Evidence Address",
+        )
+    )
+
+    plate = AddressPlate(
+        property_id=property.id,
+        plate_code=f"ACT-EVIDENCE-{uuid.uuid4()}",
+        status="unactivated",
+    )
+    db_session.add(plate)
+    db_session.flush()
+
+    db_session.add(
+        AddressPlateLifecycleEvent(
+            plate_id=plate.id,
+            event_type="verified",
+            performed_by=user.id,
+            occurred_at=datetime.now(UTC),
+        )
+    )
+    db_session.flush()
+
+    return user, property, plate
+
+
+def test_activate_property_requires_installation_record(db_session):
+    user, property, plate = _create_activation_evidence_context(db_session)
+
+    with pytest.raises(ValueError, match="verified installation"):
+        PropertyActivationService(db_session).activate_property(
+            property_id=property.id,
+            plate_code=plate.plate_code,
+            activated_by=user.id,
+        )
+
+    db_session.refresh(property)
+    db_session.refresh(plate)
+    assert property.status == "verified"
+    assert plate.status != "active"
+
+
+def test_activate_property_rejects_rejected_installation(db_session):
+    user, property, plate = _create_activation_evidence_context(db_session)
+
+    installation = PropertyInstallation(
+        property_id=property.id,
+        plate_id=plate.id,
+        installer_id=user.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        captured_at=datetime.now(UTC),
+        status="rejected",
+    )
+    db_session.add(installation)
+    db_session.flush()
+
+    db_session.add(
+        PropertyInstallationVerification(
+            installation_id=installation.id,
+            verified_by=user.id,
+            status="rejected",
+            verified_at=datetime.now(UTC),
+            notes="Rejected in activation guard test",
+        )
+    )
+    db_session.flush()
+
+    with pytest.raises(ValueError, match="verified installation"):
+        PropertyActivationService(db_session).activate_property(
+            property_id=property.id,
+            plate_code=plate.plate_code,
+            activated_by=user.id,
+        )
+
+    db_session.refresh(property)
+    db_session.refresh(plate)
+    assert property.status == "verified"
+    assert plate.status != "active"
+
+
+def test_activate_property_requires_successful_installation_verification_record(
+    db_session,
+):
+    user, property, plate = _create_activation_evidence_context(db_session)
+
+    db_session.add(
+        PropertyInstallation(
+            property_id=property.id,
+            plate_id=plate.id,
+            installer_id=user.id,
+            latitude=-1.286389,
+            longitude=36.817223,
+            captured_at=datetime.now(UTC),
+            status="verified",
+        )
+    )
+    db_session.flush()
+
+    with pytest.raises(ValueError, match="verified installation"):
+        PropertyActivationService(db_session).activate_property(
+            property_id=property.id,
+            plate_code=plate.plate_code,
+            activated_by=user.id,
+        )
+
+    db_session.refresh(property)
+    db_session.refresh(plate)
+    assert property.status == "verified"
+    assert plate.status != "active"
+
+
+
+def test_activation_rejects_newer_rejected_installation_after_verified_attempt(
+    db_session,
+):
+    user, property, plate = _create_activation_evidence_context(db_session)
+    now = datetime.now(UTC)
+
+    older_verified = PropertyInstallation(
+        property_id=property.id,
+        plate_id=plate.id,
+        installer_id=user.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        captured_at=now - timedelta(minutes=10),
+        created_at=now - timedelta(minutes=10),
+        status="verified",
+    )
+    db_session.add(older_verified)
+    db_session.flush()
+
+    db_session.add(
+        PropertyInstallationVerification(
+            installation_id=older_verified.id,
+            verified_by=user.id,
+            status="verified",
+            verified_at=now - timedelta(minutes=9),
+            created_at=now - timedelta(minutes=9),
+            notes="Earlier successful verification",
+        )
+    )
+
+    newer_rejected = PropertyInstallation(
+        property_id=property.id,
+        plate_id=plate.id,
+        installer_id=user.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        captured_at=now,
+        created_at=now,
+        status="rejected",
+    )
+    db_session.add(newer_rejected)
+    db_session.flush()
+
+    db_session.add(
+        PropertyInstallationVerification(
+            installation_id=newer_rejected.id,
+            verified_by=user.id,
+            status="rejected",
+            verified_at=now,
+            created_at=now,
+            notes="Later rejected attempt",
+        )
+    )
+    db_session.flush()
+
+    with pytest.raises(ValueError, match="verified installation"):
+        PropertyActivationService(db_session).activate_property(
+            property_id=property.id,
+            plate_code=plate.plate_code,
+            activated_by=user.id,
+        )
+
+    db_session.refresh(property)
+    db_session.refresh(plate)
+    assert property.status == "verified"
+    assert plate.status != "active"

@@ -2,9 +2,11 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
+from app.models.employee import Employee
 from app.models.property import Property
 from app.models.property_access import PropertyAccess
 from app.core.property_actions import PropertyAction
+from app.repositories.employee_repository import EmployeeRepository
 from app.repositories.user_repository import UserRepository
 from app.repositories.property_access_repository import (
     PropertyAccessRepository,
@@ -17,6 +19,7 @@ class PropertyAccessService:
         self.property_access_repository = PropertyAccessRepository(db)
         self.property_repository = PropertyRepository(db)
         self.user_repository = UserRepository(db)
+        self.employee_repository = EmployeeRepository(db)
 
     def grant_access(
         self,
@@ -40,6 +43,13 @@ class PropertyAccessService:
 
         if user.role != "employee":
             raise ValueError("User must be an employee")
+
+        employee = self.employee_repository.get_by_user_id(user_id)
+        if employee is None:
+            raise ValueError("Employee record not found")
+
+        if employee.ended_at is not None:
+            raise ValueError("Employee is terminated")
 
         property = self.property_repository.get_by_id(property_id)
         if property is None:
@@ -79,6 +89,27 @@ class PropertyAccessService:
         property_id: UUID,
         access_type: str,
     ) -> PropertyAccess:
+        user = self.user_repository.get_by_id(user_id)
+        if user is None:
+            raise ValueError("Employee not found")
+
+        if not user.is_active:
+            raise ValueError("Employee is inactive")
+
+        if user.role != "employee":
+            raise ValueError("User must be an employee")
+
+        employee = self.employee_repository.get_by_user_id(user_id)
+        if employee is None:
+            raise ValueError("Employee record not found")
+
+        if employee.ended_at is not None:
+            raise ValueError("Employee is terminated")
+
+        property = self.property_repository.get_by_id(property_id)
+        if property is None:
+            raise ValueError("Property not found")
+
         property_access = (
             self.property_access_repository.get_active_access(
                 user_id=user_id,
@@ -88,11 +119,6 @@ class PropertyAccessService:
         )
 
         if property_access is None:
-            property = self.property_repository.get_by_id(property_id)
-
-            if property is None:
-                raise ValueError("Property not found")
-
             raise ValueError(
                 "Employee does not have access to this property"
             )
@@ -111,6 +137,20 @@ class PropertyAccessService:
         self,
         user_id: UUID,
     ) -> list[Property]:
+        user = self.user_repository.get_by_id(user_id)
+        if user is None:
+            raise ValueError("Employee not found")
+        if not user.is_active:
+            raise ValueError("Employee is inactive")
+        if user.role != "employee":
+            raise ValueError("User must be an employee")
+
+        employee = self.employee_repository.get_by_user_id(user_id)
+        if employee is None:
+            raise ValueError("Employee record not found")
+        if employee.ended_at is not None:
+            raise ValueError("Employee is terminated")
+
         return self.property_access_repository.get_active_properties_by_user_id(
             user_id
         )
@@ -130,7 +170,7 @@ class PropertyAccessService:
             )
         )
 
-        if property_access is None:
+        if property_access is None or not property_access.is_active:
             raise ValueError(
                 "Active property access not found"
             )

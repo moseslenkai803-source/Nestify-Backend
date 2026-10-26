@@ -793,6 +793,60 @@ CORS_ORIGINS
 The actual environment configuration is documented separately from secret
 values.
 
+### Employee invitation email delivery
+
+Outside development, employee invitations are delivered through an encrypted
+transactional outbox. Configure these environment variables:
+
+- `ENVIRONMENT`
+- `FRONTEND_BASE_URL`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_FROM_EMAIL`
+- `SMTP_USE_SSL`
+- `SMTP_STARTTLS`
+- `OUTBOX_ENCRYPTION_KEYS`
+- `OUTBOX_ACTIVE_ENCRYPTION_KEY_VERSION`
+
+If SMTP authentication is required, configure both `SMTP_USERNAME` and
+`SMTP_PASSWORD`. Never commit real credentials or encryption keys.
+
+- Development responses include the invitation URL for testing. In
+  development, the invitation email is not queued by the outbox.
+- Outside development, the invitation and encrypted outbox payload are stored
+  in the same database transaction. The API does not send email inline and
+  does not expose the raw invitation URL in its response.
+- Invitation tokens expire after 24 hours. Token hashes are stored for
+  verification, while the outbox payload containing the invitation URL is
+  encrypted before being stored in the database.
+- Both API and worker processes need compatible outbox encryption settings.
+  Retain old key versions while queued records may still need decryption.
+- Production SMTP must use either implicit SSL or STARTTLS, not both.
+- If secure encryption or queueing fails, the request fails rather than
+  returning an invitation that cannot be delivered.
+- A successful API response confirms that the invitation and email job were
+  committed; it does not mean the email has already arrived.
+
+#### Running the email outbox worker
+
+Run the worker separately from FastAPI, with the same database and compatible
+SMTP and encryption configuration:
+
+```bash
+python -m app.workers.email_outbox
+```
+
+The worker polls for eligible jobs, claims each job before sending, and
+retries failures with bounded exponential backoff. Jobs that exhaust their
+attempts are marked `dead_letter` and require operational review. Starting
+the API alone does not deliver queued emails.
+
+Delivery is at-least-once, not exactly-once. If SMTP accepts a message but
+the worker loses the response or stops before recording success, a retry can
+send a duplicate. The outbox makes the invitation and email job atomic with
+respect to the database, but it cannot make SMTP and the database one
+atomic transaction.
+
 ---
 
 ## 22. Production requirements
@@ -810,6 +864,8 @@ Before the backend is considered production-ready, it should have:
 - Automated tests
 - API documentation
 - Environment configuration
+- Configured and verified production SMTP delivery
+- Shared rate limiting for public endpoints across application instances
 - Database backups
 - Health checks
 - Security controls

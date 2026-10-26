@@ -32,7 +32,7 @@ def create_contractor(
     current_employee: User = Depends(
         require_employee_clearance("contractor_management")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ContractorService(db)
 
@@ -59,7 +59,7 @@ def deactivate_contractor(
     current_employee: User = Depends(
         require_employee_clearance("contractor_management")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ContractorService(db)
 
@@ -87,7 +87,7 @@ def reactivate_contractor(
     current_employee: User = Depends(
         require_employee_clearance("contractor_management")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ContractorService(db)
 
@@ -115,7 +115,7 @@ def list_contractors(
     current_employee: User = Depends(
         require_employee_clearance("contractor_management")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ContractorService(db)
 
@@ -132,7 +132,7 @@ def list_contractor_candidates(
     current_employee: User = Depends(
         require_employee_clearance("contractor_management")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ContractorService(db)
 
@@ -148,7 +148,7 @@ def get_contractor(
     current_employee: User = Depends(
         require_employee_clearance("contractor_management")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ContractorService(db)
 
@@ -170,7 +170,7 @@ def list_contractor_members(
     current_employee: User = Depends(
         require_employee_clearance("contractor_management")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ContractorService(db)
 
@@ -194,7 +194,7 @@ def add_contractor_member(
     current_employee: User = Depends(
         require_employee_clearance("contractor_management")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ContractorService(db)
 
@@ -230,7 +230,7 @@ def deactivate_contractor_member(
     current_employee: User = Depends(
         require_employee_clearance("contractor_management")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ContractorService(db)
 

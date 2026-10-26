@@ -27,7 +27,7 @@ def create_space(
     floor_id: UUID,
     space_data: SpaceCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = SpaceService(db)
 
@@ -71,7 +71,7 @@ def list_spaces(
     building_id: UUID,
     floor_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = SpaceService(db)
 
@@ -113,7 +113,7 @@ def get_space(
     floor_id: UUID,
     space_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = SpaceService(db)
 

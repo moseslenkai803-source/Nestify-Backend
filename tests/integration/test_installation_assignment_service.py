@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from threading import Event, Thread
 
 import pytest
@@ -944,6 +945,411 @@ def test_submit_assignment_rejects_user_whose_role_is_no_longer_contractor(db_se
     assert fetched_assignment.status == "in_progress"
 
 
+
+def test_submit_assignment_rejects_existing_property_submission(
+    db_session,
+):
+    from app.models.property_installation import PropertyInstallation
+
+    context = create_assignment_context(
+        db_session,
+        lifecycle_stage="dispatched",
+    )
+    service = InstallationAssignmentService(db_session)
+
+    assignment = service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+
+    service.start_assignment(
+        assignment_id=assignment.id,
+        contractor_user_id=context["contractor_user"].id,
+    )
+
+    legacy_installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        assignment_id=None,
+        installer_id=context["contractor_user"].id,
+        latitude=-1.2921,
+        longitude=36.8219,
+        accuracy_meters=4.5,
+        captured_at=datetime(2026, 10, 1, 12, 0, tzinfo=UTC),
+        status="submitted",
+    )
+    db_session.add(legacy_installation)
+    db_session.flush()
+
+    with pytest.raises(
+        ValueError,
+        match="Property already has a submitted installation",
+    ):
+        service.submit_assignment(
+            assignment_id=assignment.id,
+            contractor_user_id=context["contractor_user"].id,
+            latitude=-1.2922,
+            longitude=36.8220,
+            accuracy_meters=3.0,
+            captured_at=datetime(2026, 10, 2, 12, 0, tzinfo=UTC),
+        )
+
+    db_session.refresh(assignment)
+    assert assignment.status == "in_progress"
+
+
+
+
+
+def test_replacement_submission_allowed_after_cancelled_evidence_is_rejected(
+    db_session,
+):
+    from app.models.property_installation import PropertyInstallation
+    from app.services.property_installation_verification_service import (
+        PropertyInstallationVerificationService,
+    )
+
+    context = create_assignment_context(
+        db_session,
+        lifecycle_stage="dispatched",
+    )
+    service = InstallationAssignmentService(db_session)
+
+    original_assignment = service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+    service.start_assignment(
+        assignment_id=original_assignment.id,
+        contractor_user_id=context["contractor_user"].id,
+    )
+
+    original_installation = service.submit_assignment(
+        assignment_id=original_assignment.id,
+        contractor_user_id=context["contractor_user"].id,
+        latitude=-1.2921,
+        longitude=36.8219,
+        accuracy_meters=4.5,
+        captured_at=datetime(2026, 10, 2, 12, 0, tzinfo=UTC),
+        notes="Original installation evidence awaiting review.",
+    )
+
+    service.cancel_assignment(
+        assignment_id=original_assignment.id,
+        cancelled_by=context["assigning_employee"].id,
+        reason="Replacement contractor required.",
+    )
+
+    db_session.refresh(original_assignment)
+    original_cancelled_at = original_assignment.cancelled_at
+
+    replacement_assignment = service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+    service.start_assignment(
+        assignment_id=replacement_assignment.id,
+        contractor_user_id=context["contractor_user"].id,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Property already has a submitted installation",
+    ):
+        service.submit_assignment(
+            assignment_id=replacement_assignment.id,
+            contractor_user_id=context["contractor_user"].id,
+            latitude=-1.2922,
+            longitude=36.8220,
+            accuracy_meters=3.0,
+            captured_at=datetime(2026, 10, 3, 12, 0, tzinfo=UTC),
+        )
+
+    reviewer = User(
+        id=uuid.uuid4(),
+        email=f"installation-reviewer-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        clearance="installation_verification",
+        is_active=True,
+    )
+    db_session.add(reviewer)
+    db_session.flush()
+
+    verification_service = PropertyInstallationVerificationService(
+        db_session
+    )
+    verification = verification_service.verify_installation(
+        property_id=context["property"].id,
+        installation_id=original_installation.id,
+        verified_by=reviewer.id,
+        status="rejected",
+        notes="Evidence rejected; replacement submission permitted.",
+    )
+
+    assert verification.status == "rejected"
+
+    replacement_installation = service.submit_assignment(
+        assignment_id=replacement_assignment.id,
+        contractor_user_id=context["contractor_user"].id,
+        latitude=-1.2922,
+        longitude=36.8220,
+        accuracy_meters=3.0,
+        captured_at=datetime(2026, 10, 3, 12, 0, tzinfo=UTC),
+        notes="Replacement installation evidence.",
+    )
+
+    db_session.refresh(original_assignment)
+    db_session.refresh(replacement_assignment)
+    db_session.refresh(original_installation)
+    db_session.refresh(replacement_installation)
+
+    assert original_installation.status == "rejected"
+    assert original_assignment.status == "cancelled"
+    assert original_assignment.cancelled_by == (
+        context["assigning_employee"].id
+    )
+    assert original_assignment.cancelled_at == original_cancelled_at
+    assert original_assignment.cancellation_reason == (
+        "Replacement contractor required."
+    )
+    assert replacement_assignment.status == "submitted"
+    assert replacement_installation.status == "submitted"
+    assert replacement_installation.assignment_id == replacement_assignment.id
+
+    submitted_records = (
+        db_session.query(PropertyInstallation)
+        .filter(
+            PropertyInstallation.property_id == context["property"].id,
+            PropertyInstallation.status == "submitted",
+        )
+        .all()
+    )
+    assert [record.id for record in submitted_records] == [
+        replacement_installation.id
+    ]
+
+
+def test_cancelled_assignment_submission_blocks_replacement_until_resolved(
+    db_session,
+):
+    from app.models.property_installation import PropertyInstallation
+
+    context = create_assignment_context(
+        db_session,
+        lifecycle_stage="dispatched",
+    )
+    service = InstallationAssignmentService(db_session)
+
+    original_assignment = service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+    service.start_assignment(
+        assignment_id=original_assignment.id,
+        contractor_user_id=context["contractor_user"].id,
+    )
+
+    original_installation = service.submit_assignment(
+        assignment_id=original_assignment.id,
+        contractor_user_id=context["contractor_user"].id,
+        latitude=-1.2921,
+        longitude=36.8219,
+        accuracy_meters=4.5,
+        captured_at=datetime(2026, 10, 2, 12, 0, tzinfo=UTC),
+        notes="Evidence submitted before assignment cancellation.",
+    )
+
+    service.cancel_assignment(
+        assignment_id=original_assignment.id,
+        cancelled_by=context["assigning_employee"].id,
+        reason="Replacement contractor required.",
+    )
+
+    replacement_assignment = service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+    service.start_assignment(
+        assignment_id=replacement_assignment.id,
+        contractor_user_id=context["contractor_user"].id,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Property already has a submitted installation",
+    ):
+        service.submit_assignment(
+            assignment_id=replacement_assignment.id,
+            contractor_user_id=context["contractor_user"].id,
+            latitude=-1.2922,
+            longitude=36.8220,
+            accuracy_meters=3.0,
+            captured_at=datetime(2026, 10, 3, 12, 0, tzinfo=UTC),
+        )
+
+    db_session.refresh(original_assignment)
+    db_session.refresh(replacement_assignment)
+    db_session.refresh(original_installation)
+
+    assert original_assignment.status == "cancelled"
+    assert original_assignment.cancellation_reason == (
+        "Replacement contractor required."
+    )
+    assert original_installation.status == "submitted"
+    assert replacement_assignment.status == "in_progress"
+
+    submitted_records = (
+        db_session.query(PropertyInstallation)
+        .filter(
+            PropertyInstallation.property_id == context["property"].id,
+            PropertyInstallation.status == "submitted",
+        )
+        .all()
+    )
+    assert [record.id for record in submitted_records] == [
+        original_installation.id
+    ]
+
+
+def test_assignment_submission_serializes_against_legacy_submission(db_session):
+    from app.models.property_installation import PropertyInstallation
+
+    context = create_assignment_context(
+        db_session,
+        lifecycle_stage="dispatched",
+    )
+    setup_service = InstallationAssignmentService(db_session)
+
+    assignment = setup_service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+    setup_service.start_assignment(
+        assignment_id=assignment.id,
+        contractor_user_id=context["contractor_user"].id,
+    )
+
+    property_id = context["property"].id
+    plate_id = context["plate"].id
+    installer_id = context["contractor_user"].id
+    assignment_id = assignment.id
+
+    db_session.commit()
+
+    first_session = SessionLocal()
+    second_session = SessionLocal()
+    second_started = Event()
+    second_finished = Event()
+    second_error = {}
+    thread = None
+
+    try:
+        first_service = InstallationAssignmentService(first_session)
+        locked_property = first_service.property_repository.get_by_id_for_update(
+            property_id
+        )
+        assert locked_property is not None
+
+        legacy_installation = PropertyInstallation(
+            id=uuid.uuid4(),
+            property_id=property_id,
+            plate_id=plate_id,
+            assignment_id=None,
+            installer_id=installer_id,
+            latitude=-1.2921,
+            longitude=36.8219,
+            accuracy_meters=4.5,
+            captured_at=datetime(2026, 10, 1, 12, 0, tzinfo=UTC),
+            status="submitted",
+        )
+        first_session.add(legacy_installation)
+        first_session.flush()
+
+        def submit_assignment_from_second_transaction():
+            try:
+                second_started.set()
+                second_service = InstallationAssignmentService(second_session)
+                second_service.submit_assignment(
+                    assignment_id=assignment_id,
+                    contractor_user_id=installer_id,
+                    latitude=-1.2922,
+                    longitude=36.8220,
+                    accuracy_meters=3.0,
+                    captured_at=datetime(2026, 10, 2, 12, 0, tzinfo=UTC),
+                )
+            except Exception as exc:
+                second_error["error"] = exc
+            finally:
+                second_finished.set()
+
+        thread = Thread(target=submit_assignment_from_second_transaction)
+        thread.start()
+
+        assert second_started.wait(timeout=2)
+        assert not second_finished.wait(timeout=0.2)
+
+        first_session.commit()
+
+        assert second_finished.wait(timeout=5)
+        thread.join(timeout=2)
+        assert not thread.is_alive()
+
+        error = second_error.get("error")
+        assert isinstance(error, ValueError)
+        assert str(error) == "Property already has a submitted installation"
+
+        second_session.rollback()
+
+        installations = (
+            second_session.query(PropertyInstallation)
+            .filter(PropertyInstallation.property_id == property_id)
+            .all()
+        )
+        assert len(installations) == 1
+        assert installations[0].assignment_id is None
+        assert installations[0].status == "submitted"
+
+        second_session.refresh(
+            second_session.get(InstallationAssignment, assignment_id)
+        )
+        saved_assignment = second_session.get(
+            InstallationAssignment, assignment_id
+        )
+        assert saved_assignment is not None
+        assert saved_assignment.status == "in_progress"
+
+    finally:
+        if thread is not None:
+            if thread.is_alive():
+                first_session.rollback()
+                thread.join(timeout=5)
+
+        first_session.rollback()
+        second_session.rollback()
+        first_session.close()
+        second_session.close()
+
+
 def test_submit_assignment_creates_installation_and_moves_to_submitted(db_session):
     context = create_assignment_context(
         db_session,
@@ -1158,6 +1564,71 @@ def test_start_assignment_rejects_inactive_contractor_member_user(db_session):
             contractor_user_id=context["contractor_user"].id,
         )
 
+
+
+
+def test_assignment_lock_refreshes_stale_status_after_concurrent_commit(
+    db_session,
+):
+    context = create_assignment_context(
+        db_session,
+        lifecycle_stage="dispatched",
+    )
+    service = InstallationAssignmentService(db_session)
+
+    assignment = service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+    service.start_assignment(
+        assignment_id=assignment.id,
+        contractor_user_id=context["contractor_user"].id,
+    )
+    db_session.commit()
+
+    first_session = SessionLocal()
+    second_session = SessionLocal()
+
+    try:
+        first_service = InstallationAssignmentService(first_session)
+        second_service = InstallationAssignmentService(second_session)
+
+        # Session A retains the assignment in its identity map.
+        stale_assignment = first_session.get(
+            InstallationAssignment,
+            assignment.id,
+        )
+        assert stale_assignment is not None
+        assert stale_assignment.status == "in_progress"
+
+        # Session B commits a status change after A has loaded the object.
+        cancelled_assignment = second_service.cancel_assignment(
+            assignment_id=assignment.id,
+            cancelled_by=context["assigning_employee"].id,
+            reason="Concurrent cancellation regression test.",
+        )
+        assert cancelled_assignment.status == "cancelled"
+        second_session.commit()
+
+        # A's locking query must refresh the already-loaded ORM object.
+        refreshed_assignment = (
+            first_service.installation_assignment_repository.get_by_id_for_update(
+                assignment.id
+            )
+        )
+
+        assert refreshed_assignment is not None
+        assert refreshed_assignment.status == "cancelled"
+        assert stale_assignment.status == "cancelled"
+
+    finally:
+        first_session.rollback()
+        second_session.rollback()
+        first_session.close()
+        second_session.close()
 
 
 def test_cancel_assignment_moves_assigned_to_cancelled(db_session):
@@ -1656,3 +2127,154 @@ def test_query_service_returns_none_for_missing_assignment(
     service = InstallationAssignmentQueryService(db_session)
 
     assert service.get_assignment(uuid.uuid4()) is None
+
+
+def test_start_assignment_rejects_inactive_contractor(db_session):
+    context = create_assignment_context(db_session, lifecycle_stage="dispatched")
+    service = InstallationAssignmentService(db_session)
+    assignment = service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+
+    context["contractor"].status = "inactive"
+    db_session.flush()
+
+    with pytest.raises(ValueError, match="Contractor is inactive"):
+        service.start_assignment(
+            assignment_id=assignment.id,
+            contractor_user_id=context["contractor_user"].id,
+        )
+
+    db_session.refresh(assignment)
+    assert assignment.status == "assigned"
+
+
+def test_submit_assignment_rejects_inactive_contractor(db_session):
+    context = create_assignment_context(db_session, lifecycle_stage="dispatched")
+    service = InstallationAssignmentService(db_session)
+    assignment = service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+    service.start_assignment(
+        assignment_id=assignment.id,
+        contractor_user_id=context["contractor_user"].id,
+    )
+
+    context["contractor"].status = "inactive"
+    db_session.flush()
+
+    with pytest.raises(ValueError, match="Contractor is inactive"):
+        service.submit_assignment(
+            assignment_id=assignment.id,
+            contractor_user_id=context["contractor_user"].id,
+            latitude=-1.2921,
+            longitude=36.8219,
+            accuracy_meters=4.5,
+            captured_at=datetime(2026, 9, 28, 18, 0, tzinfo=UTC),
+        )
+
+    db_session.refresh(assignment)
+    assert assignment.status == "in_progress"
+
+
+def test_start_assignment_rejects_member_from_different_contractor(
+    db_session, monkeypatch
+):
+    context = create_assignment_context(db_session, lifecycle_stage="dispatched")
+    service = InstallationAssignmentService(db_session)
+    assignment = service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+    other_contractor = Contractor(
+        id=uuid.uuid4(),
+        name="Different Assignment Contractor",
+        contractor_type="company",
+        status="active",
+    )
+    db_session.add(other_contractor)
+    db_session.flush()
+
+    mismatched_member = SimpleNamespace(
+        contractor_id=other_contractor.id,
+    )
+    monkeypatch.setattr(
+        service.contractor_member_repository,
+        "get_by_id_for_update",
+        lambda _member_id: mismatched_member,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Contractor member does not belong to this contractor",
+    ):
+        service.start_assignment(
+            assignment_id=assignment.id,
+            contractor_user_id=context["contractor_user"].id,
+        )
+
+    db_session.refresh(assignment)
+    assert assignment.status == "assigned"
+
+
+def test_submit_assignment_rejects_member_from_different_contractor(
+    db_session, monkeypatch
+):
+    context = create_assignment_context(db_session, lifecycle_stage="dispatched")
+    service = InstallationAssignmentService(db_session)
+    assignment = service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+    service.start_assignment(
+        assignment_id=assignment.id,
+        contractor_user_id=context["contractor_user"].id,
+    )
+
+    other_contractor = Contractor(
+        id=uuid.uuid4(),
+        name="Different Submission Contractor",
+        contractor_type="company",
+        status="active",
+    )
+    db_session.add(other_contractor)
+    db_session.flush()
+
+    mismatched_member = SimpleNamespace(
+        contractor_id=other_contractor.id,
+    )
+    monkeypatch.setattr(
+        service.contractor_member_repository,
+        "get_by_id_for_update",
+        lambda _member_id: mismatched_member,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Contractor member does not belong to this contractor",
+    ):
+        service.submit_assignment(
+            assignment_id=assignment.id,
+            contractor_user_id=context["contractor_user"].id,
+            latitude=-1.2921,
+            longitude=36.8219,
+            accuracy_meters=4.5,
+            captured_at=datetime(2026, 9, 28, 18, 0, tzinfo=UTC),
+        )
+
+    db_session.refresh(assignment)
+    assert assignment.status == "in_progress"

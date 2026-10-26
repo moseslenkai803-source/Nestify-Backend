@@ -145,6 +145,80 @@ def test_onboard_existing_user_rejects_if_already_landlord(db_session):
         assert str(exc) == "User is already registered as a landlord"
 
 
+
+def test_onboard_existing_user_rejects_employee(db_session):
+    from app.models.employee import Employee
+    from app.repositories.landlord_repository import LandlordRepository
+    from app.services.user_service import UserService
+
+    user = UserService(db_session).create_user(
+        email=f"employee-landlord-{uuid.uuid4()}@example.com",
+        password="secure-password-123",
+        role="employee",
+    )
+    employee = Employee(
+        user_id=user.id,
+        employee_number=f"EMP-{uuid.uuid4()}",
+        department="Operations",
+        position="Coordinator",
+    )
+    db_session.add(employee)
+    db_session.flush()
+
+    service = RegistrationService(db_session)
+
+    try:
+        service.onboard_existing_user(
+            user_id=user.id,
+            display_name="Should Not Be Created",
+            phone="+254700000001",
+        )
+        assert False, "Expected employee-to-landlord onboarding to be rejected"
+    except ValueError as exc:
+        assert str(exc) == "Employee accounts cannot be onboarded as landlords"
+
+    assert user.role == "employee"
+    assert LandlordRepository(db_session).get_by_user_id(user.id) is None
+
+
+def test_onboard_existing_user_rejects_terminated_employee(db_session):
+    from datetime import UTC, datetime
+
+    from app.models.employee import Employee
+    from app.repositories.landlord_repository import LandlordRepository
+    from app.services.user_service import UserService
+
+    user = UserService(db_session).create_user(
+        email=f"terminated-employee-landlord-{uuid.uuid4()}@example.com",
+        password="secure-password-123",
+        role="employee",
+    )
+    employee = Employee(
+        user_id=user.id,
+        employee_number=f"EMP-{uuid.uuid4()}",
+        department="Operations",
+        position="Former Coordinator",
+        ended_at=datetime.now(UTC),
+    )
+    db_session.add(employee)
+    db_session.flush()
+
+    service = RegistrationService(db_session)
+
+    try:
+        service.onboard_existing_user(
+            user_id=user.id,
+            display_name="Should Not Be Created",
+            phone="+254700000002",
+        )
+        assert False, "Expected terminated employee onboarding to be rejected"
+    except ValueError as exc:
+        assert str(exc) == "Employee accounts cannot be onboarded as landlords"
+
+    assert user.role == "employee"
+    assert LandlordRepository(db_session).get_by_user_id(user.id) is None
+
+
 def test_onboard_existing_user_rejects_invalid_user_id(db_session):
     # Act & Assert: Confirm failure path handles unmapped user keys gracefully
     service = RegistrationService(db_session)

@@ -24,6 +24,76 @@ _PLACEHOLDER_MARKERS = (
 )
 
 
+
+def _validate_protected_frontend_base_url() -> None:
+    """Require a safe HTTPS frontend URL in staging and production."""
+    url = settings.frontend_base_url
+
+    if (
+        not isinstance(url, str)
+        or not url
+        or url != url.strip()
+        or any(character.isspace() for character in url)
+    ):
+        raise RuntimeConfigurationError(
+            "FRONTEND_BASE_URL must be a valid HTTPS URL"
+        )
+
+    try:
+        parsed = urlsplit(url)
+        hostname = parsed.hostname
+        parsed.port  # Validate malformed and out-of-range ports.
+
+        if not hostname:
+            raise ValueError("Missing hostname")
+
+        try:
+            ip = ip_address(hostname)
+        except ValueError:
+            ip = None
+            normalized_hostname = hostname.rstrip(".")
+
+            # Reject numeric-looking hosts that failed IP address parsing.
+            # Otherwise values such as "1234" or "999.999.999.999"
+            # can pass the DNS-label checks despite not being valid IPs.
+            if (
+                re.fullmatch(r"[0-9.]+", hostname)
+                or len(hostname) > 253
+                or hostname.endswith("..")
+                or not normalized_hostname
+                or not all(
+                    re.fullmatch(
+                        r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?",
+                        label,
+                    )
+                    for label in normalized_hostname.split(".")
+                )
+            ):
+                raise ValueError("Invalid hostname")
+
+    except (ValueError, UnicodeError) as exc:
+        raise RuntimeConfigurationError(
+            "FRONTEND_BASE_URL must be a valid HTTPS URL"
+        ) from exc
+
+    if (
+        parsed.scheme != "https"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or "?" in url
+        or "#" in url
+        or "*" in hostname
+        or hostname.lower() == "localhost"
+        or hostname.lower().endswith(".localhost")
+        or (ip is not None and (ip.is_loopback or ip.is_unspecified))
+    ):
+        raise RuntimeConfigurationError(
+            "FRONTEND_BASE_URL must use HTTPS and a trusted, non-local host "
+            "without credentials, query strings, or fragments"
+        )
+
 def validate_runtime_configuration() -> None:
     """Reject unknown environments and unsafe staging/production settings."""
     environment = settings.environment.strip().lower()
@@ -40,6 +110,8 @@ def validate_runtime_configuration() -> None:
         raise RuntimeConfigurationError(
             "DEBUG must be false in staging and production"
         )
+
+    _validate_protected_frontend_base_url()
 
     jwt_secret = settings.jwt_secret_key.strip()
     if (
@@ -97,7 +169,8 @@ def validate_runtime_configuration() -> None:
             except ValueError:
                 ip = None
                 if (
-                    len(hostname) > 253
+                    re.fullmatch(r"[0-9.]+", hostname)
+                    or len(hostname) > 253
                     or not all(
                         re.fullmatch(
                             r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?",
@@ -121,6 +194,8 @@ def validate_runtime_configuration() -> None:
             or parsed.path
             or parsed.query
             or parsed.fragment
+            or "?" in origin
+            or "#" in origin
             or "*" in hostname
             or hostname.lower() == "localhost"
             or (ip is not None and (ip.is_loopback or ip.is_unspecified))

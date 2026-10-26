@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 from fastapi import HTTPException
@@ -442,3 +443,46 @@ def test_employee_with_contractor_management_clearance_is_allowed():
         result = dependency(user, db=db)
 
     assert result is user
+
+
+
+def test_terminated_employee_is_rejected_even_with_active_account():
+    from unittest.mock import Mock, patch
+
+    user = User(
+        id=uuid.uuid4(),
+        email="terminated-employee@example.com",
+        password_hash="test-hash",
+        role="employee",
+        is_active=True,
+    )
+
+    employee = Employee(
+        id=uuid.uuid4(),
+        user_id=user.id,
+        employee_number="NEST-TEST-TERMINATED",
+        department="Operations",
+        position="Plate Operations",
+        ended_at=datetime.now(UTC),
+    )
+
+    db = Mock()
+
+    with patch(
+        "app.api.dependencies.EmployeeRepository",
+    ) as employee_repository_class, patch(
+        "app.api.dependencies.EmployeeClearanceRepository",
+    ) as clearance_repository_class:
+        employee_repository_class.return_value.get_by_user_id.return_value = (
+            employee
+        )
+
+        dependency = require_employee_clearance("plate_operations")
+
+        with pytest.raises(HTTPException) as exc_info:
+            dependency(user, db=db)
+
+        clearance_repository_class.return_value.get_active_by_employee_id.assert_not_called()
+
+    assert exc_info.value.status_code == 403
+    assert exc_info.value.detail == "Employee access required"

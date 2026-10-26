@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import UUID
 import uuid
 
@@ -13,12 +13,52 @@ from app.models.address_plate import AddressPlate
 from app.models.address_plate_lifecycle_event import AddressPlateLifecycleEvent
 from app.models.property import Property
 from app.models.property_address import PropertyAddress
+from app.models.property_installation import PropertyInstallation
+from app.models.property_installation_verification import PropertyInstallationVerification
 from app.models.user import User
 from app.models.employee import Employee
 from app.models.employee_clearance import EmployeeClearance
 from app.services.property_access_service import PropertyAccessService
 from app.services.property_service import PropertyService
 from app.services.property_location_service import PropertyLocationService
+
+
+def _add_verified_activation_evidence(
+    db_session,
+    property,
+    plate,
+    installer_id,
+    verified_by,
+):
+    from datetime import UTC, datetime
+
+    from app.models.property_installation import PropertyInstallation
+    from app.models.property_installation_verification import (
+        PropertyInstallationVerification,
+    )
+
+    now = datetime.now(UTC)
+    installation = PropertyInstallation(
+        property_id=property.id,
+        plate_id=plate.id,
+        installer_id=installer_id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        captured_at=now,
+        status="verified",
+    )
+    db_session.add(installation)
+    db_session.flush()
+
+    verification = PropertyInstallationVerification(
+        installation_id=installation.id,
+        verified_by=verified_by,
+        status="verified",
+        verified_at=now,
+        notes="Verified installation evidence for activation API test",
+    )
+    db_session.add(verification)
+    db_session.flush()
 
 
 def test_create_property_api(db_session: Session):
@@ -290,6 +330,16 @@ def test_get_property_address_api_allows_authorized_user(
         db_session.add(authorized_user)
         db_session.flush()
 
+        db_session.add(
+            Employee(
+                user_id=authorized_user.id,
+                employee_number=f"TEST-{uuid.uuid4().hex}",
+                department="Operations",
+                position="Test Employee",
+            )
+        )
+        db_session.flush()
+
         PropertyAccessService(db_session).grant_access(
             user_id=authorized_user.id,
             property_id=property.id,
@@ -521,6 +571,16 @@ def test_get_property_api_allows_authorized_user(
             role="employee",
         )
         db_session.add(authorized_user)
+        db_session.flush()
+
+        db_session.add(
+            Employee(
+                user_id=authorized_user.id,
+                employee_number=f"TEST-{uuid.uuid4().hex}",
+                department="Operations",
+                position="Test Employee",
+            )
+        )
         db_session.flush()
 
         PropertyAccessService(db_session).grant_access(
@@ -997,6 +1057,13 @@ def test_activate_property_api(db_session: Session):
             )
         db_session.flush()
 
+        _add_verified_activation_evidence(
+            db_session,
+            property,
+            plate,
+            installer_id=employee.id,
+            verified_by=employee.id,
+        )
         PropertyAccessService(db_session).grant_access(
             user_id=employee.id,
             property_id=property.id,
@@ -1467,6 +1534,151 @@ def test_get_property_location_api_returns_not_found_when_missing(
 
     finally:
         app.dependency_overrides.clear()
+
+def test_property_portfolio_api_admin_sees_all_landlords(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+        expected_names = {"Portfolio Property A", "Portfolio Property B"}
+
+        for index, name in enumerate(sorted(expected_names), start=1):
+            landlord_user = User(
+                email=f"portfolio-owner-{index}-{uuid.uuid4()}@example.com",
+                password_hash="test-hash",
+                role="landlord",
+            )
+            db_session.add(landlord_user)
+            db_session.flush()
+
+            landlord = Landlord(
+                user_id=landlord_user.id,
+                display_name=f"Portfolio Owner {index}",
+                phone=f"+2547000001{index:02d}",
+                landlord_type="individual",
+            )
+            db_session.add(landlord)
+            db_session.flush()
+
+            db_session.add(
+                Property(
+                    landlord_id=landlord.id,
+                    property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+                    name=name,
+                    property_type="residential",
+                    status="draft",
+                )
+            )
+
+        db_session.flush()
+
+        admin = User(
+            email=f"portfolio-admin-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="admin",
+        )
+        db_session.add(admin)
+        db_session.commit()
+
+        access_token = create_access_token(subject=str(admin.id))
+        response = client.get(
+            "/api/v1/properties/portfolio",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        returned_names = {item["name"] for item in data}
+        assert expected_names.issubset(returned_names)
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_property_portfolio_api_denies_employee(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+        employee = User(
+            email=f"portfolio-employee-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="employee",
+        )
+        db_session.add(employee)
+        db_session.commit()
+
+        access_token = create_access_token(subject=str(employee.id))
+        response = client.get(
+            "/api/v1/properties/portfolio",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Admin access required"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_property_portfolio_api_denies_landlord(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+        landlord_user = User(
+            email=f"portfolio-landlord-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(landlord_user)
+        db_session.commit()
+
+        access_token = create_access_token(subject=str(landlord_user.id))
+        response = client.get(
+            "/api/v1/properties/portfolio",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Admin access required"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_property_portfolio_api_requires_authentication(
+    db_session: Session,
+):
+    def override_get_db():
+        yield db_session
+
+    app.dependency_overrides[get_db] = override_get_db
+
+    try:
+        client = TestClient(app)
+        response = client.get("/api/v1/properties/portfolio")
+
+        assert response.status_code == 401
+
+    finally:
+        app.dependency_overrides.clear()
+
 
 def test_list_accessible_properties_api_returns_active_properties(
     db_session: Session,

@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 
 from app.core.property_actions import PropertyAction
+from app.repositories.employee_repository import EmployeeRepository
 from app.models.property import Property
 from app.models.user import User
 from app.repositories.landlord_repository import LandlordRepository
@@ -15,6 +16,7 @@ class PropertyAuthorizationService:
         self.property_repository = PropertyRepository(db)
         self.landlord_repository = LandlordRepository(db)
         self.property_access_repository = PropertyAccessRepository(db)
+        self.employee_repository = EmployeeRepository(db)
 
     def authorize(
         self,
@@ -40,6 +42,15 @@ class PropertyAuthorizationService:
 
         if landlord is not None and landlord.user_id == user.id:
             return property
+
+        # Employee property grants require a valid, non-terminated
+        # Nestify employee record.
+        if user.role == "employee":
+            employee = self.employee_repository.get_by_user_id(user.id)
+            if employee is None:
+                raise ValueError("Employee record not found")
+            if employee.ended_at is not None:
+                raise ValueError("Employee is terminated")
 
         access = self.property_access_repository.get_active_access(
             user_id=user.id,

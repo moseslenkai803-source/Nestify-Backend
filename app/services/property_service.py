@@ -47,6 +47,9 @@ class PropertyService:
 
         return property
 
+    def list_all_properties(self) -> list[Property]:
+        return self.property_repository.get_all()
+
     def list_properties(
         self,
         landlord_id: uuid.UUID,

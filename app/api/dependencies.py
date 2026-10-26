@@ -23,7 +23,7 @@ def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(
         bearer_scheme
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ) -> User:
     token = credentials.credentials
 
@@ -99,7 +99,7 @@ def require_employee_clearance(
 ):
     def dependency(
         current_user: User = Depends(get_current_user),
-        db: Session = Depends(get_db),
+        db: Session = Depends(get_db, scope='function'),
     ) -> User:
         if current_user.role == "admin":
             return current_user
@@ -144,7 +144,7 @@ def require_employee_clearance(
 
 def get_current_landlord(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ) -> Landlord:
     if current_user.role != "landlord":
         raise HTTPException(

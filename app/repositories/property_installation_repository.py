@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
 from app.models.property_installation import PropertyInstallation
@@ -46,7 +46,9 @@ class PropertyInstallationRepository:
     ) -> list[PropertyInstallation]:
         statement = (
             select(PropertyInstallation)
-            .where(PropertyInstallation.status == "submitted")
+            .where(
+                PropertyInstallation.status == "submitted",
+            )
             .order_by(
                 PropertyInstallation.created_at.desc(),
                 PropertyInstallation.id.desc(),
@@ -76,6 +78,18 @@ class PropertyInstallationRepository:
 
         return list(self.db.scalars(statement).all())
 
+    def has_submitted_for_property(
+        self,
+        property_id: uuid.UUID,
+    ) -> bool:
+        statement = select(
+            exists().where(
+                PropertyInstallation.property_id == property_id,
+                PropertyInstallation.status == "submitted",
+            )
+        )
+        return bool(self.db.scalar(statement))
+
     def get_by_property_id(
         self,
         property_id: uuid.UUID,
@@ -95,6 +109,23 @@ class PropertyInstallationRepository:
             .where(PropertyInstallation.plate_id == plate_id)
             .order_by(PropertyInstallation.created_at.desc(), PropertyInstallation.id.desc())
         )
+
+    def get_by_plate_id_for_update(
+        self,
+        plate_id: uuid.UUID,
+    ) -> PropertyInstallation | None:
+        statement = (
+            select(PropertyInstallation)
+            .where(PropertyInstallation.plate_id == plate_id)
+            .order_by(
+                PropertyInstallation.created_at.desc(),
+                PropertyInstallation.id.desc(),
+            )
+            .limit(1)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return self.db.scalar(statement)
 
     def get_by_assignment_id(
         self,

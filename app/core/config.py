@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,6 +22,16 @@ class Settings(BaseSettings):
     smtp_starttls: bool = True
     outbox_encryption_keys: dict[str, str] = {}
     outbox_active_encryption_key_version: str = "v1"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: str) -> str:
+        """Use the installed Psycopg 3 driver for PostgreSQL URLs."""
+        if isinstance(value, str):
+            for prefix in ("postgres://", "postgresql://"):
+                if value.startswith(prefix):
+                    return "postgresql+psycopg://" + value[len(prefix):]
+        return value
 
     model_config = SettingsConfigDict(
         env_file=".env",

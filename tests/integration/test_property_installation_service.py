@@ -499,6 +499,60 @@ def test_create_installation_allows_new_submission_after_rejected_installation(
     assert result.plate_id == plate.id
 
 
+def test_create_installation_rejects_submission_when_older_record_is_submitted(
+    db_session,
+):
+    _, installer, property_record, plate = create_installation_context(
+        db_session
+    )
+
+    from app.models.property_installation import PropertyInstallation
+
+    older_submitted = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        installer_id=installer.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime(2026, 1, 1, tzinfo=UTC),
+        created_at=datetime(2026, 1, 1, tzinfo=UTC),
+        status="submitted",
+    )
+    newer_rejected = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        installer_id=installer.id,
+        latitude=-1.286390,
+        longitude=36.817224,
+        accuracy_meters=4.0,
+        captured_at=datetime(2026, 1, 2, tzinfo=UTC),
+        created_at=datetime(2026, 1, 2, tzinfo=UTC),
+        status="rejected",
+    )
+
+    db_session.add_all([older_submitted, newer_rejected])
+    db_session.flush()
+
+    service = PropertyInstallationService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Property already has a submitted installation",
+    ):
+        service.create_installation(
+            property_id=property_record.id,
+            plate_id=plate.id,
+            installer_id=installer.id,
+            latitude=-1.286391,
+            longitude=36.817225,
+            accuracy_meters=3.0,
+            captured_at=datetime.now(UTC),
+        )
+
+
 def test_create_installation_serializes_concurrent_submissions_for_same_property(
     db_session,
 ):
@@ -613,3 +667,88 @@ def test_create_installation_serializes_concurrent_submissions_for_same_property
             )
         finally:
             cleanup_session.close()
+
+def test_database_rejects_duplicate_submitted_installation_for_property(
+    db_session,
+):
+    from sqlalchemy.exc import IntegrityError
+
+    from app.models.property_installation import PropertyInstallation
+
+    _, installer, property_record, plate = create_installation_context(
+        db_session
+    )
+
+    first = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        installer_id=installer.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+    )
+
+    db_session.add(first)
+    db_session.flush()
+
+    second = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        installer_id=installer.id,
+        latitude=-1.286400,
+        longitude=36.817230,
+        accuracy_meters=4.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+    )
+
+    db_session.add(second)
+
+    try:
+        with pytest.raises(IntegrityError):
+            db_session.flush()
+    finally:
+        db_session.rollback()
+
+
+def test_database_allows_submitted_installation_after_rejection(db_session):
+    from app.models.property_installation import PropertyInstallation
+
+    _, installer, property_record, plate = create_installation_context(
+        db_session
+    )
+
+    rejected = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        installer_id=installer.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="rejected",
+    )
+    db_session.add(rejected)
+    db_session.flush()
+
+    submitted = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        installer_id=installer.id,
+        latitude=-1.286400,
+        longitude=36.817230,
+        accuracy_meters=4.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+    )
+    db_session.add(submitted)
+    db_session.flush()
+
+    assert rejected.status == "rejected"
+    assert submitted.status == "submitted"

@@ -24,7 +24,7 @@ def list_plate_inventory(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = PlateInventoryQueryService(db)
 

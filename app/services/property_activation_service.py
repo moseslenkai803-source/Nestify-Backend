@@ -4,6 +4,12 @@ from sqlalchemy.orm import Session
 from app.models.address_plate import AddressPlate
 from app.repositories.address_plate_repository import AddressPlateRepository
 from app.repositories.property_address_repository import PropertyAddressRepository
+from app.repositories.property_installation_repository import (
+    PropertyInstallationRepository,
+)
+from app.repositories.property_installation_verification_repository import (
+    PropertyInstallationVerificationRepository,
+)
 from app.services.address_plate_lifecycle_service import (
     AddressPlateLifecycleService,
 )
@@ -16,6 +22,10 @@ class PropertyActivationService:
         self.address_plate_repository = AddressPlateRepository(db)
         self.property_service = PropertyService(db)
         self.property_address_repository = PropertyAddressRepository(db)
+        self.installation_repository = PropertyInstallationRepository(db)
+        self.installation_verification_repository = (
+            PropertyInstallationVerificationRepository(db)
+        )
         self.lifecycle_service = AddressPlateLifecycleService(db)
 
     def activate_property(
@@ -56,6 +66,36 @@ class PropertyActivationService:
 
         if plate is None:
             raise ValueError("Plate not found")
+
+        # Lock installation evidence before the plate. Installation
+        # verification follows the same installation -> plate lock order.
+        installation = (
+            self.installation_repository.get_by_plate_id_for_update(
+                plate.id
+            )
+        )
+
+        if (
+            installation is None
+            or installation.property_id != property.id
+            or installation.plate_id != plate.id
+            or installation.status != "verified"
+        ):
+            raise ValueError(
+                "A verified installation with a successful verification "
+                "record is required before activation"
+            )
+
+        verification = (
+            self.installation_verification_repository
+            .get_latest_by_installation_id(installation.id)
+        )
+
+        if verification is None or verification.status != "verified":
+            raise ValueError(
+                "A verified installation with a successful verification "
+                "record is required before activation"
+            )
 
         plate = self.address_plate_repository.get_by_id_for_update(
             plate.id

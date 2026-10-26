@@ -36,7 +36,7 @@ router = APIRouter(
 )
 def register_landlord(
     registration_data: LandlordRegistrationRequest,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = RegistrationService(db)
 
@@ -72,7 +72,7 @@ def register_landlord(
 )
 def accept_employee_invitation(
     invitation_data: EmployeeInvitationAcceptRequest,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = EmployeeInvitationService(db)
 
@@ -110,7 +110,7 @@ def accept_employee_invitation(
 )
 def login(
     login_data: LoginRequest,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = UserService(db)
 
@@ -141,7 +141,7 @@ def login(
 )
 def get_me(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     permissions: list[str] = []
 

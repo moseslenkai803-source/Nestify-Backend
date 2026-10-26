@@ -28,7 +28,7 @@ def create_property_listing(
     property_id: UUID,
     listing_data: ListingCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ListingService(db)
 
@@ -71,7 +71,7 @@ def create_floor_listing(
     floor_id: UUID,
     listing_data: ListingCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ListingService(db)
 
@@ -119,7 +119,7 @@ def create_space_listing(
     space_id: UUID,
     listing_data: ListingCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ListingService(db)
 
@@ -164,7 +164,7 @@ def create_space_listing(
 def publish_listing(
     listing_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ListingService(db)
 
@@ -204,7 +204,7 @@ def publish_listing(
 def unpublish_listing(
     listing_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ListingService(db)
 

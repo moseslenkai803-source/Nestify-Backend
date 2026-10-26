@@ -40,7 +40,7 @@ def list_installation_assignments(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = InstallationAssignmentQueryService(db)
 
@@ -56,7 +56,7 @@ def list_installation_assignment_property_plates(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = InstallationAssignmentQueryService(db)
 
@@ -71,7 +71,7 @@ def list_installation_assignment_contractors(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ContractorService(db)
 
@@ -87,7 +87,7 @@ def list_installation_assignment_contractor_members(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ContractorService(db)
 
@@ -116,7 +116,7 @@ def create_installation_assignment(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = InstallationAssignmentService(db)
 
@@ -172,7 +172,7 @@ def cancel_installation_assignment(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = InstallationAssignmentService(db)
 
@@ -222,7 +222,7 @@ def cancel_installation_assignment(
 def start_installation_assignment(
     assignment_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = InstallationAssignmentService(db)
 
@@ -275,7 +275,7 @@ def submit_installation_assignment(
     assignment_id: UUID,
     submission_data: InstallationAssignmentSubmit,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = InstallationAssignmentService(db)
 

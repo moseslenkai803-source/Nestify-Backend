@@ -26,7 +26,7 @@ def create_floor(
     building_id: UUID,
     floor_data: FloorCreate,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = FloorService(db)
 
@@ -66,7 +66,7 @@ def list_floors(
     property_id: UUID,
     building_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = FloorService(db)
 
@@ -105,7 +105,7 @@ def get_floor(
     building_id: UUID,
     floor_id: UUID,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = FloorService(db)
 

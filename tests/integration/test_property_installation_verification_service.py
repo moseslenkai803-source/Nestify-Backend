@@ -11,6 +11,7 @@ from tests.conftest import cleanup_installation_test_context
 from app.models.address_plate import AddressPlate
 from app.models.contractor import Contractor
 from app.models.contractor_member import ContractorMember
+from app.models.employee import Employee
 from app.models.installation_assignment import InstallationAssignment
 from app.models.landlord import Landlord
 from app.models.property import Property
@@ -24,6 +25,18 @@ from app.services.address_plate_lifecycle_service import (
 from app.services.property_installation_verification_service import (
     PropertyInstallationVerificationService,
 )
+
+
+def create_employee_record(db_session, user):
+    db_session.add(
+        Employee(
+            user_id=user.id,
+            employee_number=f"TEST-{uuid.uuid4().hex}",
+            department="Operations",
+            position="Test Employee",
+        )
+    )
+    db_session.flush()
 
 
 def create_installation_context(db_session):
@@ -810,7 +823,8 @@ def test_verify_assignment_linked_installation_rejection_returns_assignment_to_i
 
 
 
-def test_verify_cancelled_assignment_linked_installation_is_rejected(db_session):
+@pytest.mark.parametrize("resolution_status", ["verified", "rejected"])
+def test_verify_cancelled_assignment_linked_installation_can_be_resolved(db_session, resolution_status):
     _, installer, property_record, plate = create_installation_context(db_session)
 
     contractor = Contractor(
@@ -849,6 +863,9 @@ def test_verify_cancelled_assignment_linked_installation_is_rejected(db_session)
     db_session.add(contractor_member)
     db_session.flush()
 
+    cancelled_at = datetime.now(UTC)
+    cancellation_reason = "Cancelled while evidence awaited review"
+
     assignment = InstallationAssignment(
         id=uuid.uuid4(),
         property_id=property_record.id,
@@ -857,6 +874,9 @@ def test_verify_cancelled_assignment_linked_installation_is_rejected(db_session)
         contractor_member_id=contractor_member.id,
         assigned_by=installer.id,
         status="cancelled",
+        cancelled_by=installer.id,
+        cancelled_at=cancelled_at,
+        cancellation_reason=cancellation_reason,
     )
     db_session.add(assignment)
     db_session.flush()
@@ -879,19 +899,22 @@ def test_verify_cancelled_assignment_linked_installation_is_rejected(db_session)
 
     service = PropertyInstallationVerificationService(db_session)
 
-    with pytest.raises(ValueError, match="Installation assignment is cancelled"):
-        service.verify_installation(
-            property_id=property_record.id,
-            installation_id=installation.id,
-            verified_by=reviewer.id,
-            status="verified",
-        )
+    verification = service.verify_installation(
+        property_id=property_record.id,
+        installation_id=installation.id,
+        verified_by=reviewer.id,
+        status=resolution_status,
+    )
 
-    assert installation.status == "submitted"
+    assert verification.status == resolution_status
+    assert installation.status == resolution_status
 
     fetched_assignment = db_session.get(InstallationAssignment, assignment.id)
     assert fetched_assignment is not None
     assert fetched_assignment.status == "cancelled"
+    assert fetched_assignment.cancelled_by == installer.id
+    assert fetched_assignment.cancelled_at == cancelled_at
+    assert fetched_assignment.cancellation_reason == cancellation_reason
 
 
 
@@ -1052,6 +1075,7 @@ def test_list_pending_installations_returns_submitted_installations_for_authoriz
     db_session.add(reviewer)
     db_session.flush()
 
+    create_employee_record(db_session, reviewer)
     from app.services.property_access_service import PropertyAccessService
 
     PropertyAccessService(db_session).grant_access(
@@ -1212,6 +1236,7 @@ def test_list_pending_installations_excludes_properties_without_verification_acc
     db_session.add(reviewer)
     db_session.flush()
 
+    create_employee_record(db_session, reviewer)
     from app.services.property_access_service import PropertyAccessService
 
     PropertyAccessService(db_session).grant_access(
@@ -1275,6 +1300,7 @@ def test_list_pending_installations_excludes_non_submitted_installations(
     db_session.add(reviewer)
     db_session.flush()
 
+    create_employee_record(db_session, reviewer)
     from app.services.property_access_service import PropertyAccessService
 
     PropertyAccessService(db_session).grant_access(
@@ -1319,3 +1345,126 @@ def test_list_pending_installations_excludes_non_submitted_installations(
 
     assert submitted_installation.id in result_ids
     assert verified_installation.id not in result_ids
+
+
+@pytest.mark.parametrize("reviewer_role", ["admin", "reviewer"])
+def test_pending_queue_includes_installation_from_cancelled_assignment(
+    db_session,
+    reviewer_role,
+):
+    _, installer, property_record, plate = create_installation_context(db_session)
+
+    contractor = Contractor(
+        id=uuid.uuid4(),
+        name="Cancelled Queue Contractor",
+        contractor_type="company",
+        status="active",
+    )
+    contractor_user = User(
+        id=uuid.uuid4(),
+        email=f"contractor-queue-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="contractor",
+        is_active=True,
+    )
+    reviewer = User(
+        id=uuid.uuid4(),
+        email=f"reviewer-queue-cancelled-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="admin" if reviewer_role == "admin" else "employee",
+        clearance=(
+            None
+            if reviewer_role == "admin"
+            else "installation_verification"
+        ),
+        is_active=True,
+    )
+
+    db_session.add_all([contractor, contractor_user, reviewer])
+    db_session.flush()
+
+    contractor_member = ContractorMember(
+        id=uuid.uuid4(),
+        contractor_id=contractor.id,
+        user_id=contractor_user.id,
+        is_active=True,
+    )
+    db_session.add(contractor_member)
+    db_session.flush()
+
+    assignment = InstallationAssignment(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        contractor_id=contractor.id,
+        contractor_member_id=contractor_member.id,
+        assigned_by=installer.id,
+        status="cancelled",
+    )
+    db_session.add(assignment)
+    db_session.flush()
+
+    cancelled_assignment_installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        assignment_id=assignment.id,
+        installer_id=contractor_user.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+        notes="Evidence retained after assignment cancellation.",
+    )
+    _, legacy_installer, legacy_property, legacy_plate = (
+        create_installation_context(db_session)
+    )
+
+    legacy_installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=legacy_property.id,
+        plate_id=legacy_plate.id,
+        installer_id=legacy_installer.id,
+        latitude=-1.287000,
+        longitude=36.818000,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+        notes="Legacy installation without an assignment.",
+    )
+    db_session.add_all(
+        [cancelled_assignment_installation, legacy_installation]
+    )
+    db_session.flush()
+
+    if reviewer_role == "reviewer":
+        create_employee_record(db_session, reviewer)
+        from app.services.property_access_service import PropertyAccessService
+
+        property_access_service = PropertyAccessService(db_session)
+
+        property_access_service.grant_access(
+            user_id=reviewer.id,
+            property_id=property_record.id,
+            access_type="installation_verification",
+        )
+        property_access_service.grant_access(
+            user_id=reviewer.id,
+            property_id=legacy_property.id,
+            access_type="installation_verification",
+        )
+
+    service = PropertyInstallationVerificationService(db_session)
+    result = service.list_pending_installations(reviewer)
+    result_ids = {item.id for item in result}
+
+    assert cancelled_assignment_installation.id in result_ids
+    assert legacy_installation.id in result_ids
+
+    # Verify persisted records remain unchanged after queue filtering.
+    db_session.refresh(cancelled_assignment_installation)
+    db_session.refresh(assignment)
+
+    assert cancelled_assignment_installation.status == "submitted"
+    assert assignment.status == "cancelled"

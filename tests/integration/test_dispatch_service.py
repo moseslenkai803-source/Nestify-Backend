@@ -346,9 +346,12 @@ def test_mark_dispatch_ready(db_session):
         created_by=employee.id,
     )
 
-    result = service.mark_ready(dispatch.dispatch_code)
+    result = service.mark_ready(dispatch.dispatch_code, performed_by=employee.id)
 
     assert result.status == "ready"
+    assert result.ready_by == employee.id
+    assert result.ready_at is not None
+    assert result.ready_at.utcoffset().total_seconds() == 0
 
 
 def test_mark_ready_rejects_non_draft_dispatch(db_session):
@@ -371,13 +374,13 @@ def test_mark_ready_rejects_non_draft_dispatch(db_session):
         created_by=employee.id,
     )
 
-    service.mark_ready(dispatch.dispatch_code)
+    service.mark_ready(dispatch.dispatch_code, performed_by=employee.id)
 
     with pytest.raises(
         ValueError,
         match="Dispatch cannot transition to the requested status",
     ):
-        service.mark_ready(dispatch.dispatch_code)
+        service.mark_ready(dispatch.dispatch_code, performed_by=employee.id)
 
 
 def test_mark_dispatched_records_lifecycle_events(db_session):
@@ -407,7 +410,7 @@ def test_mark_dispatched_records_lifecycle_events(db_session):
         created_by=employee.id,
     )
 
-    service.mark_ready(dispatch.dispatch_code)
+    service.mark_ready(dispatch.dispatch_code, performed_by=employee.id)
 
     result = service.mark_dispatched(
         dispatch.dispatch_code,
@@ -415,6 +418,9 @@ def test_mark_dispatched_records_lifecycle_events(db_session):
     )
 
     assert result.status == "dispatched"
+    assert result.dispatched_by == employee.id
+    assert result.dispatched_at is not None
+    assert result.dispatched_at.utcoffset().total_seconds() == 0
 
     for plate in [first_plate, second_plate]:
         events = (
@@ -457,7 +463,7 @@ def test_mark_dispatched_serializes_concurrent_transitions(
         created_by=employee.id,
     )
 
-    service.mark_ready(dispatch.dispatch_code)
+    service.mark_ready(dispatch.dispatch_code, performed_by=employee.id)
     dispatch_code = dispatch.dispatch_code
 
     db_session.commit()
@@ -726,15 +732,18 @@ def test_mark_delivered(db_session):
         created_by=employee.id,
     )
 
-    service.mark_ready(dispatch.dispatch_code)
+    service.mark_ready(dispatch.dispatch_code, performed_by=employee.id)
     service.mark_dispatched(
         dispatch.dispatch_code,
         performed_by=employee.id,
     )
 
-    result = service.mark_delivered(dispatch.dispatch_code)
+    result = service.mark_delivered(dispatch.dispatch_code, performed_by=employee.id)
 
     assert result.status == "delivered"
+    assert result.delivered_by == employee.id
+    assert result.delivered_at is not None
+    assert result.delivered_at.utcoffset().total_seconds() == 0
 
     latest_event = (
         db_session.query(AddressPlateLifecycleEvent)
@@ -770,9 +779,12 @@ def test_cancel_dispatch_from_draft(db_session):
         created_by=employee.id,
     )
 
-    result = service.cancel_dispatch(dispatch.dispatch_code)
+    result = service.cancel_dispatch(dispatch.dispatch_code, performed_by=employee.id)
 
     assert result.status == "cancelled"
+    assert result.cancelled_by == employee.id
+    assert result.cancelled_at is not None
+    assert result.cancelled_at.utcoffset().total_seconds() == 0
 
 
 def test_cancel_dispatch_from_ready(db_session):
@@ -795,11 +807,14 @@ def test_cancel_dispatch_from_ready(db_session):
         created_by=employee.id,
     )
 
-    service.mark_ready(dispatch.dispatch_code)
+    service.mark_ready(dispatch.dispatch_code, performed_by=employee.id)
 
-    result = service.cancel_dispatch(dispatch.dispatch_code)
+    result = service.cancel_dispatch(dispatch.dispatch_code, performed_by=employee.id)
 
     assert result.status == "cancelled"
+    assert result.cancelled_by == employee.id
+    assert result.cancelled_at is not None
+    assert result.cancelled_at.utcoffset().total_seconds() == 0
 
 
 def test_cancel_dispatched_dispatch_is_rejected(db_session):
@@ -822,7 +837,7 @@ def test_cancel_dispatched_dispatch_is_rejected(db_session):
         created_by=employee.id,
     )
 
-    service.mark_ready(dispatch.dispatch_code)
+    service.mark_ready(dispatch.dispatch_code, performed_by=employee.id)
     service.mark_dispatched(
         dispatch.dispatch_code,
         performed_by=employee.id,
@@ -832,7 +847,7 @@ def test_cancel_dispatched_dispatch_is_rejected(db_session):
         ValueError,
         match="Dispatch cannot transition to the requested status",
     ):
-        service.cancel_dispatch(dispatch.dispatch_code)
+        service.cancel_dispatch(dispatch.dispatch_code, performed_by=employee.id)
 
 
 def test_get_dispatch_and_plates(db_session):
@@ -898,7 +913,7 @@ def test_cancel_dispatch_releases_dispatch_items(db_session):
         created_by=employee.id,
     )
 
-    result = service.cancel_dispatch(dispatch.dispatch_code)
+    result = service.cancel_dispatch(dispatch.dispatch_code, performed_by=employee.id)
 
     assert result.status == "cancelled"
 
@@ -938,7 +953,7 @@ def test_cancelled_dispatch_allows_plate_reassignment(db_session):
     )
 
     service.cancel_dispatch(
-        first_dispatch.dispatch_code
+        first_dispatch.dispatch_code, performed_by=employee.id
     )
 
     second_dispatch = service.create_dispatch(
@@ -1008,7 +1023,7 @@ def test_cancel_dispatch_does_not_create_dispatched_lifecycle_event(
     )
 
     service.cancel_dispatch(
-        dispatch.dispatch_code
+        dispatch.dispatch_code, performed_by=employee.id
     )
 
     latest_event = service.lifecycle_service.get_latest_event(
@@ -1098,7 +1113,7 @@ def test_list_dispatches_filters_by_status(db_session):
         created_by=employee.id,
     )
 
-    service.mark_ready(first_dispatch.dispatch_code)
+    service.mark_ready(first_dispatch.dispatch_code, performed_by=employee.id)
 
     result = service.list_dispatches(status="ready")
 
@@ -1106,3 +1121,78 @@ def test_list_dispatches_filters_by_status(db_session):
     assert first_dispatch.id in dispatches_by_id
     assert dispatches_by_id[first_dispatch.id].status == "ready"
     assert second_dispatch.id not in dispatches_by_id
+
+
+def test_mark_dispatched_rolls_back_all_changes_on_lifecycle_failure(
+    db_session,
+    monkeypatch,
+):
+    employee = create_employee(db_session)
+    _, first_property = create_landlord_and_property(db_session)
+    _, second_property = create_landlord_and_property(db_session)
+
+    first_plate = create_manufactured_allocated_plate(
+        db_session,
+        first_property.id,
+        employee.id,
+    )
+    second_plate = create_manufactured_allocated_plate(
+        db_session,
+        second_property.id,
+        employee.id,
+    )
+
+    service = DispatchService(db_session)
+    dispatch = service.create_dispatch(
+        plate_ids=[first_plate.id, second_plate.id],
+        destination="Nairobi",
+        recipient_name="Jane Doe",
+        recipient_phone="+254711111111",
+        created_by=employee.id,
+    )
+    service.mark_ready(dispatch.dispatch_code, performed_by=employee.id)
+
+    original_record_event = service.lifecycle_service.record_event
+    calls = 0
+
+    def fail_on_second_event(**kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("Injected lifecycle persistence failure")
+        return original_record_event(**kwargs)
+
+    monkeypatch.setattr(
+        service.lifecycle_service,
+        "record_event",
+        fail_on_second_event,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Injected lifecycle persistence failure",
+    ):
+        with db_session.begin_nested():
+            service.mark_dispatched(
+                dispatch.dispatch_code,
+                performed_by=employee.id,
+            )
+
+    persisted_dispatch = (
+        db_session.query(Dispatch)
+        .filter(Dispatch.id == dispatch.id)
+        .one()
+    )
+    assert persisted_dispatch.status == "ready"
+
+    for plate in (first_plate, second_plate):
+        events = (
+            db_session.query(AddressPlateLifecycleEvent)
+            .filter(
+                AddressPlateLifecycleEvent.plate_id == plate.id,
+            )
+            .all()
+        )
+        assert not any(
+            event.event_type == "dispatched" for event in events
+        )

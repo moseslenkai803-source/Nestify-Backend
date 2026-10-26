@@ -49,6 +49,7 @@ class ManufacturingOrderRepository:
                 ManufacturingOrder.order_code == order_code,
             )
             .with_for_update()
+            .populate_existing()
             .first()
         )
 

@@ -13,6 +13,9 @@ def safe_production_settings(monkeypatch):
     monkeypatch.setattr(settings, "environment", "production")
     monkeypatch.setattr(settings, "debug", False)
     monkeypatch.setattr(
+        settings, "frontend_base_url", "https://app.nestify.example"
+    )
+    monkeypatch.setattr(
         settings,
         "jwt_secret_key",
         "a-realistic-test-secret-value-that-is-long-enough",
@@ -125,11 +128,17 @@ def test_production_requires_active_version_to_exist(
         ["https://127.0.0.1"],
         ["https://app.nestify.example/path"],
         ["https://app.nestify.example?next=home"],
+        ["https://app.nestify.example?"],
+        ["https://app.nestify.example#"],
+        ["https://1234"],
+        ["https://999.999.999.999"],
         ["not-a-url"],
         [" https://app.nestify.example"],
         ["https://app.nestify.example "],
         ["https://bad host.example"],
         ["https://bad..example"],
+        ["https://-bad.example"],
+        ["https://bad-.example"],
         ["https://app.nestify.example:invalid"],
         ["https://app.nestify.example:99999"],
         ["https://user:password@app.nestify.example"],
@@ -152,5 +161,59 @@ def test_protected_environment_accepts_explicit_https_origins(
         "cors_allowed_origins",
         ["https://app.nestify.example", "https://admin.nestify.example:8443"],
     )
+
+    validate_runtime_configuration()
+
+
+@pytest.mark.parametrize(
+    "frontend_url",
+    [
+        "",
+        "http://app.nestify.example",
+        "localhost:5173",
+        "https://localhost",
+        "https://preview.localhost",
+        "https://127.0.0.1",
+        "https://0.0.0.0",
+        "https://user:password@app.nestify.example",
+        "https://app.nestify.example?token=unexpected",
+        "https://app.nestify.example?",
+        "https://app.nestify.example#fragment",
+        "https://app.nestify.example#",
+        "https://1234",
+        "https://999.999.999.999",
+        "https://bad host.example",
+        "https://bad..example",
+        "https://-bad.example",
+        "https://bad-.example",
+        "https://app.nestify.example:invalid",
+        "https://app.nestify.example:99999",
+        " https://app.nestify.example",
+        "https://app.nestify.example ",
+        "https://*.nestify.example",
+    ],
+)
+def test_protected_environment_rejects_unsafe_frontend_base_urls(
+    safe_production_settings, monkeypatch, frontend_url
+):
+    monkeypatch.setattr(settings, "frontend_base_url", frontend_url)
+
+    with pytest.raises(RuntimeConfigurationError, match="FRONTEND_BASE_URL"):
+        validate_runtime_configuration()
+
+
+@pytest.mark.parametrize(
+    "frontend_url",
+    [
+        "https://app.nestify.example",
+        "https://app.nestify.example/",
+        "https://app.nestify.example/portal",
+        "https://app.nestify.example:8443/portal",
+    ],
+)
+def test_protected_environment_accepts_valid_frontend_base_urls(
+    safe_production_settings, monkeypatch, frontend_url
+):
+    monkeypatch.setattr(settings, "frontend_base_url", frontend_url)
 
     validate_runtime_configuration()

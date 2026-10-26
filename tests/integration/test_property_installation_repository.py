@@ -124,6 +124,7 @@ def create_installation(
     assignment,
     *,
     created_at=None,
+    status="submitted",
 ):
     timestamp = created_at or datetime.now(UTC)
 
@@ -137,7 +138,7 @@ def create_installation(
         longitude=36.817223,
         accuracy_meters=5.0,
         captured_at=timestamp,
-        status="submitted",
+        status=status,
         notes="Installation repository test",
         created_at=timestamp,
     )
@@ -171,6 +172,7 @@ def test_get_by_assignment_id_returns_newest_installation(db_session):
         context,
         assignment,
         created_at=datetime(2026, 9, 23, 10, 0, tzinfo=UTC),
+        status="rejected",
     )
 
     newer = create_installation(
@@ -178,6 +180,7 @@ def test_get_by_assignment_id_returns_newest_installation(db_session):
         context,
         assignment,
         created_at=datetime(2026, 9, 23, 11, 0, tzinfo=UTC),
+        status="submitted",
     )
 
     repository = PropertyInstallationRepository(db_session)
