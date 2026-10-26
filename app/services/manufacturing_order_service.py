@@ -11,6 +11,7 @@ from app.repositories.address_plate_repository import (
 from app.repositories.manufacturing_order_repository import (
     ManufacturingOrderRepository,
 )
+from app.repositories.user_repository import UserRepository
 from app.services.address_plate_lifecycle_service import (
     AddressPlateLifecycleService,
 )
@@ -31,6 +32,7 @@ class ManufacturingOrderService:
         self.manufacturing_order_repository = (
             ManufacturingOrderRepository(db)
         )
+        self.user_repository = UserRepository(db)
         self.address_plate_repository = AddressPlateRepository(db)
         self.plate_inventory_service = PlateInventoryService(db)
         self.lifecycle_service = AddressPlateLifecycleService(db)
@@ -173,6 +175,8 @@ class ManufacturingOrderService:
     def cancel_order(
         self,
         order_code: str,
+        cancelled_by: uuid.UUID,
+        reason: str,
     ) -> ManufacturingOrder:
         order = self.manufacturing_order_repository.get_by_order_code_for_update(
             order_code
@@ -190,7 +194,32 @@ class ManufacturingOrderService:
                 "Manufacturing order cannot be cancelled in its current status"
             )
 
+        cancelling_user = self.user_repository.get_by_id(cancelled_by)
+
+        if cancelling_user is None:
+            raise ValueError("Cancelling employee not found")
+
+        if not cancelling_user.is_active:
+            raise ValueError("Cancelling employee is inactive")
+
+        if cancelling_user.role not in {"admin", "employee"}:
+            raise ValueError(
+                "Only Nestify employees can cancel manufacturing orders"
+            )
+
+        reason = reason.strip()
+        if not reason:
+            raise ValueError("Cancellation reason is required")
+
+        if len(reason) > 2000:
+            raise ValueError(
+                "Cancellation reason must not exceed 2000 characters"
+            )
+
         order.status = "cancelled"
+        order.cancelled_by = cancelled_by
+        order.cancelled_at = datetime.now(UTC)
+        order.cancellation_reason = reason
 
         self.db.flush()
 

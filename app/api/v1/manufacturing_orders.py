@@ -6,6 +6,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.address_plate import AddressPlateResponse
 from app.schemas.manufacturing_order import (
+    ManufacturingOrderCancel,
     ManufacturingOrderCreate,
     ManufacturingOrderResponse,
 )
@@ -191,6 +192,7 @@ def complete_manufacturing_order(
 )
 def cancel_manufacturing_order(
     order_code: str,
+    cancellation: ManufacturingOrderCancel,
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
@@ -201,6 +203,8 @@ def cancel_manufacturing_order(
     try:
         return service.cancel_order(
             order_code=order_code,
+            cancelled_by=current_employee.id,
+            reason=cancellation.reason,
         )
 
     except ValueError as exc:

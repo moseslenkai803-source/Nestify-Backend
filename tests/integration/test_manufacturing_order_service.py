@@ -107,6 +107,46 @@ def test_create_manufacturing_orders_generate_unique_codes(
     assert first_order.order_code != second_order.order_code
 
 
+def test_approve_order_refreshes_stale_order_state(db_session):
+    employee = create_employee(db_session)
+    service = ManufacturingOrderService(db_session)
+
+    order = service.create_order(
+        quantity=2,
+        created_by=employee.id,
+    )
+    db_session.commit()
+
+    # Keep the original object in this session's identity map.
+    loaded_order = service.get_order(order.order_code)
+    assert loaded_order.status == "draft"
+
+    # A separate transaction advances the order to approved.
+    other_session = SessionLocal()
+    try:
+        other_service = ManufacturingOrderService(other_session)
+        other_service.approve_order(
+            order_code=order.order_code,
+            approved_by=employee.id,
+        )
+        other_session.commit()
+    finally:
+        other_session.close()
+
+    # The locking query must refresh the stale ORM object before
+    # the service validates the transition.
+    with pytest.raises(
+        ValueError,
+        match="Manufacturing order cannot be approved in its current status",
+    ):
+        service.approve_order(
+            order_code=order.order_code,
+            approved_by=employee.id,
+        )
+
+    assert loaded_order.status == "approved"
+
+
 def test_approve_manufacturing_order(db_session):
     employee = create_employee(db_session)
 
@@ -290,43 +330,55 @@ def test_complete_manufacturing_order_creates_plate_inventory(
 
 def test_complete_manufacturing_order_rolls_back_partial_inventory_on_failure(
     db_session,
+    monkeypatch,
 ):
-    from sqlalchemy.exc import IntegrityError
-    import uuid
-
     employee = create_employee(db_session)
-
     service = ManufacturingOrderService(db_session)
 
     order = service.create_order(
         quantity=3,
         created_by=employee.id,
     )
-
     service.approve_order(
         order_code=order.order_code,
         approved_by=employee.id,
     )
-
     service.start_order(
         order_code=order.order_code,
     )
 
-    invalid_completed_by = uuid.uuid4()
+    original_record_event = service.lifecycle_service.record_event
+    attempted_plate_ids = []
+    event_call_count = 0
 
-    try:
+    def fail_on_second_event(**kwargs):
+        nonlocal event_call_count
+        event_call_count += 1
+        attempted_plate_ids.append(kwargs["plate_id"])
+
+        if event_call_count == 2:
+            raise RuntimeError("Simulated lifecycle event failure")
+
+        return original_record_event(**kwargs)
+
+    monkeypatch.setattr(
+        service.lifecycle_service,
+        "record_event",
+        fail_on_second_event,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Simulated lifecycle event failure",
+    ):
         with db_session.begin_nested():
             service.complete_order(
                 order_code=order.order_code,
-                completed_by=invalid_completed_by,
+                completed_by=employee.id,
             )
-    except IntegrityError:
-        pass
-    else:
-        raise AssertionError(
-            "Manufacturing completion should fail when "
-            "completed_by does not reference an existing user"
-        )
+
+    assert event_call_count == 2
+    assert len(attempted_plate_ids) == 2
 
     db_session.expire_all()
 
@@ -348,8 +400,18 @@ def test_complete_manufacturing_order_rolls_back_partial_inventory_on_failure(
         )
         .all()
     )
-
     assert plates == []
+
+    events = (
+        db_session.query(AddressPlateLifecycleEvent)
+        .filter(
+            AddressPlateLifecycleEvent.plate_id.in_(
+                attempted_plate_ids,
+            ),
+        )
+        .all()
+    )
+    assert events == []
 
 
 def test_complete_manufacturing_order_rejects_non_production_order(
@@ -537,9 +599,14 @@ def test_cancel_manufacturing_order_from_draft(db_session):
 
     result = service.cancel_order(
         order_code=order.order_code,
+        cancelled_by=employee.id,
+        reason="Test cancellation",
     )
 
     assert result.status == "cancelled"
+    assert result.cancelled_by == employee.id
+    assert result.cancelled_at is not None
+    assert result.cancellation_reason == "Test cancellation"
 
 
 def test_cancel_manufacturing_order_from_approved(db_session):
@@ -559,6 +626,8 @@ def test_cancel_manufacturing_order_from_approved(db_session):
 
     result = service.cancel_order(
         order_code=order.order_code,
+        cancelled_by=employee.id,
+        reason="Test cancellation",
     )
 
     assert result.status == "cancelled"
@@ -587,6 +656,8 @@ def test_cancel_manufacturing_order_from_in_production(
 
     result = service.cancel_order(
         order_code=order.order_code,
+        cancelled_by=employee.id,
+        reason="Test cancellation",
     )
 
     assert result.status == "cancelled"
@@ -624,6 +695,8 @@ def test_cancel_completed_manufacturing_order_is_rejected(
     ):
         service.cancel_order(
             order_code=order.order_code,
+            cancelled_by=employee.id,
+            reason="Test cancellation",
         )
 
 
@@ -641,6 +714,8 @@ def test_cancelled_manufacturing_order_cannot_be_cancelled_again(
 
     service.cancel_order(
         order_code=order.order_code,
+        cancelled_by=employee.id,
+        reason="Test cancellation",
     )
 
     with pytest.raises(
@@ -649,7 +724,101 @@ def test_cancelled_manufacturing_order_cannot_be_cancelled_again(
     ):
         service.cancel_order(
             order_code=order.order_code,
+            cancelled_by=employee.id,
+            reason="Test cancellation",
         )
+
+
+def test_cancel_manufacturing_order_rejects_missing_user(db_session):
+    employee = create_employee(db_session)
+    service = ManufacturingOrderService(db_session)
+    order = service.create_order(quantity=2, created_by=employee.id)
+
+    with pytest.raises(ValueError, match="Cancelling employee not found"):
+        service.cancel_order(
+            order_code=order.order_code,
+            cancelled_by=uuid.uuid4(),
+            reason="Test cancellation",
+        )
+
+    assert order.status == "draft"
+
+
+def test_cancel_manufacturing_order_rejects_inactive_user(db_session):
+    employee = create_employee(db_session)
+    employee.is_active = False
+    db_session.flush()
+
+    service = ManufacturingOrderService(db_session)
+    order = service.create_order(quantity=2, created_by=employee.id)
+
+    with pytest.raises(ValueError, match="Cancelling employee is inactive"):
+        service.cancel_order(
+            order_code=order.order_code,
+            cancelled_by=employee.id,
+            reason="Test cancellation",
+        )
+
+    assert order.status == "draft"
+
+
+def test_cancel_manufacturing_order_rejects_non_employee_role(db_session):
+    employee = create_employee(db_session)
+    employee.role = "landlord"
+    db_session.flush()
+
+    service = ManufacturingOrderService(db_session)
+    order = service.create_order(quantity=2, created_by=employee.id)
+
+    with pytest.raises(
+        ValueError,
+        match="Only Nestify employees can cancel manufacturing orders",
+    ):
+        service.cancel_order(
+            order_code=order.order_code,
+            cancelled_by=employee.id,
+            reason="Test cancellation",
+        )
+
+    assert order.status == "draft"
+
+
+def test_cancel_manufacturing_order_rejects_blank_reason(db_session):
+    employee = create_employee(db_session)
+    service = ManufacturingOrderService(db_session)
+    order = service.create_order(quantity=2, created_by=employee.id)
+
+    with pytest.raises(ValueError, match="Cancellation reason is required"):
+        service.cancel_order(
+            order_code=order.order_code,
+            cancelled_by=employee.id,
+            reason="   ",
+        )
+
+    assert order.status == "draft"
+
+
+def test_cancel_manufacturing_order_rejects_overlong_reason(
+    db_session,
+):
+    employee = create_employee(db_session)
+    service = ManufacturingOrderService(db_session)
+    order = service.create_order(quantity=2, created_by=employee.id)
+
+    with pytest.raises(
+        ValueError,
+        match="Cancellation reason must not exceed 2000 characters",
+    ):
+        service.cancel_order(
+            order_code=order.order_code,
+            cancelled_by=employee.id,
+            reason="x" * 2001,
+        )
+
+    assert order.status == "draft"
+    assert order.cancelled_by is None
+    assert order.cancelled_at is None
+    assert order.cancellation_reason is None
 
 
 def test_get_manufacturing_order_plates(
@@ -751,8 +920,8 @@ def test_list_manufacturing_orders_filters_by_status(
     )
 
     result = service.list_orders(status="approved")
+    result_ids = {order.id for order in result}
 
-    assert len(result) == 1
-    assert result[0].id == approved_order.id
-    assert result[0].status == "approved"
-    assert result[0].id != draft_order.id
+    assert approved_order.id in result_ids
+    assert draft_order.id not in result_ids
+    assert all(order.status == "approved" for order in result)
