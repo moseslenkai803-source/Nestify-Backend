@@ -1,6 +1,6 @@
-from uuid import UUID
-
+import json
 from urllib.parse import quote
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import require_admin
 from app.core.config import settings
 from app.db.session import get_db
+from app.models.email_outbox import EmailOutbox
 from app.models.user import User
 from app.schemas.employee import (
     EmployeeCandidateResponse,
@@ -20,6 +21,11 @@ from app.schemas.employee import (
 )
 from app.services.employee_service import EmployeeService
 from app.services.employee_invitation_service import EmployeeInvitationService
+from app.services.email_service import EmailDeliveryError, EmailService
+from app.services.outbox_encryption import (
+    OutboxEncryptionError,
+    OutboxEncryptionService,
+)
 
 
 router = APIRouter(
@@ -36,7 +42,7 @@ router = APIRouter(
 def create_employee(
     employee_data: EmployeeCreate,
     current_admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = EmployeeService(db)
 
@@ -63,13 +69,19 @@ def create_employee(
 def create_employee_invitation(
     invitation_data: EmployeeInvitationCreate,
     current_admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
-    if settings.environment.strip().lower() != "development":
-        raise HTTPException(
-            status_code=503,
-            detail="Employee invitation delivery is not configured",
-        )
+    is_development = settings.environment.strip().lower() == "development"
+    email_service = EmailService()
+
+    if not is_development:
+        try:
+            email_service.validate_configuration()
+        except EmailDeliveryError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail="Employee invitation email delivery is not configured",
+            ) from exc
 
     service = EmployeeInvitationService(db)
 
@@ -93,6 +105,37 @@ def create_employee_invitation(
         f"?token={quote(token, safe='')}"
     )
 
+    if not is_development:
+        try:
+            payload = json.dumps(
+                {
+                    "recipient": invitation.email,
+                    "invitation_url": invitation_url,
+                    "expires_at": invitation.expires_at.isoformat(),
+                },
+                separators=(",", ":"),
+            ).encode("utf-8")
+
+            key_version, encrypted_payload = (
+                OutboxEncryptionService().encrypt(payload)
+            )
+
+            db.add(
+                EmailOutbox(
+                    employee_invitation_id=invitation.id,
+                    event_type="employee_invitation",
+                    encrypted_payload=encrypted_payload,
+                    encryption_key_version=key_version,
+                )
+            )
+            db.flush()
+        except OutboxEncryptionError as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=503,
+                detail="Invitation email could not be queued securely",
+            ) from exc
+
     return EmployeeInvitationResponse(
         id=invitation.id,
         email=invitation.email,
@@ -100,7 +143,7 @@ def create_employee_invitation(
         department=invitation.department,
         position=invitation.position,
         expires_at=invitation.expires_at,
-        invitation_url=invitation_url,
+        invitation_url=invitation_url if is_development else None,
     )
 
 
@@ -111,7 +154,7 @@ def create_employee_invitation(
 def list_employees(
     active_only: bool = Query(default=False),
     current_admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = EmployeeService(db)
 
@@ -126,7 +169,7 @@ def list_employees(
 )
 def list_employee_candidates(
     current_admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = EmployeeService(db)
 
@@ -140,7 +183,7 @@ def list_employee_candidates(
 def get_employee(
     employee_id: UUID,
     current_admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = EmployeeService(db)
 
@@ -162,7 +205,7 @@ def add_employee_clearance(
     employee_id: UUID,
     clearance_data: EmployeeClearanceCreate,
     current_admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = EmployeeService(db)
 
@@ -197,7 +240,7 @@ def list_employee_clearances(
     employee_id: UUID,
     active_only: bool = Query(default=False),
     current_admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = EmployeeService(db)
 
@@ -221,7 +264,7 @@ def remove_employee_clearance(
     employee_id: UUID,
     clearance: str,
     current_admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = EmployeeService(db)
 
@@ -256,7 +299,7 @@ def remove_employee_clearance(
 def terminate_employee(
     employee_id: UUID,
     current_admin: User = Depends(require_admin),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = EmployeeService(db)
 

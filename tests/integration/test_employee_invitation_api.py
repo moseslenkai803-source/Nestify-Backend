@@ -316,3 +316,217 @@ def test_invitation_creation_blocked_outside_development(db_session, monkeypatch
         assert db_session.query(EmployeeInvitation).filter_by(email=email).count() == 0
     finally:
         app.dependency_overrides.clear()
+
+
+def test_production_invitation_queues_encrypted_email_without_returning_url(
+    db_session, monkeypatch
+):
+    import json
+    from unittest.mock import Mock
+
+    from cryptography.fernet import Fernet
+
+    from app.models.email_outbox import EmailOutbox
+    from app.services.email_service import EmailService
+    from app.services.outbox_encryption import OutboxEncryptionService
+
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(EmailService, "validate_configuration", Mock())
+    monkeypatch.setattr(
+        settings,
+        "outbox_encryption_keys",
+        {"v1": Fernet.generate_key().decode("ascii")},
+    )
+    monkeypatch.setattr(settings, "outbox_active_encryption_key_version", "v1")
+
+    send_email = Mock()
+    monkeypatch.setattr(EmailService, "send_employee_invitation", send_email)
+    app.dependency_overrides[get_db] = lambda: db_session
+    email = f"production-{uuid.uuid4()}@example.com"
+
+    try:
+        admin = make_user(db_session, "admin")
+        token = create_access_token(subject=str(admin.id))
+        response = TestClient(app).post(
+            "/api/v1/employees/invitations",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "email": email,
+                "employee_number": f"INV-{uuid.uuid4().hex[:12]}",
+                "department": "Operations",
+                "position": "Officer",
+                "clearances": ["plate_operations"],
+            },
+        )
+
+        assert response.status_code == 201, response.text
+        assert response.json()["invitation_url"] is None
+        send_email.assert_not_called()
+
+        invitation = db_session.query(EmployeeInvitation).filter_by(
+            email=email
+        ).one()
+        outbox = db_session.query(EmailOutbox).filter_by(
+            employee_invitation_id=invitation.id
+        ).one()
+
+        assert outbox.event_type == "employee_invitation"
+        assert outbox.status == "pending"
+        assert outbox.encryption_key_version == "v1"
+        assert email not in outbox.encrypted_payload
+        assert "token=" not in outbox.encrypted_payload
+
+        decrypted = OutboxEncryptionService().decrypt(
+            outbox.encryption_key_version,
+            outbox.encrypted_payload,
+        )
+        payload = json.loads(decrypted.decode("utf-8"))
+
+        assert payload["recipient"] == email
+        assert "token=" in payload["invitation_url"]
+        invitation_token = parse_qs(
+            urlparse(payload["invitation_url"]).query
+        )["token"][0]
+        assert invitation.token_hash == hashlib.sha256(
+            invitation_token.encode("utf-8")
+        ).hexdigest()
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_production_invitation_fails_closed_without_encryption_key(
+    db_session, monkeypatch
+):
+    from unittest.mock import Mock
+
+    from app.models.email_outbox import EmailOutbox
+    from app.services.email_service import EmailService
+
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(EmailService, "validate_configuration", Mock())
+    monkeypatch.setattr(settings, "outbox_encryption_keys", {})
+    monkeypatch.setattr(settings, "outbox_active_encryption_key_version", "v1")
+    app.dependency_overrides[get_db] = lambda: db_session
+    email = f"failed-queue-{uuid.uuid4()}@example.com"
+
+    try:
+        admin = make_user(db_session, "admin")
+        token = create_access_token(subject=str(admin.id))
+        response = TestClient(app).post(
+            "/api/v1/employees/invitations",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "email": email,
+                "employee_number": f"INV-{uuid.uuid4().hex[:12]}",
+                "department": "Operations",
+                "position": "Officer",
+                "clearances": ["plate_operations"],
+            },
+        )
+
+        assert response.status_code == 503, response.text
+        assert db_session.query(EmployeeInvitation).filter_by(
+            email=email
+        ).count() == 0
+        assert db_session.query(EmailOutbox).count() == 0
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_production_invitation_rolls_back_when_outbox_insert_fails(
+    db_session, monkeypatch
+):
+    from unittest.mock import Mock
+
+    from cryptography.fernet import Fernet
+    from sqlalchemy.exc import SQLAlchemyError
+
+    import app.db.session as db_session_module
+    from app.models.email_outbox import EmailOutbox
+    from app.services.email_service import EmailService
+
+    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(EmailService, "validate_configuration", Mock())
+    monkeypatch.setattr(
+        settings,
+        "outbox_encryption_keys",
+        {"v1": Fernet.generate_key().decode("ascii")},
+    )
+    monkeypatch.setattr(settings, "outbox_active_encryption_key_version", "v1")
+
+    email = f"outbox-db-failure-{uuid.uuid4()}@example.com"
+    admin = make_user(db_session, "admin")
+    admin_id = admin.id
+    token = create_access_token(subject=str(admin_id))
+
+    # Make the administrator visible to the independent request session.
+    db_session.commit()
+
+    original_session_factory = db_session_module.SessionLocal
+
+    def failing_session_factory():
+        request_db = original_session_factory()
+        original_flush = request_db.flush
+
+        def fail_outbox_flush(*args, **kwargs):
+            if any(
+                isinstance(obj, EmailOutbox)
+                for obj in request_db.new
+            ):
+                raise SQLAlchemyError("simulated outbox insert failure")
+            return original_flush(*args, **kwargs)
+
+        request_db.flush = fail_outbox_flush
+        return request_db
+
+    monkeypatch.setattr(
+        db_session_module, "SessionLocal", failing_session_factory
+    )
+    app.dependency_overrides.clear()
+
+    try:
+        response = TestClient(
+            app, raise_server_exceptions=False
+        ).post(
+            "/api/v1/employees/invitations",
+            headers={"Authorization": f"Bearer {token}"},
+            json={
+                "email": email,
+                "employee_number": f"INV-{uuid.uuid4().hex[:12]}",
+                "department": "Operations",
+                "position": "Officer",
+                "clearances": ["plate_operations"],
+            },
+        )
+
+        assert response.status_code == 500, response.text
+
+        # Check persisted state from the independent test session.
+        db_session.expire_all()
+        assert db_session.query(EmployeeInvitation).filter_by(
+            email=email
+        ).count() == 0
+        assert (
+            db_session.query(EmailOutbox)
+            .join(EmployeeInvitation)
+            .filter(EmployeeInvitation.email == email)
+            .count()
+            == 0
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+        # The administrator was committed for request authentication;
+        # explicitly clean up all data created by this test.
+        db_session.query(EmailOutbox).filter(
+            EmailOutbox.employee_invitation_id.in_(
+                db_session.query(EmployeeInvitation.id).filter_by(email=email)
+            )
+        ).delete(synchronize_session=False)
+        db_session.query(EmployeeInvitation).filter_by(
+            email=email
+        ).delete(synchronize_session=False)
+        db_session.query(User).filter_by(id=admin_id).delete(
+            synchronize_session=False
+        )
+        db_session.commit()

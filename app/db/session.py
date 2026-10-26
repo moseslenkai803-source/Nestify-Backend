@@ -26,6 +26,10 @@ def get_db() -> Generator[Session, None, None]:
         db.rollback()
         raise
     else:
-        db.commit()
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
     finally:
         db.close()
