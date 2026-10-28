@@ -1,4 +1,5 @@
 import logging
+import signal
 import time
 
 from app.core.runtime_config import validate_runtime_configuration
@@ -20,10 +21,18 @@ def main() -> None:
     validate_runtime_configuration()
     EmailService.validate_configuration()
     worker = EmailOutboxWorker()
+
+    stop_requested = False
+
+    def request_shutdown(signum, frame):
+        nonlocal stop_requested
+        stop_requested = True
+
+    signal.signal(signal.SIGTERM, request_shutdown)
     logger.info("Email outbox worker started")
 
     try:
-        while True:
+        while not stop_requested:
             try:
                 processed = worker.process_one()
 
@@ -37,6 +46,8 @@ def main() -> None:
                 time.sleep(POLL_INTERVAL_SECONDS)
 
     except KeyboardInterrupt:
+        pass
+    finally:
         logger.info("Email outbox worker stopped")
 
 
