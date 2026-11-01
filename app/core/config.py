@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     environment: str = "development"
     debug: bool = True
     database_url: str
+    redis_url: str | None = None
+    rate_limit_redis_timeout_seconds: float = Field(
+        default=0.25, gt=0, le=1.0
+    )
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60

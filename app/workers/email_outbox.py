@@ -2,7 +2,7 @@ import logging
 import signal
 import time
 
-from app.core.runtime_config import validate_runtime_configuration
+from app.core.runtime_config import validate_email_worker_configuration
 from app.services.email_outbox_worker import EmailOutboxWorker
 from app.services.email_service import EmailService
 
@@ -18,7 +18,7 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
 
-    validate_runtime_configuration()
+    validate_email_worker_configuration()
     EmailService.validate_configuration()
     worker = EmailOutboxWorker()
 

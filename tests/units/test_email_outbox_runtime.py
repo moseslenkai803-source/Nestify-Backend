@@ -12,7 +12,7 @@ def test_worker_fails_before_startup_when_runtime_configuration_is_invalid(
 
     monkeypatch.setattr(
         email_outbox,
-        "validate_runtime_configuration",
+        "validate_email_worker_configuration",
         reject_configuration,
     )
 
@@ -49,7 +49,7 @@ def test_worker_stops_cleanly_on_sigterm(monkeypatch):
         email_outbox, "signal", fake_signal, raising=False
     )
     monkeypatch.setattr(
-        email_outbox, "validate_runtime_configuration", lambda: None
+        email_outbox, "validate_email_worker_configuration", lambda: None
     )
     monkeypatch.setattr(
         email_outbox.EmailService, "validate_configuration", lambda: None
