@@ -876,6 +876,56 @@ Before the backend is considered production-ready, it should have:
 
 Production readiness means more than successfully running the API locally.
 
+### Trusted ingress and client IP identity
+
+Public IP-based rate limits require a trustworthy client IP address.
+
+The intended deployment contract is:
+
+- Development uses the direct connection address exposed by the ASGI request.
+- Staging and production use the `CF-Connecting-IP` request header.
+- The application parses this value as exactly one IP address and normalizes
+  it before using it as a rate-limit identity.
+- Missing, malformed, whitespace-padded, or comma-separated values are
+  rejected with HTTP 503. The rate limiter must not silently fall back to an
+  untrusted forwarded header.
+- `X-Forwarded-For` is not used as the rate-limit identity.
+
+The intended staging and production configuration relies on requests
+reaching the application through Render's public ingress, which is expected
+to supply the `CF-Connecting-IP` client address. Verify this behavior in
+each deployed environment before relying on it. This is a hosting trust
+assumption, not proof that Nestify has separately configured a Cloudflare
+zone or WAF.
+
+Before changing hosting providers, ingress architecture, or proxy routing,
+reassess this trust boundary. Verify which proxy directly connects to the
+application, which component sets the client-IP header, and whether clients
+can reach the application through an alternate path. Never trust a
+client-supplied forwarding header merely because its value is syntactically
+valid.
+
+The current `render.yaml` defines production resources. Staging must use
+separate application services and isolated database and Redis resources; it
+must not share production data or rate-limit state.
+
+### Redis emergency fallback recovery
+
+The local rate-limit fallback is not cleared by a single successful Redis
+operation. A successful rate-limit decision (`ALLOWED` or `LIMITED`) or
+successful Redis health check starts or advances recovery. The fallback is
+cleared only after a later successful observation at least
+`RATE_LIMIT_RECOVERY_GRACE_SECONDS` after the first observation. Redis
+failures reset this recovery interval.
+
+This is an observation-based grace period, not continuous Redis monitoring:
+the application does not independently probe Redis between successful
+observations. A delayed failure from an in-flight request can conservatively
+reset recovery or activate fallback after another request observed success.
+This may cause unnecessary fallback activation, but does not silently treat
+an observed Redis failure as sustained recovery.
+
+
 ---
 
 ## 23. Reliability requirements
@@ -1228,7 +1278,18 @@ Current development stages:
 - [ ] Testing
 - [ ] Security hardening
 - [ ] Staging deployment
+  - [ ] Separate staging API and required worker services
+  - [ ] Isolated staging PostgreSQL and Redis resources
+  - [ ] `ENVIRONMENT=staging` configured
+  - [ ] Verify `CF-Connecting-IP` through the deployed ingress
+  - [ ] Verify missing and malformed client-IP headers fail closed
+  - [ ] Verify `X-Forwarded-For` cannot override the client-IP identity
+  - [ ] Verify migrations, health checks, and rate limiting
 - [ ] Production deployment
+  - [ ] Confirm production ingress supplies the expected client-IP header
+  - [ ] Verify malformed or missing client-IP headers fail closed
+  - [ ] Verify production database and Redis are isolated from staging
+  - [ ] Verify migrations, health checks, and shared rate limiting
 
 ---
 

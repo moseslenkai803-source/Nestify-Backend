@@ -40,6 +40,7 @@ class RateLimitService:
         redis_timeout_seconds: float = 0.25,
         emergency_fallback_seconds: float = 60,
         emergency_max_keys: int = 10_000,
+        recovery_grace_seconds: float | None = None,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         if redis_timeout_seconds <= 0 or redis_timeout_seconds > 1:
@@ -48,6 +49,12 @@ class RateLimitService:
             )
         if emergency_fallback_seconds <= 0:
             raise ValueError("emergency_fallback_seconds must be positive")
+        if recovery_grace_seconds is None:
+            from app.core.config import settings
+
+            recovery_grace_seconds = settings.rate_limit_recovery_grace_seconds
+        if not math.isfinite(recovery_grace_seconds) or recovery_grace_seconds <= 0:
+            raise ValueError("recovery_grace_seconds must be finite and positive")
         if emergency_max_keys < 1:
             raise ValueError("emergency_max_keys must be at least 1")
 
@@ -56,9 +63,11 @@ class RateLimitService:
         self._redis_timeout_seconds = redis_timeout_seconds
         self._fallback_seconds = emergency_fallback_seconds
         self._max_keys = emergency_max_keys
+        self._recovery_grace_seconds = recovery_grace_seconds
         self._clock = clock
         self._lock = RLock()
         self._fallback_deadline: float | None = None
+        self._recovery_started_at: float | None = None
         self._requests: dict[str, deque[float]] = {}
 
     def _get_redis_client(self):
@@ -90,13 +99,19 @@ class RateLimitService:
     def check_store_health(self) -> bool:
         """Return whether Redis responds to a bounded, read-only health check."""
         try:
-            return bool(self._get_redis_client().ping())
+            healthy = bool(self._get_redis_client().ping())
         except (RedisError, OSError, TimeoutError) as exc:
+            self._mark_store_unavailable()
             logger.warning(
                 "Rate-limit shared store health check failed; error_type=%s",
                 type(exc).__name__,
             )
             return False
+        if healthy:
+            self._mark_store_healthy()
+        else:
+            self._mark_store_unavailable()
+        return healthy
 
     @staticmethod
     def _redis_key(*, policy_name: str, key: str, window_ms: int) -> str:
@@ -132,16 +147,16 @@ class RateLimitService:
                 window_ms,
             )
         except (RedisError, OSError, TimeoutError) as exc:
+            self._mark_store_unavailable()
             logger.warning(
                 "Rate-limit shared store unavailable; error_type=%s",
                 type(exc).__name__,
             )
             return RateLimitDecision.UNAVAILABLE
 
+        self._mark_store_healthy()
         if int(count) > limit:
             return RateLimitDecision.LIMITED
-
-        self.recover_store()
         return RateLimitDecision.ALLOWED
 
     def check(
@@ -206,14 +221,38 @@ class RateLimitService:
                 return
 
             self._fallback_deadline = self._clock() + self._fallback_seconds
+            self._recovery_started_at = None
             self._requests.clear()
             logger.warning("Rate-limit emergency fallback activated")
 
+    def _mark_store_unavailable(self) -> None:
+        """Reset the continuous-health interval after a Redis failure."""
+        with self._lock:
+            self._recovery_started_at = None
+
+    def _mark_store_healthy(self) -> None:
+        """Clear fallback state only after sustained Redis availability."""
+        with self._lock:
+            if self._fallback_deadline is None:
+                return
+
+            now = self._clock()
+            if self._recovery_started_at is None:
+                self._recovery_started_at = now
+                return
+
+            if now - self._recovery_started_at >= self._recovery_grace_seconds:
+                self._fallback_deadline = None
+                self._recovery_started_at = None
+                self._requests.clear()
+                logger.info("Rate-limit shared store recovered")
+
     def recover_store(self) -> None:
-        """Clear fallback state after a successful shared-store decision."""
+        """Immediately clear fallback state when explicitly requested."""
         with self._lock:
             was_active = self._fallback_deadline is not None
             self._fallback_deadline = None
+            self._recovery_started_at = None
             self._requests.clear()
 
             if was_active:

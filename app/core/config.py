@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     rate_limit_redis_timeout_seconds: float = Field(
         default=0.25, gt=0, le=1.0
     )
+    rate_limit_recovery_grace_seconds: float = Field(
+        default=5.0, gt=0
+    )
     jwt_secret_key: str
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60

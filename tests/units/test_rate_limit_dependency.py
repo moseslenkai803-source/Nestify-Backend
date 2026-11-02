@@ -137,10 +137,13 @@ def test_account_limit_skips_missing_email_without_shared_bucket():
     assert service.calls == []
 
 
-def test_ip_limit_uses_cf_connecting_ip_in_production(monkeypatch):
+@pytest.mark.parametrize("environment", ["production", "staging"])
+def test_ip_limit_uses_cf_connecting_ip_in_deployed_environments(
+    monkeypatch, environment
+):
     from app.core.config import settings
 
-    monkeypatch.setattr(settings, "environment", "production")
+    monkeypatch.setattr(settings, "environment", environment)
     client, service = make_client(RateLimitDecision.ALLOWED)
 
     with client:
@@ -157,18 +160,47 @@ def test_ip_limit_uses_cf_connecting_ip_in_production(monkeypatch):
 
 
 @pytest.mark.parametrize(
+    ("environment", "client_ip", "expected_ip"),
+    [
+        (
+            "production",
+            "2001:0db8:0000:0000:0000:0000:0000:0001",
+            "2001:db8::1",
+        ),
+        ("staging", "2001:db8::1", "2001:db8::1"),
+    ],
+)
+def test_ip_limit_normalizes_ipv6_client_addresses(
+    monkeypatch, environment, client_ip, expected_ip
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "environment", environment)
+    client, service = make_client(RateLimitDecision.ALLOWED)
+
+    with client:
+        response = client.post(
+            "/limited",
+            headers={"CF-Connecting-IP": client_ip},
+        )
+
+    assert response.status_code == 200
+    assert service.calls[0]["key"] == expected_ip
+
+
+@pytest.mark.parametrize(
     "headers",
     [
         {},
         {"CF-Connecting-IP": "not-an-ip"},
         {"CF-Connecting-IP": "203.0.113.42, 198.51.100.99"},
+        {"CF-Connecting-IP": " 203.0.113.42"},
+        {"CF-Connecting-IP": "203.0.113.42 "},
     ],
 )
 def test_ip_limit_fails_closed_for_invalid_cf_client_ip(
     monkeypatch, headers
 ):
-    import pytest
-
     from app.core.config import settings
 
     monkeypatch.setattr(settings, "environment", "production")
