@@ -35,8 +35,10 @@ class AddressPlateAllocationService:
         request_id: uuid.UUID,
         user: User,
     ) -> AddressPlate:
-        request = self.address_plate_request_repository.get_by_id(
-            request_id
+        request = (
+            self.address_plate_request_repository.get_by_id_for_update(
+                request_id
+            )
         )
 
         if request is None:
@@ -85,6 +87,10 @@ class AddressPlateAllocationService:
             raise ValueError("No address plates available for allocation")
 
         plate.property_id = property.id
+
+        # Persist the property association before lifecycle recording locks
+        # and refreshes the plate with populate_existing=True.
+        self.db.flush()
 
         self.lifecycle_service.record_allocation(
             plate_id=plate.id,

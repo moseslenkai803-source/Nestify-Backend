@@ -35,3 +35,10 @@ class AddressPlateRequestResponse(BaseModel):
     requested_at: datetime
     created_at: datetime
     updated_at: datetime
+
+
+
+class AddressPlateRequestListResponse(AddressPlateRequestResponse):
+    property_name: str
+    property_code: str
+    requester_email: str

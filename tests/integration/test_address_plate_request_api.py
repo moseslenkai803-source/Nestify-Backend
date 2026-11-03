@@ -390,6 +390,14 @@ def test_list_address_plate_requests_api_returns_pending_requests(
         assert str(pending_request.id) in request_ids
         assert str(fulfilled_request.id) not in request_ids
 
+        pending_item = next(
+            item for item in data
+            if item["id"] == str(pending_request.id)
+        )
+        assert pending_item["property_name"] == "List Request Property"
+        assert pending_item["property_code"] == property.property_code
+        assert pending_item["requester_email"] == owner.email
+
         assert all(
             item["status"] == "pending"
             for item in data

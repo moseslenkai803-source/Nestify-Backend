@@ -47,6 +47,19 @@ class EmployeeRepository:
         )
         return self.db.scalar(statement)
 
+
+    def get_by_user_id_for_update(
+        self,
+        user_id: UUID,
+    ) -> Employee | None:
+        statement = (
+            select(Employee)
+            .where(Employee.user_id == user_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return self.db.scalar(statement)
+
     def get_by_employee_number(
         self,
         employee_number: str,

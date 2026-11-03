@@ -3,6 +3,9 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.rate_limit import get_rate_limit_service
+from app.services.rate_limit_service import RateLimitDecision
+
 from app.core.security import create_access_token
 from app.db.session import get_db
 from app.main import app
@@ -597,3 +600,111 @@ def test_get_me_returns_empty_permissions_for_landlord(db_session):
 
     finally:
         app.dependency_overrides.clear()
+
+# Route-level authentication rate-limit integration tests
+
+
+class RouteRateLimitTestService:
+    def __init__(self, target_policy, target_decision):
+        self.target_policy = target_policy
+        self.target_decision = target_decision
+        self.calls = []
+
+    def check(self, **kwargs):
+        self.calls.append(kwargs)
+        if kwargs["policy_name"] == self.target_policy:
+            return self.target_decision
+        return RateLimitDecision.ALLOWED
+
+
+@pytest.mark.parametrize(
+    "route,payload,policy_names",
+    [
+        (
+            "/api/v1/auth/register",
+            {
+                "email": "rate-limit-register@example.com",
+                "password": "StrongPassword123!",
+                "display_name": "Rate Limit Test",
+                "phone": "+254700000001",
+                "landlord_type": "individual",
+            },
+            ("auth-register", "auth-register-account"),
+        ),
+        (
+            "/api/v1/auth/login",
+            {
+                "email": "rate-limit-login@example.com",
+                "password": "StrongPassword123!",
+            },
+            ("auth-login", "auth-login-account"),
+        ),
+    ],
+)
+@pytest.mark.parametrize(
+    "policy_index,decision,expected_status",
+    [
+        (0, RateLimitDecision.LIMITED, 429),
+        (1, RateLimitDecision.LIMITED, 429),
+        (0, RateLimitDecision.UNAVAILABLE, 503),
+        (1, RateLimitDecision.UNAVAILABLE, 503),
+    ],
+)
+def test_auth_routes_enforce_rate_limit_policies(
+    client,
+    monkeypatch,
+    route,
+    payload,
+    policy_names,
+    policy_index,
+    decision,
+    expected_status,
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "environment", "development")
+
+    target_policy = policy_names[policy_index]
+    service = RouteRateLimitTestService(target_policy, decision)
+
+    previous_override = app.dependency_overrides.get(
+        get_rate_limit_service
+    )
+    app.dependency_overrides[get_rate_limit_service] = lambda: service
+
+    try:
+        response = client.post(route, json=payload)
+    finally:
+        if previous_override is None:
+            app.dependency_overrides.pop(get_rate_limit_service, None)
+        else:
+            app.dependency_overrides[get_rate_limit_service] = (
+                previous_override
+            )
+
+    assert response.status_code == expected_status
+    assert response.json()["detail"] == (
+        "Too many requests. Please try again later."
+        if expected_status == 429
+        else "Request processing is temporarily unavailable."
+    )
+
+    assert [call["policy_name"] for call in service.calls] == list(
+        policy_names[: policy_index + 1]
+    )
+
+    expected_limits = {
+        "auth-register": (5, 60),
+        "auth-register-account": (3, 3600),
+        "auth-login": (10, 60),
+        "auth-login-account": (5, 300),
+    }
+
+    for call in service.calls:
+        expected_limit, expected_window = expected_limits[call["policy_name"]]
+        assert call["limit"] == expected_limit
+        assert call["window_seconds"] == expected_window
+        assert call["allow_emergency_fallback"] is False
+
+    if target_policy.endswith("-account"):
+        assert service.calls[-1]["key"] == payload["email"].strip().lower()

@@ -35,6 +35,8 @@ class PropertyInstallationService:
         captured_at: datetime,
         notes: str | None = None,
     ) -> PropertyInstallation:
+        # Share the property-row lock with assignment submissions so only
+        # one creation path can pass the submitted-installation check.
         property = self.property_repository.get_by_id_for_update(property_id)
         if property is None:
             raise ValueError("Property not found")
@@ -72,15 +74,8 @@ class PropertyInstallationService:
         if captured_at.tzinfo is None:
             raise ValueError("Captured timestamp must be timezone-aware")
 
-        existing_installation = (
-            self.property_installation_repository.get_by_property_id(
-                property_id
-            )
-        )
-
-        if (
-            existing_installation is not None
-            and existing_installation.status == "submitted"
+        if self.property_installation_repository.has_submitted_for_property(
+            property_id
         ):
             raise ValueError(
                 "Property already has a submitted installation"

@@ -39,6 +39,20 @@ class InstallationAssignmentService:
                 "Address plate must be dispatched before installation"
             )
 
+    def _require_active_assignment_contractor(
+        self,
+        assignment: InstallationAssignment,
+    ) -> None:
+        contractor = self.contractor_repository.get_by_id_for_update(
+            assignment.contractor_id
+        )
+
+        if contractor is None:
+            raise ValueError("Contractor not found")
+
+        if contractor.status != "active":
+            raise ValueError("Contractor is inactive")
+
     def create_assignment(
         self,
         property_id: UUID,
@@ -158,6 +172,8 @@ class InstallationAssignmentService:
         if assignment.status != "assigned":
             raise ValueError("Installation assignment is not awaiting start")
 
+        self._require_active_assignment_contractor(assignment)
+
         contractor_member = (
             self.contractor_member_repository.get_by_id_for_update(
                 assignment.contractor_member_id
@@ -166,6 +182,11 @@ class InstallationAssignmentService:
 
         if contractor_member is None:
             raise ValueError("Contractor member not found")
+
+        if contractor_member.contractor_id != assignment.contractor_id:
+            raise ValueError(
+                "Contractor member does not belong to this contractor"
+            )
 
         if contractor_member.user_id != contractor_user_id:
             raise ValueError(
@@ -256,6 +277,18 @@ class InstallationAssignmentService:
                 "Installation assignment is not in progress"
             )
 
+        # Serialize installation submissions for this property. Keep this
+        # lock until commit so competing creation paths cannot both pass
+        # the submitted-installation check.
+        property_record = self.property_repository.get_by_id_for_update(
+            assignment.property_id
+        )
+
+        if property_record is None:
+            raise ValueError("Property not found")
+
+        self._require_active_assignment_contractor(assignment)
+
         contractor_member = (
             self.contractor_member_repository.get_by_id_for_update(
                 assignment.contractor_member_id
@@ -264,6 +297,11 @@ class InstallationAssignmentService:
 
         if contractor_member is None:
             raise ValueError("Contractor member not found")
+
+        if contractor_member.contractor_id != assignment.contractor_id:
+            raise ValueError(
+                "Contractor member does not belong to this contractor"
+            )
 
         if contractor_member.user_id != contractor_user_id:
             raise ValueError(
@@ -301,6 +339,13 @@ class InstallationAssignmentService:
 
         if captured_at.tzinfo is None:
             raise ValueError("Captured timestamp must be timezone-aware")
+
+        if self.property_installation_repository.has_submitted_for_property(
+            assignment.property_id
+        ):
+            raise ValueError(
+                "Property already has a submitted installation"
+            )
 
         existing_installation = (
             self.property_installation_repository.get_by_assignment_id_for_update(

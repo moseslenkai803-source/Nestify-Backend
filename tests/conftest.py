@@ -1,8 +1,22 @@
+from collections.abc import Generator
+
 import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.db.session import SessionLocal
+from app.db.session import SessionLocal, engine
+
+
+# Tests must use their isolated database, never development or shared test data.
+_EXPECTED_TEST_DATABASE = "nestify_pytest"
+_CONFIGURED_DATABASE = engine.url.database
+
+if _CONFIGURED_DATABASE != _EXPECTED_TEST_DATABASE:
+    raise RuntimeError(
+        "Refusing to run tests against database "
+        f"{_CONFIGURED_DATABASE!r}. "
+        "Set DATABASE_URL to the dedicated 'nestify_pytest' database."
+    )
 
 
 def cleanup_installation_test_context(
@@ -62,6 +76,14 @@ def cleanup_installation_test_context(
         {"property_id": property_id},
     )
 
+    db.execute(
+        text(
+            "DELETE FROM property_access "
+            "WHERE property_id = :property_id"
+        ),
+        {"property_id": property_id},
+    )
+
     landlord_ids = [
         row[0]
         for row in db.execute(
@@ -84,6 +106,24 @@ def cleanup_installation_test_context(
             {"landlord_id": landlord_id},
         )
 
+    db.execute(
+        text(
+            "DELETE FROM employee_clearances "
+            "WHERE employee_id IN ("
+            "SELECT id FROM employees "
+            "WHERE user_id = ANY(:user_ids))"
+        ),
+        {"user_ids": user_ids},
+    )
+
+    db.execute(
+        text(
+            "DELETE FROM employees "
+            "WHERE user_id = ANY(:user_ids)"
+        ),
+        {"user_ids": user_ids},
+    )
+
     for user_id in user_ids:
         db.execute(
             text("DELETE FROM users WHERE id = :user_id"),
@@ -94,7 +134,7 @@ def cleanup_installation_test_context(
 
 
 @pytest.fixture
-def db_session() -> Session:
+def db_session() -> Generator[Session, None, None]:
     db = SessionLocal()
 
     try:

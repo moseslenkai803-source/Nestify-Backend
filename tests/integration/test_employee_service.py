@@ -7,6 +7,7 @@ from app.db.session import SessionLocal
 
 from app.models.employee import Employee
 from app.models.employee_clearance import EmployeeClearance
+from app.models.landlord import Landlord
 from app.models.user import User
 from app.services.employee_service import EmployeeService
 
@@ -122,6 +123,36 @@ def test_create_employee_rejects_non_employee_user(db_session):
             department="Operations",
             position="Officer",
         )
+
+
+def test_create_employee_rejects_user_with_landlord_profile(db_session):
+    user = create_employee_user(db_session)
+
+    landlord = Landlord(
+        user_id=user.id,
+        display_name="Existing Landlord",
+        phone="+254700000001",
+        landlord_type="individual",
+    )
+    db_session.add(landlord)
+    db_session.flush()
+
+    service = EmployeeService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Landlord profiles cannot be registered as employees",
+    ):
+        service.create_employee(
+            user_id=user.id,
+            employee_number="EMP-LANDLORD-CONFLICT",
+            department="Operations",
+            position="Officer",
+        )
+
+    assert service.employee_repository.get_by_user_id(user.id) is None
+    assert service.landlord_repository.get_by_user_id(user.id) is not None
+    assert user.role == "employee"
 
 
 def test_create_employee_rejects_duplicate_employee_for_user(

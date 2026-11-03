@@ -72,6 +72,36 @@ class AddressPlateRequestService:
     ) -> list[AddressPlateRequest]:
         return self.address_plate_request_repository.get_by_status(status)
 
+
+    def list_requests_with_details(
+        self,
+        status: str,
+    ) -> list[dict[str, object]]:
+        rows = (
+            self.address_plate_request_repository.get_enriched_by_status(
+                status
+            )
+        )
+
+        results = []
+        for request, property_name, property_code, requester_email in rows:
+            results.append(
+                {
+                    "id": request.id,
+                    "property_id": request.property_id,
+                    "requested_by": request.requested_by,
+                    "status": request.status,
+                    "requested_at": request.requested_at,
+                    "created_at": request.created_at,
+                    "updated_at": request.updated_at,
+                    "property_name": property_name,
+                    "property_code": property_code,
+                    "requester_email": requester_email,
+                }
+            )
+
+        return results
+
     def approve_request(
         self,
         request_id: uuid.UUID,

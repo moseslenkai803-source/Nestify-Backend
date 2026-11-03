@@ -21,6 +21,7 @@ class UserRepository:
             select(User)
             .where(User.id == user_id)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return self.db.scalar(statement)
 

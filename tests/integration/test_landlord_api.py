@@ -77,6 +77,48 @@ def test_onboard_landlord_fails_if_already_landlord(db_session):
         app.dependency_overrides.clear()
 
 
+
+def test_onboard_landlord_rejects_employee_account(db_session):
+    from app.models.employee import Employee
+    from app.repositories.landlord_repository import LandlordRepository
+
+    user_service = UserService(db_session)
+    user = user_service.create_user(
+        email=f"employee-api-{uuid.uuid4()}@example.com",
+        password="password123",
+        role="employee",
+    )
+    employee = Employee(
+        user_id=user.id,
+        employee_number=f"EMP-{uuid.uuid4()}",
+        department="Operations",
+        position="Coordinator",
+    )
+    db_session.add(employee)
+    db_session.flush()
+
+    app.dependency_overrides[get_db] = lambda: db_session
+    app.dependency_overrides[get_current_user] = lambda: user
+
+    try:
+        response = client.post(
+            "/api/v1/landlords/onboard",
+            json={
+                "display_name": "Employee Must Not Become Landlord",
+                "phone": "+254799333333",
+                "landlord_type": "individual",
+            },
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == (
+            "Employee accounts cannot be onboarded as landlords"
+        )
+        assert user.role == "employee"
+        assert LandlordRepository(db_session).get_by_user_id(user.id) is None
+    finally:
+        app.dependency_overrides.clear()
+
 def test_onboard_landlord_validation_error(db_session):
     # Arrange: Setup basic authenticated context boundary hooks
     user_service = UserService(db_session)

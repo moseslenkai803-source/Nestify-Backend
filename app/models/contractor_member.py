@@ -12,6 +12,11 @@ class ContractorMember(Base):
 
     __table_args__ = (
         UniqueConstraint(
+            "id",
+            "contractor_id",
+            name="uq_contractor_members_id_contractor_id",
+        ),
+        UniqueConstraint(
             "contractor_id",
             "user_id",
             name="uq_contractor_member_contractor_user",

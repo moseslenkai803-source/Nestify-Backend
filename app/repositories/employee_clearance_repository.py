@@ -33,6 +33,7 @@ class EmployeeClearanceRepository:
             select(EmployeeClearance)
             .where(EmployeeClearance.id == clearance_id)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return self.db.scalar(statement)
 

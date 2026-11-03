@@ -1,7 +1,9 @@
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 
+from app.models.employee import Employee
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_access import PropertyAccess
@@ -9,7 +11,11 @@ from app.models.user import User
 from app.services.property_access_service import PropertyAccessService
 
 
-def create_user(db_session, role="employee"):
+def create_user(
+    db_session,
+    role="employee",
+    create_employee_record=True,
+):
     user = User(
         email=f"property-access-service-{uuid.uuid4()}@example.com",
         password_hash="test-hash",
@@ -18,6 +24,17 @@ def create_user(db_session, role="employee"):
     )
     db_session.add(user)
     db_session.flush()
+
+    if role == "employee" and create_employee_record:
+        employee = Employee(
+            user_id=user.id,
+            employee_number=f"PA-{uuid.uuid4().hex[:20].upper()}",
+            department="Operations",
+            position="Test Employee",
+        )
+        db_session.add(employee)
+        db_session.flush()
+
     return user
 
 
@@ -181,6 +198,68 @@ def test_authorize_rejects_inactive_access(db_session):
         ValueError,
         match="Employee does not have access to this property",
     ):
+        service.authorize(
+            user_id=employee.id,
+            property_id=property.id,
+            access_type="plate_operations",
+        )
+
+
+def test_authorize_rejects_missing_employee_record(db_session):
+    employee = create_user(
+        db_session,
+        create_employee_record=False,
+    )
+    property = create_property(db_session)
+    service = PropertyAccessService(db_session)
+
+    with pytest.raises(ValueError, match="Employee record not found"):
+        service.authorize(
+            user_id=employee.id,
+            property_id=property.id,
+            access_type="plate_operations",
+        )
+
+
+def test_authorize_rejects_terminated_employee_with_active_account(
+    db_session,
+):
+    employee = create_user(db_session)
+    property = create_property(db_session)
+    service = PropertyAccessService(db_session)
+
+    # Create a valid grant while the employee is still active.
+    service.grant_access(
+        user_id=employee.id,
+        property_id=property.id,
+        access_type="plate_operations",
+    )
+
+    # Simulate termination without deactivating the account or old grant.
+    employee_record = (
+        db_session.query(Employee)
+        .filter(Employee.user_id == employee.id)
+        .one()
+    )
+    employee_record.ended_at = datetime.now(UTC)
+    db_session.flush()
+
+    with pytest.raises(ValueError, match="Employee is terminated"):
+        service.authorize(
+            user_id=employee.id,
+            property_id=property.id,
+            access_type="plate_operations",
+        )
+
+
+def test_authorize_rejects_inactive_employee_account(db_session):
+    employee = create_user(db_session)
+    property = create_property(db_session)
+    employee.is_active = False
+    db_session.flush()
+    service = PropertyAccessService(db_session)
+
+    with pytest.raises(ValueError, match="Employee is inactive"):
         service.authorize(
             user_id=employee.id,
             property_id=property.id,
@@ -353,6 +432,76 @@ def test_grant_access_rejects_non_employee_user(db_session):
         )
 
 
+def test_grant_access_rejects_missing_employee_record(db_session):
+    employee = create_user(
+        db_session,
+        create_employee_record=False,
+    )
+    property = create_property(db_session)
+
+    service = PropertyAccessService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Employee record not found",
+    ):
+        service.grant_access(
+            user_id=employee.id,
+            property_id=property.id,
+            access_type="plate_operations",
+        )
+
+
+def test_grant_access_rejects_terminated_employee(db_session):
+    employee = create_user(db_session)
+    employee_record = (
+        db_session.query(Employee)
+        .filter(Employee.user_id == employee.id)
+        .one()
+    )
+    employee_record.ended_at = datetime.now(UTC)
+    property = create_property(db_session)
+
+    service = PropertyAccessService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Employee is terminated",
+    ):
+        service.grant_access(
+            user_id=employee.id,
+            property_id=property.id,
+            access_type="plate_operations",
+        )
+
+
+def test_revoke_access_rejects_already_inactive_access(db_session):
+    employee = create_user(db_session)
+    property = create_property(db_session)
+    service = PropertyAccessService(db_session)
+
+    service.grant_access(
+        user_id=employee.id,
+        property_id=property.id,
+        access_type="plate_operations",
+    )
+    service.revoke_access(
+        user_id=employee.id,
+        property_id=property.id,
+        access_type="plate_operations",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Active property access not found",
+    ):
+        service.revoke_access(
+            user_id=employee.id,
+            property_id=property.id,
+            access_type="plate_operations",
+        )
+
+
 def test_grant_access_rejects_missing_property(db_session):
     employee = create_user(db_session)
 
@@ -437,3 +586,54 @@ def test_list_accessible_properties_deduplicates_multiple_access_types(
 
     assert len(result) == 1
     assert result[0].id == property.id
+
+
+def test_list_accessible_properties_rejects_user_without_employee_record(
+    db_session,
+):
+    user = create_user(db_session, create_employee_record=False)
+    service = PropertyAccessService(db_session)
+
+    with pytest.raises(ValueError, match="Employee record not found"):
+        service.list_accessible_properties(user.id)
+
+
+def test_list_accessible_properties_rejects_terminated_employee(
+    db_session,
+):
+    user = create_user(db_session)
+    employee = (
+        db_session.query(Employee)
+        .filter(Employee.user_id == user.id)
+        .one()
+    )
+    employee.ended_at = datetime.now(UTC)
+    db_session.flush()
+
+    service = PropertyAccessService(db_session)
+
+    with pytest.raises(ValueError, match="Employee is terminated"):
+        service.list_accessible_properties(user.id)
+
+
+def test_list_accessible_properties_rejects_inactive_user(
+    db_session,
+):
+    user = create_user(db_session)
+    user.is_active = False
+    db_session.flush()
+
+    service = PropertyAccessService(db_session)
+
+    with pytest.raises(ValueError, match="Employee is inactive"):
+        service.list_accessible_properties(user.id)
+
+
+def test_list_accessible_properties_rejects_non_employee_role(
+    db_session,
+):
+    user = create_user(db_session, role="landlord")
+    service = PropertyAccessService(db_session)
+
+    with pytest.raises(ValueError, match="User must be an employee"):
+        service.list_accessible_properties(user.id)

@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, String, Text, Uuid, text
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, ForeignKeyConstraint, Index, String, Text, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -11,6 +11,11 @@ class InstallationAssignment(Base):
     __tablename__ = "installation_assignments"
 
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["contractor_member_id", "contractor_id"],
+            ["contractor_members.id", "contractor_members.contractor_id"],
+            name="fk_installation_assignments_member_contractor",
+        ),
         CheckConstraint(
             "status IN ('assigned', 'in_progress', 'submitted', 'completed', 'cancelled')",
             name="ck_installation_assignment_status",
@@ -62,7 +67,6 @@ class InstallationAssignment(Base):
 
     contractor_member_id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey("contractor_members.id"),
         nullable=False,
         index=True,
     )

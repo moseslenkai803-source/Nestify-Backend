@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 
@@ -643,6 +644,7 @@ def test_cancel_manufacturing_order_api(db_session):
 
         response = client.post(
             f"/api/v1/manufacturing-orders/{order.order_code}/cancel",
+            json={"reason": "Test cancellation"},
             headers={
                 "Authorization": f"Bearer {access_token}",
             },
@@ -653,6 +655,9 @@ def test_cancel_manufacturing_order_api(db_session):
         data = response.json()
 
         assert data["status"] == "cancelled"
+        assert data["cancelled_by"] == str(employee_id)
+        assert data["cancelled_at"] is not None
+        assert data["cancellation_reason"] == "Test cancellation"
 
         db_session.refresh(order)
 
@@ -676,6 +681,7 @@ def test_cancel_manufacturing_order_api_returns_404_for_missing_order(
 
         response = client.post(
             "/api/v1/manufacturing-orders/MO-DOES-NOT-EXIST/cancel",
+            json={"reason": "Test cancellation"},
             headers={
                 "Authorization": f"Bearer {access_token}",
             },
@@ -715,6 +721,7 @@ def test_cancel_manufacturing_order_api_rejects_completed_order(
 
         response = client.post(
             f"/api/v1/manufacturing-orders/{order.order_code}/cancel",
+            json={"reason": "Test cancellation"},
             headers={
                 "Authorization": f"Bearer {access_token}",
             },
@@ -728,6 +735,197 @@ def test_cancel_manufacturing_order_api_rejects_completed_order(
         db_session.refresh(order)
 
         assert order.status == "completed"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_cancel_manufacturing_order_api_allows_admin_without_clearance(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+        employee_id, _ = create_plate_operations_employee(db_session)
+        admin_token = create_user_access_token(db_session, role="admin")
+
+        order = ManufacturingOrder(
+            order_code=f"MO-ADMIN-CANCEL-{uuid.uuid4().hex[:8].upper()}",
+            quantity=2,
+            status="draft",
+            created_by=employee_id,
+        )
+        db_session.add(order)
+        db_session.flush()
+
+        response = client.post(
+            f"/api/v1/manufacturing-orders/{order.order_code}/cancel",
+            json={"reason": "Administrative cancellation"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "cancelled"
+        assert response.json()["cancellation_reason"] == (
+            "Administrative cancellation"
+        )
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_cancel_manufacturing_order_api_requires_plate_operations_clearance(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+        employee_id, _ = create_plate_operations_employee(db_session)
+        restricted_token = create_user_access_token(
+            db_session,
+            role="employee",
+            clearance="support",
+        )
+
+        order = ManufacturingOrder(
+            order_code=f"MO-RESTRICTED-{uuid.uuid4().hex[:8].upper()}",
+            quantity=2,
+            status="draft",
+            created_by=employee_id,
+        )
+        db_session.add(order)
+        db_session.flush()
+
+        response = client.post(
+            f"/api/v1/manufacturing-orders/{order.order_code}/cancel",
+            json={"reason": "Attempt without clearance"},
+            headers={"Authorization": f"Bearer {restricted_token}"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Insufficient employee clearance"
+
+        db_session.refresh(order)
+        assert order.status == "draft"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_cancel_manufacturing_order_api_rejects_contractor(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+        employee_id, _ = create_plate_operations_employee(db_session)
+        contractor_token = create_user_access_token(
+            db_session,
+            role="contractor",
+        )
+
+        order = ManufacturingOrder(
+            order_code=f"MO-CONTRACTOR-{uuid.uuid4().hex[:8].upper()}",
+            quantity=2,
+            status="draft",
+            created_by=employee_id,
+        )
+        db_session.add(order)
+        db_session.flush()
+
+        response = client.post(
+            f"/api/v1/manufacturing-orders/{order.order_code}/cancel",
+            json={"reason": "Contractor cancellation attempt"},
+            headers={"Authorization": f"Bearer {contractor_token}"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Employee access required"
+
+        db_session.refresh(order)
+        assert order.status == "draft"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_cancel_manufacturing_order_api_rejects_ended_employee(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+        employee_id, access_token = create_plate_operations_employee(
+            db_session
+        )
+
+        employee_record = (
+            db_session.query(Employee)
+            .filter(Employee.user_id == employee_id)
+            .one()
+        )
+        employee_record.ended_at = datetime.now(UTC)
+        db_session.flush()
+
+        order = ManufacturingOrder(
+            order_code=f"MO-ENDED-{uuid.uuid4().hex[:8].upper()}",
+            quantity=2,
+            status="draft",
+            created_by=employee_id,
+        )
+        db_session.add(order)
+        db_session.flush()
+
+        response = client.post(
+            f"/api/v1/manufacturing-orders/{order.order_code}/cancel",
+            json={"reason": "Ended employee attempt"},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Employee access required"
+
+        db_session.refresh(order)
+        assert order.status == "draft"
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_cancel_manufacturing_order_api_rejects_whitespace_reason(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+        employee_id, access_token = create_plate_operations_employee(
+            db_session
+        )
+
+        order = ManufacturingOrder(
+            order_code=f"MO-BLANK-REASON-{uuid.uuid4().hex[:8].upper()}",
+            quantity=2,
+            status="draft",
+            created_by=employee_id,
+        )
+        db_session.add(order)
+        db_session.flush()
+
+        response = client.post(
+            f"/api/v1/manufacturing-orders/{order.order_code}/cancel",
+            json={"reason": "   "},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 422
+
+        db_session.refresh(order)
+        assert order.status == "draft"
 
     finally:
         app.dependency_overrides.clear()
@@ -916,10 +1114,11 @@ def test_list_manufacturing_orders_api_filters_by_status(
         assert response.status_code == 200
 
         data = response.json()
+        returned_codes = {item["order_code"] for item in data}
 
-        assert len(data) == 1
-        assert data[0]["order_code"] == approved_order.order_code
-        assert data[0]["status"] == "approved"
+        assert approved_order.order_code in returned_codes
+        assert draft_order.order_code not in returned_codes
+        assert all(item["status"] == "approved" for item in data)
 
     finally:
         app.dependency_overrides.clear()

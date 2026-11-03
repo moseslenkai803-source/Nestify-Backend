@@ -24,6 +24,7 @@ from app.models.listing import Listing
 from app.models.employee import Employee
 from app.models.employee_clearance import EmployeeClearance
 from app.models.employee_invitation import EmployeeInvitation
+from app.models.email_outbox import EmailOutbox
 
 __all__ = [
     "Base",
@@ -52,4 +53,5 @@ __all__ = [
     "Employee",
     "EmployeeClearance",
     "EmployeeInvitation",
+    "EmailOutbox",
 ]

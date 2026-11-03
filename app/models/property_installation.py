@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, UTC
 
-from sqlalchemy import DateTime, Float, ForeignKey, String, Text, Uuid
+from sqlalchemy import DateTime, Float, ForeignKey, Index, String, Text, Uuid, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -9,6 +9,15 @@ from app.models.base import Base
 
 class PropertyInstallation(Base):
     __tablename__ = "property_installations"
+
+    __table_args__ = (
+        Index(
+            "uq_property_installations_one_submitted_per_property",
+            "property_id",
+            unique=True,
+            postgresql_where=text("status = 'submitted'"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         Uuid,
