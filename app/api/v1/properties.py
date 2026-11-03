@@ -559,6 +559,7 @@ def verify_property_installation(
             else 403
             if str(exc) in {
                 "User is not authorized for this property",
+                "User is not authorized to verify installations",
                 "Verifier is inactive",
             }
             else 400

@@ -8,6 +8,7 @@ from app.db.session import SessionLocal
 from app.models.address_plate import AddressPlate
 from app.models.address_plate_lifecycle_event import AddressPlateLifecycleEvent
 from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 from app.models.property_installation import PropertyInstallation
 from app.models.property_installation_verification import PropertyInstallationVerification
 from app.models.landlord import Landlord
@@ -93,6 +94,28 @@ def test_activate_property_activates_verified_plate(db_session):
             user_id=employee.id,
             property_id=property.id,
             access_type="plate_operations",
+            is_active=True,
+        )
+    )
+    db_session.flush()
+
+    reviewer_employee = (
+        db_session.query(Employee)
+        .filter(Employee.user_id == reviewer.id)
+        .one()
+    )
+    db_session.add(
+        EmployeeClearance(
+            employee_id=reviewer_employee.id,
+            clearance="installation_verification",
+            is_active=True,
+        )
+    )
+    db_session.add(
+        PropertyAccess(
+            user_id=reviewer.id,
+            property_id=property.id,
+            access_type="installation_verification",
             is_active=True,
         )
     )
@@ -454,6 +477,28 @@ def test_activate_property_serializes_concurrent_activation_attempts(
             user_id=employee_two.id,
             property_id=property.id,
             access_type="plate_operations",
+            is_active=True,
+        )
+    )
+    db_session.flush()
+
+    employee_two_record = (
+        db_session.query(Employee)
+        .filter(Employee.user_id == employee_two.id)
+        .one()
+    )
+    db_session.add(
+        EmployeeClearance(
+            employee_id=employee_two_record.id,
+            clearance="installation_verification",
+            is_active=True,
+        )
+    )
+    db_session.add(
+        PropertyAccess(
+            user_id=employee_two.id,
+            property_id=property.id,
+            access_type="installation_verification",
             is_active=True,
         )
     )

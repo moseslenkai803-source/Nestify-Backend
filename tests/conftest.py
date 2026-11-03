@@ -76,6 +76,14 @@ def cleanup_installation_test_context(
         {"property_id": property_id},
     )
 
+    db.execute(
+        text(
+            "DELETE FROM property_access "
+            "WHERE property_id = :property_id"
+        ),
+        {"property_id": property_id},
+    )
+
     landlord_ids = [
         row[0]
         for row in db.execute(
@@ -97,6 +105,24 @@ def cleanup_installation_test_context(
             text("DELETE FROM landlords WHERE id = :landlord_id"),
             {"landlord_id": landlord_id},
         )
+
+    db.execute(
+        text(
+            "DELETE FROM employee_clearances "
+            "WHERE employee_id IN ("
+            "SELECT id FROM employees "
+            "WHERE user_id = ANY(:user_ids))"
+        ),
+        {"user_ids": user_ids},
+    )
+
+    db.execute(
+        text(
+            "DELETE FROM employees "
+            "WHERE user_id = ANY(:user_ids)"
+        ),
+        {"user_ids": user_ids},
+    )
 
     for user_id in user_ids:
         db.execute(

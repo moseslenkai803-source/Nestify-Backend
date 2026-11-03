@@ -10,6 +10,10 @@ from app.models.property_installation_verification import (
 )
 from app.core.property_actions import PropertyAction
 from app.repositories.property_access_repository import PropertyAccessRepository
+from app.repositories.employee_repository import EmployeeRepository
+from app.repositories.employee_clearance_repository import (
+    EmployeeClearanceRepository,
+)
 from app.repositories.property_installation_repository import (
     PropertyInstallationRepository,
 )
@@ -29,6 +33,8 @@ class PropertyInstallationVerificationService:
     def __init__(self, db: Session):
         self.db = db
         self.property_access_repository = PropertyAccessRepository(db)
+        self.employee_repository = EmployeeRepository(db)
+        self.employee_clearance_repository = EmployeeClearanceRepository(db)
         self.property_installation_repository = (
             PropertyInstallationRepository(db)
         )
@@ -39,10 +45,101 @@ class PropertyInstallationVerificationService:
         self.user_repository = UserRepository(db)
         self.lifecycle_service = AddressPlateLifecycleService(db)
 
+
+    def _authorize_reviewer(
+        self,
+        user: User,
+        property_id: UUID | None = None,
+    ) -> None:
+        if user.role == "admin":
+            locked_user = self.user_repository.get_by_id_for_update(
+                user.id
+            )
+
+            if (
+                locked_user is None
+                or not locked_user.is_active
+                or locked_user.role != "admin"
+            ):
+                raise ValueError(
+                    "User is not authorized to verify installations"
+                )
+            return
+
+        if user.role != "employee":
+            raise ValueError(
+                "User is not authorized to verify installations"
+            )
+
+        employee = self.employee_repository.get_by_user_id_for_update(
+            user.id
+        )
+
+        if employee is None or employee.ended_at is not None:
+            raise ValueError(
+                "User is not authorized to verify installations"
+            )
+
+        locked_user = self.user_repository.get_by_id_for_update(
+            employee.user_id
+        )
+
+        if (
+            locked_user is None
+            or not locked_user.is_active
+            or locked_user.role != "employee"
+        ):
+            raise ValueError(
+                "User is not authorized to verify installations"
+            )
+
+        clearance = (
+            self.employee_clearance_repository
+            .get_by_employee_and_clearance(
+                employee_id=employee.id,
+                clearance="installation_verification",
+            )
+        )
+
+        if clearance is None:
+            raise ValueError(
+                "User is not authorized to verify installations"
+            )
+
+        clearance = (
+            self.employee_clearance_repository.get_by_id_for_update(
+                clearance.id
+            )
+        )
+
+        if clearance is None or not clearance.is_active:
+            raise ValueError(
+                "User is not authorized to verify installations"
+            )
+
+        if property_id is not None:
+            property_access = (
+                self.property_access_repository
+                .get_by_user_property_type_for_update(
+                    user_id=user.id,
+                    property_id=property_id,
+                    access_type=(
+                        PropertyAction.INSTALLATION_VERIFICATION.value
+                    ),
+                )
+            )
+
+            if property_access is None or not property_access.is_active:
+                raise ValueError(
+                    "User is not authorized to verify installations"
+                )
+
     def list_pending_installations(
         self,
         user: User,
     ) -> list[PropertyInstallation]:
+        self._authorize_reviewer(user)
+
         if user.role == "admin":
             return self.property_installation_repository.get_all_submitted()
 
@@ -130,6 +227,11 @@ class PropertyInstallationVerificationService:
 
         if not reviewer.is_active:
             raise ValueError("Verifier is inactive")
+
+        self._authorize_reviewer(
+            reviewer,
+            property_id=installation.property_id,
+        )
 
         verification = PropertyInstallationVerification(
             installation_id=installation_id,

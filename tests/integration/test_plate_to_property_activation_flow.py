@@ -7,6 +7,7 @@ from app.models.address_plate_request import AddressPlateRequest
 from app.models.contractor import Contractor
 from app.models.contractor_member import ContractorMember
 from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_access import PropertyAccess
@@ -66,11 +67,17 @@ def test_plate_to_property_activation_flow(db_session):
         email=f"golden-verifier-{uuid.uuid4()}@example.com",
         password_hash="test-hash",
         role="employee",
-        clearance="installation_verification",
         is_active=True,
     )
     db_session.add(verification_employee)
     db_session.flush()
+
+    verification_employee_record = Employee(
+        user_id=verification_employee.id,
+        employee_number=f"EMP-VERIFY-{uuid.uuid4().hex}",
+        department="Operations",
+        position="Installation Verification",
+    )
 
     db_session.add_all([
         Employee(
@@ -79,12 +86,7 @@ def test_plate_to_property_activation_flow(db_session):
             department="Operations",
             position="Plate Operations",
         ),
-        Employee(
-            user_id=verification_employee.id,
-            employee_number=f"EMP-VERIFY-{uuid.uuid4().hex}",
-            department="Operations",
-            position="Installation Verification",
-        ),
+        verification_employee_record,
     ])
     db_session.flush()
 
@@ -126,6 +128,21 @@ def test_plate_to_property_activation_flow(db_session):
     db_session.add(property)
     db_session.flush()
 
+    db_session.add(
+        EmployeeClearance(
+            employee_id=verification_employee_record.id,
+            clearance="installation_verification",
+            is_active=True,
+        )
+    )
+    db_session.add(
+        PropertyAccess(
+            user_id=verification_employee.id,
+            property_id=property.id,
+            access_type="installation_verification",
+            is_active=True,
+        )
+    )
     db_session.add(
         PropertyAccess(
             user_id=plate_employee.id,

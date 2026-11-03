@@ -1,6 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 from threading import Event, Thread
+from time import monotonic, sleep
 
 import pytest
 from sqlalchemy import text
@@ -12,16 +13,23 @@ from app.models.address_plate import AddressPlate
 from app.models.contractor import Contractor
 from app.models.contractor_member import ContractorMember
 from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
+from app.models.property_access import PropertyAccess
 from app.models.installation_assignment import InstallationAssignment
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_address import PropertyAddress
 from app.models.property_verification import PropertyVerification
 from app.models.property_installation import PropertyInstallation
+from app.models.property_installation_verification import (
+    PropertyInstallationVerification,
+)
 from app.models.user import User
 from app.services.address_plate_lifecycle_service import (
     AddressPlateLifecycleService,
 )
+from app.services.employee_service import EmployeeService
+from app.services.property_access_service import PropertyAccessService
 from app.services.property_installation_verification_service import (
     PropertyInstallationVerificationService,
 )
@@ -37,6 +45,140 @@ def create_employee_record(db_session, user):
         )
     )
     db_session.flush()
+
+
+
+def authorize_installation_reviewer(db_session, user, property_id):
+    employee = (
+        db_session.query(Employee)
+        .filter(Employee.user_id == user.id)
+        .one_or_none()
+    )
+
+    if employee is None:
+        employee = Employee(
+            user_id=user.id,
+            employee_number=f"TEST-{uuid.uuid4().hex}",
+            department="Operations",
+            position="Installation Verification",
+        )
+        db_session.add(employee)
+        db_session.flush()
+
+    clearance = (
+        db_session.query(EmployeeClearance)
+        .filter(
+            EmployeeClearance.employee_id == employee.id,
+            EmployeeClearance.clearance == "installation_verification",
+        )
+        .one_or_none()
+    )
+
+    if clearance is None:
+        db_session.add(
+            EmployeeClearance(
+                employee_id=employee.id,
+                clearance="installation_verification",
+                is_active=True,
+            )
+        )
+    else:
+        clearance.is_active = True
+
+    access = (
+        db_session.query(PropertyAccess)
+        .filter(
+            PropertyAccess.user_id == user.id,
+            PropertyAccess.property_id == property_id,
+            PropertyAccess.access_type == "installation_verification",
+        )
+        .one_or_none()
+    )
+
+    if access is None:
+        db_session.add(
+            PropertyAccess(
+                user_id=user.id,
+                property_id=property_id,
+                access_type="installation_verification",
+                is_active=True,
+            )
+        )
+    else:
+        access.is_active = True
+
+    db_session.flush()
+
+
+def create_authorized_reviewer_context(db_session):
+    _, installer, property_record, plate = create_installation_context(
+        db_session
+    )
+
+    reviewer = User(
+        id=uuid.uuid4(),
+        email=f"reviewer-revocation-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="employee",
+        is_active=True,
+    )
+    db_session.add(reviewer)
+    db_session.flush()
+
+    authorize_installation_reviewer(
+        db_session,
+        reviewer,
+        property_record.id,
+    )
+
+    employee = (
+        db_session.query(Employee)
+        .filter(Employee.user_id == reviewer.id)
+        .one()
+    )
+    clearance = (
+        db_session.query(EmployeeClearance)
+        .filter(
+            EmployeeClearance.employee_id == employee.id,
+            EmployeeClearance.clearance == "installation_verification",
+        )
+        .one()
+    )
+    property_access = (
+        db_session.query(PropertyAccess)
+        .filter(
+            PropertyAccess.user_id == reviewer.id,
+            PropertyAccess.property_id == property_record.id,
+            PropertyAccess.access_type == "installation_verification",
+        )
+        .one()
+    )
+
+    installation = PropertyInstallation(
+        id=uuid.uuid4(),
+        property_id=property_record.id,
+        plate_id=plate.id,
+        installer_id=installer.id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        accuracy_meters=5.0,
+        captured_at=datetime.now(UTC),
+        status="submitted",
+    )
+    db_session.add(installation)
+    db_session.flush()
+
+    service = PropertyInstallationVerificationService(db_session)
+
+    return (
+        reviewer,
+        employee,
+        clearance,
+        property_access,
+        property_record,
+        installation,
+        service,
+    )
 
 
 def create_installation_context(db_session):
@@ -209,6 +351,12 @@ def test_verify_assignment_linked_installation_completes_assignment(db_session):
     db_session.add(installation)
     db_session.flush()
 
+    authorize_installation_reviewer(
+        db_session,
+        reviewer,
+        property_record.id,
+    )
+
     service = PropertyInstallationVerificationService(db_session)
 
     result = service.verify_installation(
@@ -276,6 +424,12 @@ def test_verify_installation_marks_installation_verified(db_session):
 
     db_session.add(installation)
     db_session.flush()
+
+    authorize_installation_reviewer(
+        db_session,
+        reviewer,
+        property_record.id,
+    )
 
     service = PropertyInstallationVerificationService(db_session)
 
@@ -350,6 +504,12 @@ def test_verify_installation_marks_installation_rejected(db_session):
 
     db_session.add(installation)
     db_session.flush()
+
+    authorize_installation_reviewer(
+        db_session,
+        reviewer,
+        property_record.id,
+    )
 
     service = PropertyInstallationVerificationService(db_session)
 
@@ -463,6 +623,143 @@ def test_verify_installation_rejects_non_submitted_installation(db_session):
             verified_by=reviewer.id,
             status="rejected",
         )
+
+def test_ended_employee_cannot_verify_or_view_pending_installations(
+    db_session,
+):
+    (
+        reviewer,
+        employee,
+        _,
+        _,
+        property_record,
+        installation,
+        service,
+    ) = create_authorized_reviewer_context(db_session)
+
+    employee.ended_at = datetime.now(UTC)
+    db_session.flush()
+
+    with pytest.raises(
+        ValueError,
+        match="User is not authorized to verify installations",
+    ):
+        service.verify_installation(
+            property_id=property_record.id,
+            installation_id=installation.id,
+            verified_by=reviewer.id,
+            status="verified",
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="User is not authorized to verify installations",
+    ):
+        service.list_pending_installations(reviewer)
+
+    db_session.refresh(installation)
+    assert installation.status == "submitted"
+
+    verification_count = (
+        db_session.query(PropertyInstallationVerification)
+        .filter(
+            PropertyInstallationVerification.installation_id
+            == installation.id
+        )
+        .count()
+    )
+    assert verification_count == 0
+
+
+def test_employee_with_inactive_clearance_cannot_verify_or_view_pending(
+    db_session,
+):
+    (
+        reviewer,
+        _,
+        clearance,
+        _,
+        property_record,
+        installation,
+        service,
+    ) = create_authorized_reviewer_context(db_session)
+
+    clearance.is_active = False
+    db_session.flush()
+
+    with pytest.raises(
+        ValueError,
+        match="User is not authorized to verify installations",
+    ):
+        service.verify_installation(
+            property_id=property_record.id,
+            installation_id=installation.id,
+            verified_by=reviewer.id,
+            status="verified",
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="User is not authorized to verify installations",
+    ):
+        service.list_pending_installations(reviewer)
+
+    db_session.refresh(installation)
+    assert installation.status == "submitted"
+
+    verification_count = (
+        db_session.query(PropertyInstallationVerification)
+        .filter(
+            PropertyInstallationVerification.installation_id
+            == installation.id
+        )
+        .count()
+    )
+    assert verification_count == 0
+
+
+def test_employee_with_inactive_property_access_cannot_verify_or_view_property(
+    db_session,
+):
+    (
+        reviewer,
+        _,
+        _,
+        property_access,
+        property_record,
+        installation,
+        service,
+    ) = create_authorized_reviewer_context(db_session)
+
+    property_access.is_active = False
+    db_session.flush()
+
+    with pytest.raises(
+        ValueError,
+        match="User is not authorized to verify installations",
+    ):
+        service.verify_installation(
+            property_id=property_record.id,
+            installation_id=installation.id,
+            verified_by=reviewer.id,
+            status="verified",
+        )
+
+    assert service.list_pending_installations(reviewer) == []
+
+    db_session.refresh(installation)
+    assert installation.status == "submitted"
+
+    verification_count = (
+        db_session.query(PropertyInstallationVerification)
+        .filter(
+            PropertyInstallationVerification.installation_id
+            == installation.id
+        )
+        .count()
+    )
+    assert verification_count == 0
+
 
 def test_verify_installation_requires_existing_verifier(db_session):
     _, installer, property_record, plate = create_installation_context(db_session)
@@ -628,6 +925,17 @@ def test_verify_installation_serializes_concurrent_verification_attempts(
     db_session.add(installation)
     db_session.flush()
 
+    authorize_installation_reviewer(
+        db_session,
+        reviewer_one,
+        property_record.id,
+    )
+    authorize_installation_reviewer(
+        db_session,
+        reviewer_two,
+        property_record.id,
+    )
+
     installation_id = installation.id
     property_id = property_record.id
 
@@ -728,6 +1036,198 @@ def test_verify_installation_serializes_concurrent_verification_attempts(
 
 
 
+
+
+def _assert_revocation_race_rejects_verification(
+    db_session,
+    revoke_authorization,
+):
+    (
+        reviewer,
+        employee,
+        clearance,
+        property_access,
+        property_record,
+        installation,
+        _,
+    ) = create_authorized_reviewer_context(db_session)
+
+    reviewer_id = reviewer.id
+    employee_id = employee.id
+    property_id = property_record.id
+    installation_id = installation.id
+
+    db_session.commit()
+
+    revocation_session = SessionLocal()
+    verification_session = SessionLocal()
+
+    verification_backend_pid = verification_session.execute(
+        text("SELECT pg_backend_pid()")
+    ).scalar_one()
+
+    verification_started = Event()
+    verification_finished = Event()
+    verification_error = {}
+    thread = None
+
+    try:
+        revoke_authorization(
+            revocation_session,
+            employee_id,
+            reviewer_id,
+            property_id,
+        )
+
+        def verify_in_separate_transaction():
+            try:
+                service = PropertyInstallationVerificationService(
+                    verification_session
+                )
+                verification_started.set()
+
+                service.verify_installation(
+                    property_id=property_id,
+                    installation_id=installation_id,
+                    verified_by=reviewer_id,
+                    status="verified",
+                )
+            except Exception as exc:
+                verification_error["error"] = exc
+            finally:
+                verification_finished.set()
+
+        thread = Thread(target=verify_in_separate_transaction)
+        thread.start()
+
+        assert verification_started.wait(timeout=2)
+
+        # Confirm PostgreSQL reports that verification is actually waiting
+        # for a row lock held by the revocation transaction.
+        lock_wait_deadline = monotonic() + 3
+        lock_wait_observed = False
+
+        while monotonic() < lock_wait_deadline:
+            wait_event_type = db_session.execute(
+                text(
+                    "SELECT wait_event_type "
+                    "FROM pg_stat_activity "
+                    "WHERE pid = :pid"
+                ),
+                {"pid": verification_backend_pid},
+            ).scalar_one_or_none()
+
+            if wait_event_type == "Lock":
+                lock_wait_observed = True
+                break
+
+            if verification_finished.is_set():
+                break
+
+            sleep(0.01)
+
+        assert lock_wait_observed, (
+            "Verification never entered a PostgreSQL lock wait"
+        )
+
+        # The revocation owns the authorization-row lock. Committing it
+        # allows the waiting verification transaction to read the new state.
+        revocation_session.commit()
+
+        assert verification_finished.wait(timeout=3)
+        thread.join(timeout=3)
+        assert not thread.is_alive()
+
+        error = verification_error.get("error")
+        assert isinstance(error, ValueError)
+        assert str(error) == (
+            "User is not authorized to verify installations"
+        )
+
+        observer_session = SessionLocal()
+        try:
+            persisted_installation = (
+                observer_session.query(PropertyInstallation)
+                .filter(PropertyInstallation.id == installation_id)
+                .one()
+            )
+            verification_count = (
+                observer_session.query(PropertyInstallationVerification)
+                .filter(
+                    PropertyInstallationVerification.installation_id
+                    == installation_id
+                )
+                .count()
+            )
+
+            assert persisted_installation.status == "submitted"
+            assert verification_count == 0
+        finally:
+            observer_session.close()
+
+    finally:
+        if thread is not None and thread.is_alive():
+            # Release any held locks if an assertion fails before commit.
+            revocation_session.rollback()
+            thread.join(timeout=3)
+
+        revocation_session.rollback()
+        verification_session.rollback()
+        revocation_session.close()
+        verification_session.close()
+
+        cleanup_session = SessionLocal()
+        try:
+            cleanup_installation_test_context(
+                cleanup_session,
+                property_id,
+                [reviewer_id],
+            )
+        finally:
+            cleanup_session.close()
+
+
+def test_clearance_revocation_racing_verification_rejects_verification(
+    db_session,
+):
+    def revoke_clearance(
+        session,
+        employee_id,
+        reviewer_id,
+        property_id,
+    ):
+        EmployeeService(session).remove_clearance(
+            employee_id=employee_id,
+            clearance="installation_verification",
+        )
+
+    _assert_revocation_race_rejects_verification(
+        db_session,
+        revoke_clearance,
+    )
+
+
+def test_property_access_revocation_racing_verification_rejects_verification(
+    db_session,
+):
+    def revoke_property_access(
+        session,
+        employee_id,
+        reviewer_id,
+        property_id,
+    ):
+        PropertyAccessService(session).revoke_access(
+            user_id=reviewer_id,
+            property_id=property_id,
+            access_type="installation_verification",
+        )
+
+    _assert_revocation_race_rejects_verification(
+        db_session,
+        revoke_property_access,
+    )
+
+
 def test_verify_assignment_linked_installation_rejection_returns_assignment_to_in_progress(db_session):
     _, installer, property_record, plate = create_installation_context(db_session)
 
@@ -794,6 +1294,12 @@ def test_verify_assignment_linked_installation_rejection_returns_assignment_to_i
     )
     db_session.add(installation)
     db_session.flush()
+
+    authorize_installation_reviewer(
+        db_session,
+        reviewer,
+        property_record.id,
+    )
 
     service = PropertyInstallationVerificationService(db_session)
 
@@ -896,6 +1402,12 @@ def test_verify_cancelled_assignment_linked_installation_can_be_resolved(db_sess
     )
     db_session.add(installation)
     db_session.flush()
+
+    authorize_installation_reviewer(
+        db_session,
+        reviewer,
+        property_record.id,
+    )
 
     service = PropertyInstallationVerificationService(db_session)
 
@@ -1084,6 +1596,12 @@ def test_list_pending_installations_returns_submitted_installations_for_authoriz
         access_type="installation_verification",
     )
 
+    authorize_installation_reviewer(
+        db_session,
+        reviewer,
+        property_record.id,
+    )
+
     installation = PropertyInstallation(
         id=uuid.uuid4(),
         property_id=property_record.id,
@@ -1245,6 +1763,12 @@ def test_list_pending_installations_excludes_properties_without_verification_acc
         access_type="installation_verification",
     )
 
+    authorize_installation_reviewer(
+        db_session,
+        reviewer,
+        authorized_property.id,
+    )
+
     authorized_installation = PropertyInstallation(
         id=uuid.uuid4(),
         property_id=authorized_property.id,
@@ -1307,6 +1831,12 @@ def test_list_pending_installations_excludes_non_submitted_installations(
         user_id=reviewer.id,
         property_id=property_record.id,
         access_type="installation_verification",
+    )
+
+    authorize_installation_reviewer(
+        db_session,
+        reviewer,
+        property_record.id,
     )
 
     submitted_installation = PropertyInstallation(
@@ -1455,6 +1985,12 @@ def test_pending_queue_includes_installation_from_cancelled_assignment(
             access_type="installation_verification",
         )
 
+        authorize_installation_reviewer(
+            db_session,
+            reviewer,
+            property_record.id,
+        )
+
     service = PropertyInstallationVerificationService(db_session)
     result = service.list_pending_installations(reviewer)
     result_ids = {item.id for item in result}
@@ -1468,3 +2004,43 @@ def test_pending_queue_includes_installation_from_cancelled_assignment(
 
     assert cancelled_assignment_installation.status == "submitted"
     assert assignment.status == "cancelled"
+
+
+def test_admin_reviewer_rejected_when_locked_user_role_has_changed(
+    db_session,
+    monkeypatch,
+):
+    admin = User(
+        id=uuid.uuid4(),
+        email=f"admin-role-change-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="admin",
+        is_active=True,
+    )
+
+    db_session.add(admin)
+    db_session.flush()
+
+    service = PropertyInstallationVerificationService(db_session)
+
+    # Simulate the current database record having a different role
+    # when the locked user record is retrieved.
+    locked_user = User(
+        id=admin.id,
+        email=admin.email,
+        password_hash="hashed-password",
+        role="employee",
+        is_active=True,
+    )
+
+    monkeypatch.setattr(
+        service.user_repository,
+        "get_by_id_for_update",
+        lambda user_id: locked_user,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="User is not authorized to verify installations",
+    ):
+        service._authorize_reviewer(admin)

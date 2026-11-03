@@ -9,6 +9,9 @@ from app.db.session import SessionLocal
 from app.models.address_plate import AddressPlate
 from app.models.contractor import Contractor
 from app.models.contractor_member import ContractorMember
+from app.models.employee import Employee
+from app.models.employee_clearance import EmployeeClearance
+from app.models.property_access import PropertyAccess
 from app.models.installation_assignment import InstallationAssignment
 from app.models.landlord import Landlord
 from app.models.property import Property
@@ -1084,6 +1087,32 @@ def test_replacement_submission_allowed_after_cancelled_evidence_is_rejected(
         is_active=True,
     )
     db_session.add(reviewer)
+    db_session.flush()
+
+    reviewer_employee = Employee(
+        user_id=reviewer.id,
+        employee_number=f"EMP-REV-{uuid.uuid4().hex}",
+        department="Operations",
+        position="Installation Verification",
+    )
+    db_session.add(reviewer_employee)
+    db_session.flush()
+
+    db_session.add(
+        EmployeeClearance(
+            employee_id=reviewer_employee.id,
+            clearance="installation_verification",
+            is_active=True,
+        )
+    )
+    db_session.add(
+        PropertyAccess(
+            user_id=reviewer.id,
+            property_id=context["property"].id,
+            access_type="installation_verification",
+            is_active=True,
+        )
+    )
     db_session.flush()
 
     verification_service = PropertyInstallationVerificationService(
