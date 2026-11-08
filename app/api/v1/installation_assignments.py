@@ -44,7 +44,21 @@ def list_installation_assignments(
 ):
     service = InstallationAssignmentQueryService(db)
 
-    return service.list_assignments(status=status)
+    try:
+        return service.list_assignments(
+            user_id=current_employee.id,
+            status=status,
+        )
+    except ValueError as exc:
+        status_code = (
+            404
+            if str(exc) in {"User not found", "Property not found"}
+            else 403
+        )
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get(
@@ -60,7 +74,21 @@ def list_installation_assignment_property_plates(
 ):
     service = InstallationAssignmentQueryService(db)
 
-    return service.list_dispatched_plates(property_id)
+    try:
+        return service.list_dispatched_plates(
+            user_id=current_employee.id,
+            property_id=property_id,
+        )
+    except ValueError as exc:
+        status_code = (
+            404
+            if str(exc) in {"User not found", "Property not found"}
+            else 403
+        )
+        raise HTTPException(
+            status_code=status_code,
+            detail=str(exc),
+        ) from exc
 
 
 @router.get(
@@ -152,6 +180,17 @@ def create_installation_assignment(
                 "Contractor member not found",
                 "Contractor member user not found",
                 "Assigning employee not found",
+                "User not found",
+                "Property not found",
+            }
+            else 403
+            if str(exc) in {
+                "User account is inactive",
+                "Only Nestify employees can perform plate operations",
+                "Employee record not found",
+                "Employee is terminated",
+                "Active plate_operations employee clearance is required",
+                "User is not authorized for this property",
             }
             else 400
         )
@@ -202,10 +241,13 @@ def cancel_installation_assignment(
                 "Cancelling employee not found",
             }
             else 403
-            if str(exc)
-            in {
-                "Cancelling employee is inactive",
-                "Only Nestify employees can cancel installations",
+            if str(exc) in {
+                "User account is inactive",
+                "Only Nestify employees can perform plate operations",
+                "Employee record not found",
+                "Employee is terminated",
+                "Active plate_operations employee clearance is required",
+                "User is not authorized for this property",
             }
             else 400
         )

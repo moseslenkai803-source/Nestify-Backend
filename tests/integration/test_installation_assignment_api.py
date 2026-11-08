@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from app.core.security import create_access_token
-from app.db.session import get_db
 from app.main import app
 from app.models.address_plate import AddressPlate
 from app.models.contractor import Contractor
@@ -12,6 +11,7 @@ from app.models.contractor_member import ContractorMember
 from app.models.installation_assignment import InstallationAssignment
 from app.models.landlord import Landlord
 from app.models.property import Property
+from app.models.property_access import PropertyAccess
 from app.models.employee import Employee
 from app.models.employee_clearance import EmployeeClearance
 from app.models.user import User
@@ -22,10 +22,6 @@ from app.services.address_plate_lifecycle_service import AddressPlateLifecycleSe
 def test_list_installation_assignment_property_plates_api(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -144,6 +140,16 @@ def test_list_installation_assignment_property_plates_api(
         )
         db_session.flush()
 
+        db_session.add(
+            PropertyAccess(
+                user_id=employee.id,
+                property_id=property_record.id,
+                access_type="plate_operations",
+                is_active=True,
+            )
+        )
+        db_session.flush()
+
         access_token = create_access_token(
             subject=str(employee.id),
         )
@@ -174,10 +180,6 @@ def test_list_installation_assignment_property_plates_api(
 def test_list_installation_assignment_property_plates_api_excludes_non_dispatched_latest_event(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -274,6 +276,16 @@ def test_list_installation_assignment_property_plates_api_excludes_non_dispatche
         )
         db_session.flush()
 
+        db_session.add(
+            PropertyAccess(
+                user_id=employee.id,
+                property_id=property_record.id,
+                access_type="plate_operations",
+                is_active=True,
+            )
+        )
+        db_session.flush()
+
         access_token = create_access_token(
             subject=str(employee.id),
         )
@@ -295,10 +307,6 @@ def test_list_installation_assignment_property_plates_api_excludes_non_dispatche
 def test_list_installation_assignment_property_plates_api_requires_plate_operations_clearance(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -349,10 +357,6 @@ def test_list_installation_assignment_property_plates_api_requires_plate_operati
         app.dependency_overrides.clear()
 
 def test_list_installation_assignment_contractors_api(db_session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -434,10 +438,6 @@ def test_list_installation_assignment_contractors_api(db_session):
 def test_list_installation_assignment_contractors_api_requires_plate_operations_clearance(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -491,10 +491,6 @@ def test_list_installation_assignment_contractors_api_requires_plate_operations_
 def test_list_installation_assignment_contractor_members_api(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -589,10 +585,6 @@ def test_list_installation_assignment_contractor_members_api(
 def test_list_installation_assignment_contractor_members_api_returns_404_for_missing_contractor(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -644,10 +636,6 @@ def test_list_installation_assignment_contractor_members_api_returns_404_for_mis
 def test_list_installation_assignment_contractor_members_api_rejects_inactive_contractor(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -707,10 +695,6 @@ def test_list_installation_assignment_contractor_members_api_rejects_inactive_co
 def test_list_installation_assignment_contractor_members_api_requires_plate_operations_clearance(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -762,10 +746,6 @@ def test_list_installation_assignment_contractor_members_api_requires_plate_oper
 
 
 def test_create_installation_assignment_api(db_session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -866,6 +846,16 @@ def test_create_installation_assignment_api(db_session):
             tzinfo=UTC,
         )
 
+        db_session.add(
+            PropertyAccess(
+                user_id=employee.id,
+                property_id=property.id,
+                access_type="plate_operations",
+                is_active=True,
+            )
+        )
+        db_session.flush()
+
         access_token = create_access_token(
             subject=str(employee.id),
         )
@@ -915,10 +905,6 @@ def test_create_installation_assignment_api(db_session):
 
 
 def test_create_installation_assignment_api_allows_admin(db_session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1053,10 +1039,6 @@ def test_create_installation_assignment_api_allows_admin(db_session):
 def test_create_installation_assignment_api_requires_plate_operations_clearance(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1116,10 +1098,6 @@ def test_create_installation_assignment_api_requires_plate_operations_clearance(
 def test_create_installation_assignment_api_rejects_non_employee(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1162,10 +1140,6 @@ def test_create_installation_assignment_api_rejects_non_employee(
 def test_create_installation_assignment_api_returns_404_for_missing_property(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1223,10 +1197,6 @@ def test_create_installation_assignment_api_returns_404_for_missing_property(
 def test_create_installation_assignment_api_returns_404_for_missing_plate(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1337,10 +1307,6 @@ def test_create_installation_assignment_api_returns_404_for_missing_plate(
 def test_create_installation_assignment_api_rejects_plate_from_different_property(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1471,10 +1437,6 @@ def test_create_installation_assignment_api_rejects_plate_from_different_propert
 def test_create_installation_assignment_api_returns_404_for_missing_contractor(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1570,10 +1532,6 @@ def test_create_installation_assignment_api_returns_404_for_missing_contractor(
 def test_create_installation_assignment_api_returns_404_for_missing_contractor_member(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1675,10 +1633,6 @@ def test_create_installation_assignment_api_returns_404_for_missing_contractor_m
 def test_create_installation_assignment_api_rejects_member_from_different_contractor(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1807,10 +1761,6 @@ def test_create_installation_assignment_api_rejects_member_from_different_contra
 def test_create_installation_assignment_api_rejects_inactive_contractor(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1929,10 +1879,6 @@ def test_create_installation_assignment_api_rejects_inactive_contractor(
 def test_create_installation_assignment_api_rejects_inactive_contractor_member(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -2051,10 +1997,6 @@ def test_create_installation_assignment_api_rejects_inactive_contractor_member(
 def test_create_installation_assignment_api_rejects_inactive_contractor_member_user(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -2175,10 +2117,6 @@ def test_create_installation_assignment_api_rejects_inactive_contractor_member_u
 def test_create_installation_assignment_api_rejects_inactive_assigning_employee(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -2297,10 +2235,6 @@ def test_create_installation_assignment_api_rejects_inactive_assigning_employee(
 def test_create_installation_assignment_api_rejects_duplicate_active_property_assignment(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -2403,6 +2337,16 @@ def test_create_installation_assignment_api_rejects_duplicate_active_property_as
         db_session.add(first_assignment)
         db_session.flush()
 
+        db_session.add(
+            PropertyAccess(
+                user_id=employee.id,
+                property_id=property.id,
+                access_type="plate_operations",
+                is_active=True,
+            )
+        )
+        db_session.flush()
+
         access_token = create_access_token(
             subject=str(employee.id),
         )
@@ -2433,10 +2377,6 @@ def test_create_installation_assignment_api_rejects_duplicate_active_property_as
 def test_start_installation_assignment_api(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -2587,10 +2527,6 @@ def test_start_installation_assignment_api(
 def test_start_installation_assignment_api_rejects_wrong_contractor_user(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -2723,10 +2659,6 @@ def test_start_installation_assignment_api_rejects_wrong_contractor_user(
 def test_start_installation_assignment_api_rejects_user_whose_role_is_no_longer_contractor(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -2856,10 +2788,6 @@ def test_start_installation_assignment_api_rejects_user_whose_role_is_no_longer_
 def test_submit_installation_assignment_api_rejects_user_whose_role_is_no_longer_contractor(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -2996,10 +2924,6 @@ def test_submit_installation_assignment_api_rejects_user_whose_role_is_no_longer
 
 
 def test_submit_installation_assignment_api(db_session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -3160,10 +3084,6 @@ def test_submit_installation_assignment_api(db_session):
         app.dependency_overrides.clear()
 
 def test_submit_installation_assignment_api_rejects_wrong_contractor_user(db_session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -3300,10 +3220,6 @@ def test_submit_installation_assignment_api_rejects_wrong_contractor_user(db_ses
         app.dependency_overrides.clear()
 
 def test_submit_installation_assignment_api_rejects_assignment_not_in_progress(db_session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -3435,10 +3351,6 @@ def test_submit_installation_assignment_api_rejects_assignment_not_in_progress(d
 
 
 def test_cancel_installation_assignment_api(db_session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -3541,6 +3453,16 @@ def test_cancel_installation_assignment_api(db_session):
         db_session.add(assignment)
         db_session.flush()
 
+        db_session.add(
+            PropertyAccess(
+                user_id=employee.id,
+                property_id=property.id,
+                access_type="plate_operations",
+                is_active=True,
+            )
+        )
+        db_session.flush()
+
         access_token = create_access_token(subject=str(employee.id))
 
         response = client.post(
@@ -3569,10 +3491,6 @@ def test_cancel_installation_assignment_api(db_session):
 
 
 def test_cancel_installation_assignment_api_allows_admin(db_session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -3686,10 +3604,6 @@ def test_cancel_installation_assignment_api_allows_admin(db_session):
 
 
 def test_cancel_installation_assignment_api_requires_plate_operations_clearance(db_session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -3736,10 +3650,6 @@ def test_cancel_installation_assignment_api_requires_plate_operations_clearance(
 
 
 def test_cancel_installation_assignment_api_rejects_contractor(db_session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -3769,10 +3679,6 @@ def test_cancel_installation_assignment_api_rejects_contractor(db_session):
 
 
 def test_cancel_installation_assignment_api_rejects_completed_assignment(db_session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -3875,6 +3781,16 @@ def test_cancel_installation_assignment_api_rejects_completed_assignment(db_sess
         db_session.add(assignment)
         db_session.flush()
 
+        db_session.add(
+            PropertyAccess(
+                user_id=employee.id,
+                property_id=property.id,
+                access_type="plate_operations",
+                is_active=True,
+            )
+        )
+        db_session.flush()
+
         access_token = create_access_token(subject=str(employee.id))
 
         response = client.post(
@@ -3893,10 +3809,6 @@ def test_cancel_installation_assignment_api_rejects_completed_assignment(db_sess
         app.dependency_overrides.clear()
 
 def test_list_installation_assignments_api(db_session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -3999,6 +3911,16 @@ def test_list_installation_assignments_api(db_session):
         db_session.add(assignment)
         db_session.flush()
 
+        db_session.add(
+            PropertyAccess(
+                user_id=employee.id,
+                property_id=property_record.id,
+                access_type="plate_operations",
+                is_active=True,
+            )
+        )
+        db_session.flush()
+
         access_token = create_access_token(subject=str(employee.id))
 
         response = client.get(
@@ -4020,10 +3942,6 @@ def test_list_installation_assignments_api(db_session):
 
 
 def test_list_installation_assignments_api_filters_by_status(db_session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -4126,6 +4044,16 @@ def test_list_installation_assignments_api_filters_by_status(db_session):
         db_session.add(assignment)
         db_session.flush()
 
+        db_session.add(
+            PropertyAccess(
+                user_id=employee.id,
+                property_id=property_record.id,
+                access_type="plate_operations",
+                is_active=True,
+            )
+        )
+        db_session.flush()
+
         access_token = create_access_token(subject=str(employee.id))
 
         response = client.get(
@@ -4148,10 +4076,6 @@ def test_list_installation_assignments_api_filters_by_status(db_session):
 def test_list_installation_assignments_api_unknown_status_returns_empty(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -4199,10 +4123,6 @@ def test_list_installation_assignments_api_unknown_status_returns_empty(
 def test_list_installation_assignments_api_requires_plate_operations_clearance(
     db_session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)

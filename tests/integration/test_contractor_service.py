@@ -9,6 +9,8 @@ from app.models.contractor import Contractor
 from app.models.contractor_member import ContractorMember
 from app.models.installation_assignment import InstallationAssignment
 from app.models.user import User
+from app.repositories.contractor_member_repository import ContractorMemberRepository
+from app.repositories.contractor_repository import ContractorRepository
 from app.services.contractor_service import ContractorService
 from app.services.installation_assignment_service import InstallationAssignmentService
 
@@ -39,6 +41,7 @@ def create_contractor_context(db_session):
     }
 
 
+@pytest.mark.independent_db_transactions
 def test_add_member_serializes_concurrent_membership_creation(
     db_session,
 ):
@@ -143,6 +146,7 @@ def test_database_rejects_invalid_contractor_status(db_session):
     db_session.rollback()
 
 
+@pytest.mark.independent_db_transactions
 def test_deactivate_contractor_serializes_against_assignment_creation(
     db_session,
 ):
@@ -253,3 +257,85 @@ def test_deactivate_contractor_serializes_against_assignment_creation(
 
         first_session.close()
         second_session.close()
+
+
+@pytest.mark.parametrize("lookup", ["id", "contractor_user"])
+@pytest.mark.independent_db_transactions
+def test_locked_member_lookup_refreshes_stale_active_state(
+    db_session,
+    lookup,
+):
+    context = create_contractor_context(db_session)
+    contractor = context["contractor"]
+    contractor_user = context["contractor_user"]
+
+    member = ContractorMember(
+        id=uuid.uuid4(),
+        contractor_id=contractor.id,
+        user_id=contractor_user.id,
+        is_active=True,
+    )
+    db_session.add(member)
+    db_session.commit()
+
+    member_id = member.id
+    contractor_id = contractor.id
+    user_id = contractor_user.id
+
+    # Load the active member into this session's identity map.
+    loaded_member = db_session.get(ContractorMember, member_id)
+    assert loaded_member is not None
+    assert loaded_member.is_active is True
+
+    # Deactivate the same row in an independent transaction.
+    other_session = SessionLocal()
+    try:
+        other_member = other_session.get(ContractorMember, member_id)
+        assert other_member is not None
+        other_member.is_active = False
+        other_session.commit()
+    finally:
+        other_session.close()
+
+    repository = ContractorMemberRepository(db_session)
+
+    if lookup == "id":
+        locked_member = repository.get_by_id_for_update(member_id)
+    else:
+        locked_member = repository.get_by_contractor_and_user_for_update(
+            contractor_id=contractor_id,
+            user_id=user_id,
+        )
+
+    # The lock query must refresh the existing ORM object.
+    assert locked_member is loaded_member
+    assert locked_member.is_active is False
+
+@pytest.mark.independent_db_transactions
+def test_locked_contractor_lookup_refreshes_stale_status(db_session):
+    context = create_contractor_context(db_session)
+    contractor = context["contractor"]
+    contractor_id = contractor.id
+    db_session.commit()
+
+    # Load the active contractor into this session's identity map.
+    loaded_contractor = db_session.get(Contractor, contractor_id)
+    assert loaded_contractor is not None
+    assert loaded_contractor.status == "active"
+
+    # Deactivate the same row in an independent transaction.
+    other_session = SessionLocal()
+    try:
+        other_contractor = other_session.get(Contractor, contractor_id)
+        assert other_contractor is not None
+        other_contractor.status = "inactive"
+        other_session.commit()
+    finally:
+        other_session.close()
+
+    repository = ContractorRepository(db_session)
+    locked_contractor = repository.get_by_id_for_update(contractor_id)
+
+    # The lock query must refresh the existing ORM object.
+    assert locked_contractor is loaded_contractor
+    assert locked_contractor.status == "inactive"

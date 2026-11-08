@@ -3,7 +3,6 @@ import uuid
 from fastapi.testclient import TestClient
 
 from app.core.security import create_access_token
-from app.db.session import get_db
 from app.main import app
 from app.models.contractor import Contractor
 from app.models.contractor_member import ContractorMember
@@ -64,7 +63,6 @@ def create_user(db_session, *, role: str = "landlord", is_active: bool = True):
 
 
 def test_create_contractor_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -118,7 +116,6 @@ def test_create_contractor_api(db_session):
 def test_create_contractor_api_requires_contractor_management_clearance(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -150,7 +147,6 @@ def test_create_contractor_api_requires_contractor_management_clearance(
 def test_create_contractor_api_rejects_non_employee(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -185,7 +181,6 @@ def test_create_contractor_api_rejects_non_employee(
 
 
 def test_list_contractors_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -234,7 +229,6 @@ def test_list_contractors_api(db_session):
 
 
 def test_list_contractors_api_active_only(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -281,7 +275,6 @@ def test_list_contractors_api_active_only(db_session):
 def test_list_contractors_api_requires_contractor_management_clearance(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -308,7 +301,6 @@ def test_list_contractors_api_requires_contractor_management_clearance(
 
 
 def test_get_contractor_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -349,7 +341,6 @@ def test_get_contractor_api(db_session):
 def test_get_contractor_api_returns_404_for_missing_contractor(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -373,7 +364,6 @@ def test_get_contractor_api_returns_404_for_missing_contractor(
 
 
 def test_add_contractor_member_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -433,7 +423,6 @@ def test_add_contractor_member_api(db_session):
 def test_add_contractor_member_api_rejects_non_contractor_user(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -476,7 +465,6 @@ def test_add_contractor_member_api_rejects_non_contractor_user(
 
 
 def test_list_contractor_members_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -530,7 +518,6 @@ def test_list_contractor_members_api(db_session):
 
 
 def test_deactivate_contractor_member_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -587,7 +574,6 @@ def test_deactivate_contractor_member_api(db_session):
 def test_reactivate_contractor_api_requires_contractor_management_clearance(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -624,7 +610,6 @@ def test_reactivate_contractor_api_requires_contractor_management_clearance(
 def test_reactivate_contractor_api_rejects_non_employee(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -663,7 +648,6 @@ def test_reactivate_contractor_api_rejects_non_employee(
 
 
 def test_reactivate_contractor_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -705,7 +689,6 @@ def test_reactivate_contractor_api(db_session):
 def test_reactivate_contractor_api_returns_404_for_missing_contractor(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -731,7 +714,6 @@ def test_reactivate_contractor_api_returns_404_for_missing_contractor(
 def test_reactivate_contractor_api_rejects_already_active_contractor(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -763,7 +745,6 @@ def test_reactivate_contractor_api_rejects_already_active_contractor(
 
 
 def test_deactivate_contractor_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -806,7 +787,6 @@ def test_deactivate_contractor_api(db_session):
 def test_deactivate_contractor_api_returns_404_for_missing_contractor(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -832,7 +812,6 @@ def test_deactivate_contractor_api_returns_404_for_missing_contractor(
 def test_deactivate_contractor_api_rejects_already_inactive_contractor(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -869,7 +848,6 @@ def test_deactivate_contractor_api_rejects_already_inactive_contractor(
 def test_list_contractor_candidates_returns_safe_active_contractor_users(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -923,7 +901,6 @@ def test_list_contractor_candidates_returns_safe_active_contractor_users(
 def test_list_contractor_candidates_allows_existing_contractor_members(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -976,7 +953,6 @@ def test_list_contractor_candidates_allows_existing_contractor_members(
 def test_list_contractor_candidates_requires_contractor_management_clearance(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1005,7 +981,6 @@ def test_list_contractor_candidates_requires_contractor_management_clearance(
 def test_list_contractor_candidates_requires_authentication(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1023,7 +998,6 @@ def test_list_contractor_candidates_requires_authentication(
 def test_candidates_route_is_not_captured_by_contractor_id(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)

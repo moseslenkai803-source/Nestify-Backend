@@ -2,8 +2,10 @@ import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from threading import Event, Thread
+from time import monotonic
 
 import pytest
+from sqlalchemy import text
 
 from app.db.session import SessionLocal
 from app.models.address_plate import AddressPlate
@@ -16,6 +18,7 @@ from app.models.installation_assignment import InstallationAssignment
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.user import User
+from app.services.contractor_service import ContractorService
 from app.services.address_plate_lifecycle_service import (
     AddressPlateLifecycleService,
 )
@@ -106,6 +109,32 @@ def create_assignment_context(db_session, lifecycle_stage="allocated"):
     db_session.add(assigning_employee)
     db_session.flush()
 
+    assigning_employee_record = Employee(
+        user_id=assigning_employee.id,
+        employee_number=f"EMP-ASSIGN-{uuid.uuid4().hex.upper()}",
+        department="Operations",
+        position="Plate Operations",
+    )
+    db_session.add(assigning_employee_record)
+    db_session.flush()
+
+    db_session.add(
+        EmployeeClearance(
+            employee_id=assigning_employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+    )
+    db_session.add(
+        PropertyAccess(
+            user_id=assigning_employee.id,
+            property_id=property_record.id,
+            access_type="plate_operations",
+            is_active=True,
+        )
+    )
+    db_session.flush()
+
     db_session.add(contractor_member)
     db_session.flush()
 
@@ -142,6 +171,7 @@ def create_assignment_context(db_session, lifecycle_stage="allocated"):
         "contractor_user": contractor_user,
         "contractor_member": contractor_member,
         "assigning_employee": assigning_employee,
+        "assigning_employee_record": assigning_employee_record,
     }
 
 
@@ -395,6 +425,274 @@ def test_create_assignment_rejects_inactive_contractor_member_user(db_session):
         )
 
 
+
+def test_create_assignment_rejects_employee_without_employee_record(db_session):
+    context = create_assignment_context(db_session)
+    employee_record = context["assigning_employee_record"]
+
+    db_session.query(EmployeeClearance).filter_by(
+        employee_id=employee_record.id,
+    ).delete(synchronize_session=False)
+    db_session.flush()
+    db_session.delete(employee_record)
+    db_session.flush()
+
+    service = InstallationAssignmentService(db_session)
+
+    with pytest.raises(ValueError, match="Employee record not found"):
+        service.create_assignment(
+            property_id=context["property"].id,
+            plate_id=context["plate"].id,
+            contractor_id=context["contractor"].id,
+            contractor_member_id=context["contractor_member"].id,
+            assigned_by=context["assigning_employee"].id,
+        )
+
+
+def test_create_assignment_rejects_terminated_employee(db_session):
+    context = create_assignment_context(db_session)
+    context["assigning_employee_record"].ended_at = datetime.now(UTC)
+    db_session.flush()
+
+    service = InstallationAssignmentService(db_session)
+
+    with pytest.raises(ValueError, match="Employee is terminated"):
+        service.create_assignment(
+            property_id=context["property"].id,
+            plate_id=context["plate"].id,
+            contractor_id=context["contractor"].id,
+            contractor_member_id=context["contractor_member"].id,
+            assigned_by=context["assigning_employee"].id,
+        )
+
+
+def test_create_assignment_rejects_missing_plate_operations_clearance(
+    db_session,
+):
+    context = create_assignment_context(db_session)
+
+    db_session.query(EmployeeClearance).filter_by(
+        employee_id=context["assigning_employee_record"].id,
+        clearance="plate_operations",
+    ).delete(synchronize_session=False)
+    db_session.flush()
+
+    service = InstallationAssignmentService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Active plate_operations employee clearance is required",
+    ):
+        service.create_assignment(
+            property_id=context["property"].id,
+            plate_id=context["plate"].id,
+            contractor_id=context["contractor"].id,
+            contractor_member_id=context["contractor_member"].id,
+            assigned_by=context["assigning_employee"].id,
+        )
+
+
+def test_create_assignment_rejects_inactive_plate_operations_clearance(
+    db_session,
+):
+    context = create_assignment_context(db_session)
+
+    clearance = db_session.query(EmployeeClearance).filter_by(
+        employee_id=context["assigning_employee_record"].id,
+        clearance="plate_operations",
+    ).one()
+    clearance.is_active = False
+    db_session.flush()
+
+    service = InstallationAssignmentService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Active plate_operations employee clearance is required",
+    ):
+        service.create_assignment(
+            property_id=context["property"].id,
+            plate_id=context["plate"].id,
+            contractor_id=context["contractor"].id,
+            contractor_member_id=context["contractor_member"].id,
+            assigned_by=context["assigning_employee"].id,
+        )
+
+
+def test_create_assignment_rejects_missing_property_access(db_session):
+    context = create_assignment_context(db_session)
+
+    db_session.query(PropertyAccess).filter_by(
+        user_id=context["assigning_employee"].id,
+        property_id=context["property"].id,
+        access_type="plate_operations",
+    ).delete(synchronize_session=False)
+    db_session.flush()
+
+    service = InstallationAssignmentService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="User is not authorized for this property",
+    ):
+        service.create_assignment(
+            property_id=context["property"].id,
+            plate_id=context["plate"].id,
+            contractor_id=context["contractor"].id,
+            contractor_member_id=context["contractor_member"].id,
+            assigned_by=context["assigning_employee"].id,
+        )
+
+
+def test_create_assignment_rejects_inactive_property_access(db_session):
+    context = create_assignment_context(db_session)
+
+    grant = db_session.query(PropertyAccess).filter_by(
+        user_id=context["assigning_employee"].id,
+        property_id=context["property"].id,
+        access_type="plate_operations",
+    ).one()
+    grant.is_active = False
+    db_session.flush()
+
+    service = InstallationAssignmentService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="User is not authorized for this property",
+    ):
+        service.create_assignment(
+            property_id=context["property"].id,
+            plate_id=context["plate"].id,
+            contractor_id=context["contractor"].id,
+            contractor_member_id=context["contractor_member"].id,
+            assigned_by=context["assigning_employee"].id,
+        )
+
+
+def test_create_assignment_rejects_grant_for_different_property(db_session):
+    context = create_assignment_context(db_session)
+
+    other_property = Property(
+        id=uuid.uuid4(),
+        landlord_id=context["property"].landlord_id,
+        property_code=f"NEST-OTHER-{uuid.uuid4().hex[:8].upper()}",
+        name="Different Property",
+        property_type="residential",
+        status="draft",
+    )
+    db_session.add(other_property)
+    db_session.flush()
+
+    grant = db_session.query(PropertyAccess).filter_by(
+        user_id=context["assigning_employee"].id,
+        property_id=context["property"].id,
+        access_type="plate_operations",
+    ).one()
+    grant.property_id = other_property.id
+    db_session.flush()
+
+    service = InstallationAssignmentService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="User is not authorized for this property",
+    ):
+        service.create_assignment(
+            property_id=context["property"].id,
+            plate_id=context["plate"].id,
+            contractor_id=context["contractor"].id,
+            contractor_member_id=context["contractor_member"].id,
+            assigned_by=context["assigning_employee"].id,
+        )
+
+
+def test_admin_without_employee_records_can_create_assignment(db_session):
+    context = create_assignment_context(db_session)
+
+    admin = User(
+        id=uuid.uuid4(),
+        email=f"admin-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="admin",
+        is_active=True,
+    )
+    db_session.add(admin)
+    db_session.flush()
+
+    service = InstallationAssignmentService(db_session)
+
+    assignment = service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=admin.id,
+    )
+
+    assert assignment.status == "assigned"
+    assert assignment.assigned_by == admin.id
+
+    assert db_session.query(Employee).filter_by(user_id=admin.id).count() == 0
+    assert db_session.query(EmployeeClearance).filter(
+        EmployeeClearance.employee_id.in_(
+            db_session.query(Employee.id).filter(Employee.user_id == admin.id)
+        )
+    ).count() == 0
+    assert db_session.query(PropertyAccess).filter_by(user_id=admin.id).count() == 0
+
+
+def test_query_service_scopes_employee_assignments_to_granted_properties(
+    db_session,
+):
+    first_context = create_assignment_context(db_session)
+    second_context = create_assignment_context(db_session)
+
+    command_service = InstallationAssignmentService(db_session)
+
+    first_assignment = command_service.create_assignment(
+        property_id=first_context["property"].id,
+        plate_id=first_context["plate"].id,
+        contractor_id=first_context["contractor"].id,
+        contractor_member_id=first_context["contractor_member"].id,
+        assigned_by=first_context["assigning_employee"].id,
+    )
+
+    second_assignment = command_service.create_assignment(
+        property_id=second_context["property"].id,
+        plate_id=second_context["plate"].id,
+        contractor_id=second_context["contractor"].id,
+        contractor_member_id=second_context["contractor_member"].id,
+        assigned_by=second_context["assigning_employee"].id,
+    )
+
+    query_service = InstallationAssignmentQueryService(db_session)
+
+    employee_results = query_service.list_assignments(
+        user_id=first_context["assigning_employee"].id,
+    )
+    employee_result_ids = {item["id"] for item in employee_results}
+
+    assert first_assignment.id in employee_result_ids
+    assert second_assignment.id not in employee_result_ids
+
+    admin = User(
+        id=uuid.uuid4(),
+        email=f"admin-query-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="admin",
+        is_active=True,
+    )
+    db_session.add(admin)
+    db_session.flush()
+
+    admin_results = query_service.list_assignments(user_id=admin.id)
+    admin_result_ids = {item["id"] for item in admin_results}
+
+    assert first_assignment.id in admin_result_ids
+    assert second_assignment.id in admin_result_ids
+
+
 def test_create_assignment_requires_existing_assigning_user(db_session):
     context = create_assignment_context(db_session)
 
@@ -418,7 +716,7 @@ def test_create_assignment_rejects_inactive_assigning_user(db_session):
 
     service = InstallationAssignmentService(db_session)
 
-    with pytest.raises(ValueError, match="Assigning employee is inactive"):
+    with pytest.raises(ValueError, match="User account is inactive"):
         service.create_assignment(
             property_id=context["property"].id,
             plate_id=context["plate"].id,
@@ -438,7 +736,7 @@ def test_create_assignment_requires_employee_assigner(db_session):
 
     with pytest.raises(
         ValueError,
-        match="Only Nestify employees can assign installations",
+        match="Only Nestify employees can perform plate operations",
     ):
         service.create_assignment(
             property_id=context["property"].id,
@@ -449,6 +747,7 @@ def test_create_assignment_requires_employee_assigner(db_session):
         )
 
 
+@pytest.mark.independent_db_transactions
 def test_create_assignment_serializes_concurrent_assignments_for_same_property(
     db_session,
 ):
@@ -1257,6 +1556,7 @@ def test_cancelled_assignment_submission_blocks_replacement_until_resolved(
     ]
 
 
+@pytest.mark.independent_db_transactions
 def test_assignment_submission_serializes_against_legacy_submission(db_session):
     from app.models.property_installation import PropertyInstallation
 
@@ -1596,6 +1896,7 @@ def test_start_assignment_rejects_inactive_contractor_member_user(db_session):
 
 
 
+@pytest.mark.independent_db_transactions
 def test_assignment_lock_refreshes_stale_status_after_concurrent_commit(
     db_session,
 ):
@@ -1716,6 +2017,54 @@ def test_cancel_assignment_allows_admin_actor(db_session):
     assert result.cancellation_reason == (
         "Admin cancellation for operational reassignment."
     )
+
+
+def test_cancel_assignment_rejects_employee_without_grant_for_assignment_property(
+    db_session,
+):
+    context = create_assignment_context(db_session)
+    service = InstallationAssignmentService(db_session)
+
+    assignment = service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+
+    other_property = Property(
+        id=uuid.uuid4(),
+        landlord_id=context["property"].landlord_id,
+        property_code=f"NEST-OTHER-{uuid.uuid4().hex[:8].upper()}",
+        name="Different Property",
+        property_type="residential",
+        status="draft",
+    )
+    db_session.add(other_property)
+    db_session.flush()
+
+    grant = db_session.query(PropertyAccess).filter_by(
+        user_id=context["assigning_employee"].id,
+        property_id=context["property"].id,
+        access_type="plate_operations",
+    ).one()
+    grant.property_id = other_property.id
+    db_session.flush()
+
+    with pytest.raises(
+        ValueError,
+        match="User is not authorized for this property",
+    ):
+        service.cancel_assignment(
+            assignment_id=assignment.id,
+            cancelled_by=context["assigning_employee"].id,
+            reason="Attempted cancellation without property access.",
+        )
+
+    db_session.refresh(assignment)
+    assert assignment.status == "assigned"
+    assert assignment.cancelled_at is None
 
 
 def test_cancel_assignment_moves_in_progress_to_cancelled(db_session):
@@ -1891,7 +2240,7 @@ def test_cancel_assignment_rejects_inactive_employee(db_session):
     db_session.add(assignment)
     db_session.flush()
 
-    with pytest.raises(ValueError, match="Cancelling employee is inactive"):
+    with pytest.raises(ValueError, match="User account is inactive"):
         service.cancel_assignment(
             assignment_id=assignment.id,
             cancelled_by=context["assigning_employee"].id,
@@ -1920,7 +2269,7 @@ def test_cancel_assignment_requires_employee_actor(db_session):
 
     with pytest.raises(
         ValueError,
-        match="Only Nestify employees can cancel installations",
+        match="Only Nestify employees can perform plate operations",
     ):
         service.cancel_assignment(
             assignment_id=assignment.id,
@@ -1978,6 +2327,94 @@ def test_cancelled_assignment_releases_property_and_plate_for_new_assignment(db_
     assert replacement.id != assignment.id
     assert replacement.status == "assigned"
 
+def test_query_service_lists_dispatched_plates_for_authorized_employee(
+    db_session,
+):
+    context = create_assignment_context(
+        db_session,
+        lifecycle_stage="dispatched",
+    )
+    service = InstallationAssignmentQueryService(db_session)
+
+    result = service.list_dispatched_plates(
+        user_id=context["assigning_employee"].id,
+        property_id=context["property"].id,
+    )
+
+    assert len(result) == 1
+    assert result[0]["id"] == context["plate"].id
+    assert result[0]["plate_code"] == context["plate"].plate_code
+    assert result[0]["property_id"] == context["property"].id
+
+
+def test_query_service_rejects_dispatched_plates_without_matching_property_grant(
+    db_session,
+):
+    context = create_assignment_context(
+        db_session,
+        lifecycle_stage="dispatched",
+    )
+    other_property = Property(
+        id=uuid.uuid4(),
+        landlord_id=context["property"].landlord_id,
+        property_code=f"NEST-OTHER-{uuid.uuid4().hex[:8].upper()}",
+        name="Different Property",
+        property_type="residential",
+        status="draft",
+    )
+    db_session.add(other_property)
+    db_session.flush()
+
+    grant = db_session.query(PropertyAccess).filter_by(
+        user_id=context["assigning_employee"].id,
+        property_id=context["property"].id,
+        access_type="plate_operations",
+    ).one()
+    grant.property_id = other_property.id
+    db_session.flush()
+
+    service = InstallationAssignmentQueryService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="User is not authorized for this property",
+    ):
+        service.list_dispatched_plates(
+            user_id=context["assigning_employee"].id,
+            property_id=context["property"].id,
+        )
+
+
+def test_query_service_allows_admin_to_list_dispatched_plates(
+    db_session,
+):
+    context = create_assignment_context(
+        db_session,
+        lifecycle_stage="dispatched",
+    )
+    admin = User(
+        id=uuid.uuid4(),
+        email=f"plate-admin-{uuid.uuid4()}@example.com",
+        password_hash="hashed-password",
+        role="admin",
+        is_active=True,
+    )
+    db_session.add(admin)
+    db_session.flush()
+
+    service = InstallationAssignmentQueryService(db_session)
+
+    result = service.list_dispatched_plates(
+        user_id=admin.id,
+        property_id=context["property"].id,
+    )
+
+    assert len(result) == 1
+    assert result[0]["id"] == context["plate"].id
+    assert db_session.query(Employee).filter_by(user_id=admin.id).count() == 0
+    assert db_session.query(PropertyAccess).filter_by(user_id=admin.id).count() == 0
+
+
 def test_query_service_lists_assignments_newest_first(db_session):
     context = create_assignment_context(db_session)
     command_service = InstallationAssignmentService(db_session)
@@ -2007,7 +2444,9 @@ def test_query_service_lists_assignments_newest_first(db_session):
         assigned_by=context["assigning_employee"].id,
     )
 
-    result = query_service.list_assignments()
+    result = query_service.list_assignments(
+        user_id=context["assigning_employee"].id,
+    )
 
     result_ids = [item["id"] for item in result]
 
@@ -2035,8 +2474,14 @@ def test_query_service_lists_assignments_by_status(db_session):
         reason="Testing status filtering.",
     )
 
-    assigned_results = query_service.list_assignments(status="assigned")
-    cancelled_results = query_service.list_assignments(status="cancelled")
+    assigned_results = query_service.list_assignments(
+        user_id=context["assigning_employee"].id,
+        status="assigned",
+    )
+    cancelled_results = query_service.list_assignments(
+        user_id=context["assigning_employee"].id,
+        status="cancelled",
+    )
 
     assert all(item["status"] == "assigned" for item in assigned_results)
     assert all(item["status"] == "cancelled" for item in cancelled_results)
@@ -2057,7 +2502,10 @@ def test_query_service_unknown_status_returns_empty(db_session):
         assigned_by=context["assigning_employee"].id,
     )
 
-    result = query_service.list_assignments(status="not-a-real-status")
+    result = query_service.list_assignments(
+        user_id=context["assigning_employee"].id,
+        status="not-a-real-status",
+    )
 
     assert result == []
 
@@ -2129,7 +2577,10 @@ def test_query_service_returns_enriched_assignments_by_status(
 
     service = InstallationAssignmentQueryService(db_session)
 
-    results = service.list_assignments(status="assigned")
+    results = service.list_assignments(
+        user_id=context["assigning_employee"].id,
+        status="assigned",
+    )
 
     matching = [
         result
@@ -2307,3 +2758,314 @@ def test_submit_assignment_rejects_member_from_different_contractor(
 
     db_session.refresh(assignment)
     assert assignment.status == "in_progress"
+
+
+def wait_until_assignment_backend_blocked(
+    monitor_session,
+    backend_pid,
+    blocker_pid,
+    timeout=10,
+):
+    deadline = monotonic() + timeout
+    last_state = None
+
+    while monotonic() < deadline:
+        last_state = monitor_session.execute(
+            text(
+                "SELECT wait_event_type, pg_blocking_pids(pid) "
+                "FROM pg_stat_activity WHERE pid = :pid"
+            ),
+            {"pid": backend_pid},
+        ).one_or_none()
+
+        if (
+            last_state is not None
+            and last_state.wait_event_type == "Lock"
+            and blocker_pid in last_state.pg_blocking_pids
+        ):
+            return
+
+        Event().wait(0.05)
+
+    pytest.fail(
+        f"Assignment backend {backend_pid} was not observed blocked "
+        f"by backend {blocker_pid}; last state was {last_state!r}"
+    )
+
+
+@pytest.mark.independent_db_transactions
+def test_start_assignment_rejects_member_deactivated_concurrently(db_session):
+    context = create_assignment_context(
+        db_session,
+        lifecycle_stage="dispatched",
+    )
+    setup_service = InstallationAssignmentService(db_session)
+
+    assignment = setup_service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+
+    assignment_id = assignment.id
+    contractor_id = context["contractor"].id
+    member_id = context["contractor_member"].id
+    contractor_user_id = context["contractor_user"].id
+    db_session.commit()
+
+    first_session = SessionLocal()
+    second_session = SessionLocal()
+    second_pid_ready = Event()
+    second_finished = Event()
+    second_backend_pid = []
+    second_error = []
+    thread = None
+
+    try:
+        first_service = InstallationAssignmentService(first_session)
+
+        locked_member = (
+            first_service.contractor_member_repository.get_by_id_for_update(
+                member_id
+            )
+        )
+        assert locked_member is not None
+        assert locked_member.is_active is True
+
+        first_backend_pid = first_session.scalar(
+            text("SELECT pg_backend_pid()")
+        )
+
+        def start_from_second_transaction():
+            try:
+                second_backend_pid.append(
+                    second_session.scalar(
+                        text("SELECT pg_backend_pid()")
+                    )
+                )
+                second_pid_ready.set()
+
+                InstallationAssignmentService(
+                    second_session
+                ).start_assignment(
+                    assignment_id=assignment_id,
+                    contractor_user_id=contractor_user_id,
+                )
+            except Exception as exc:
+                second_error.append(exc)
+            finally:
+                try:
+                    second_session.rollback()
+                finally:
+                    second_session.close()
+                    second_finished.set()
+
+        thread = Thread(
+            target=start_from_second_transaction,
+            daemon=True,
+        )
+        thread.start()
+
+        assert second_pid_ready.wait(timeout=10)
+        assert len(second_backend_pid) == 1
+        assert second_backend_pid[0] != first_backend_pid
+
+        wait_until_assignment_backend_blocked(
+            first_session,
+            second_backend_pid[0],
+            first_backend_pid,
+        )
+
+        deactivated_member = ContractorService(
+            first_session
+        ).deactivate_member(
+            contractor_id=contractor_id,
+            user_id=contractor_user_id,
+        )
+        assert deactivated_member.is_active is False
+        first_session.commit()
+
+        assert second_finished.wait(timeout=10)
+        thread.join(timeout=10)
+        assert not thread.is_alive()
+
+        assert len(second_error) == 1
+        assert isinstance(second_error[0], ValueError)
+        assert str(second_error[0]) == "Contractor member is inactive"
+
+        verification_session = SessionLocal()
+        try:
+            persisted_member = verification_session.get(
+                ContractorMember,
+                member_id,
+            )
+            persisted_assignment = verification_session.get(
+                InstallationAssignment,
+                assignment_id,
+            )
+
+            assert persisted_member is not None
+            assert persisted_member.is_active is False
+            assert persisted_assignment is not None
+            assert persisted_assignment.status == "assigned"
+        finally:
+            verification_session.close()
+
+    finally:
+        first_session.rollback()
+        if thread is not None:
+            thread.join(timeout=10)
+        else:
+            second_session.close()
+        first_session.close()
+
+
+@pytest.mark.independent_db_transactions
+def test_submit_assignment_rejects_member_deactivated_concurrently(
+    db_session,
+):
+    from app.models.property_installation import PropertyInstallation
+
+    context = create_assignment_context(
+        db_session,
+        lifecycle_stage="dispatched",
+    )
+    setup_service = InstallationAssignmentService(db_session)
+
+    assignment = setup_service.create_assignment(
+        property_id=context["property"].id,
+        plate_id=context["plate"].id,
+        contractor_id=context["contractor"].id,
+        contractor_member_id=context["contractor_member"].id,
+        assigned_by=context["assigning_employee"].id,
+    )
+    setup_service.start_assignment(
+        assignment_id=assignment.id,
+        contractor_user_id=context["contractor_user"].id,
+    )
+
+    assignment_id = assignment.id
+    contractor_id = context["contractor"].id
+    member_id = context["contractor_member"].id
+    contractor_user_id = context["contractor_user"].id
+    db_session.commit()
+
+    first_session = SessionLocal()
+    second_session = SessionLocal()
+    second_pid_ready = Event()
+    second_finished = Event()
+    second_backend_pid = []
+    second_error = []
+    thread = None
+
+    try:
+        first_service = InstallationAssignmentService(first_session)
+
+        locked_member = (
+            first_service.contractor_member_repository.get_by_id_for_update(
+                member_id
+            )
+        )
+        assert locked_member is not None
+        assert locked_member.is_active is True
+
+        first_backend_pid = first_session.scalar(
+            text("SELECT pg_backend_pid()")
+        )
+
+        def submit_from_second_transaction():
+            try:
+                second_backend_pid.append(
+                    second_session.scalar(
+                        text("SELECT pg_backend_pid()")
+                    )
+                )
+                second_pid_ready.set()
+
+                InstallationAssignmentService(
+                    second_session
+                ).submit_assignment(
+                    assignment_id=assignment_id,
+                    contractor_user_id=contractor_user_id,
+                    latitude=-1.2921,
+                    longitude=36.8219,
+                    accuracy_meters=4.5,
+                    captured_at=datetime.now(UTC),
+                )
+            except Exception as exc:
+                second_error.append(exc)
+            finally:
+                try:
+                    second_session.rollback()
+                finally:
+                    second_session.close()
+                    second_finished.set()
+
+        thread = Thread(
+            target=submit_from_second_transaction,
+            daemon=True,
+        )
+        thread.start()
+
+        assert second_pid_ready.wait(timeout=10)
+        assert len(second_backend_pid) == 1
+        assert second_backend_pid[0] != first_backend_pid
+
+        wait_until_assignment_backend_blocked(
+            first_session,
+            second_backend_pid[0],
+            first_backend_pid,
+        )
+
+        deactivated_member = ContractorService(
+            first_session
+        ).deactivate_member(
+            contractor_id=contractor_id,
+            user_id=contractor_user_id,
+        )
+        assert deactivated_member.is_active is False
+        first_session.commit()
+
+        assert second_finished.wait(timeout=10)
+        thread.join(timeout=10)
+        assert not thread.is_alive()
+
+        assert len(second_error) == 1
+        assert isinstance(second_error[0], ValueError)
+        assert str(second_error[0]) == "Contractor member is inactive"
+
+        verification_session = SessionLocal()
+        try:
+            persisted_member = verification_session.get(
+                ContractorMember,
+                member_id,
+            )
+            persisted_assignment = verification_session.get(
+                InstallationAssignment,
+                assignment_id,
+            )
+            installations = (
+                verification_session.query(PropertyInstallation)
+                .filter(
+                    PropertyInstallation.assignment_id == assignment_id
+                )
+                .all()
+            )
+
+            assert persisted_member is not None
+            assert persisted_member.is_active is False
+            assert persisted_assignment is not None
+            assert persisted_assignment.status == "in_progress"
+            assert installations == []
+        finally:
+            verification_session.close()
+
+    finally:
+        first_session.rollback()
+        if thread is not None:
+            thread.join(timeout=10)
+        else:
+            second_session.close()
+        first_session.close()

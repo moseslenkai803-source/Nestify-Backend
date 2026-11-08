@@ -16,6 +16,7 @@ from app.repositories.property_installation_repository import PropertyInstallati
 from app.repositories.property_repository import PropertyRepository
 from app.repositories.user_repository import UserRepository
 from app.services.address_plate_lifecycle_service import AddressPlateLifecycleService
+from app.services.plate_operations_authorization_service import PlateOperationsAuthorizationService
 
 
 class InstallationAssignmentService:
@@ -31,6 +32,7 @@ class InstallationAssignmentService:
         self.property_installation_repository = PropertyInstallationRepository(db)
         self.user_repository = UserRepository(db)
         self.lifecycle_service = AddressPlateLifecycleService(db)
+        self.plate_operations_authorization = PlateOperationsAuthorizationService(db)
 
     def _require_plate_dispatched(self, plate_id: UUID) -> None:
         latest_event = self.lifecycle_service.get_latest_event(plate_id)
@@ -63,6 +65,8 @@ class InstallationAssignmentService:
         assigned_by: UUID,
         due_at: datetime | None = None,
     ) -> InstallationAssignment:
+        # Property and plate locks serialize assignment creation against
+        # competing assignments and state changes to either resource.
         property = self.property_repository.get_by_id_for_update(property_id)
 
         if property is None:
@@ -116,11 +120,10 @@ class InstallationAssignmentService:
         if assigned_user is None:
             raise ValueError("Assigning employee not found")
 
-        if not assigned_user.is_active:
-            raise ValueError("Assigning employee is inactive")
-
-        if assigned_user.role not in {"admin", "employee"}:
-            raise ValueError("Only Nestify employees can assign installations")
+        self.plate_operations_authorization.authorize_property(
+            user_id=assigned_user.id,
+            property_id=property_id,
+        )
 
         existing_property_assignment = (
             self.installation_assignment_repository.get_active_by_property_id(
@@ -144,6 +147,8 @@ class InstallationAssignmentService:
                 "Address plate already has an active installation assignment"
             )
 
+        # These checks provide clear domain errors; the partial unique indexes
+        # remain the final guard against concurrent active assignments.
         assignment = InstallationAssignment(
             property_id=property_id,
             plate_id=plate_id,
@@ -230,19 +235,18 @@ class InstallationAssignmentService:
         if assignment is None:
             raise ValueError("Installation assignment not found")
 
-        if assignment.status not in {"assigned", "in_progress", "submitted"}:
-            raise ValueError("Installation assignment cannot be cancelled")
-
         employee = self.user_repository.get_by_id(cancelled_by)
 
         if employee is None:
             raise ValueError("Cancelling employee not found")
 
-        if not employee.is_active:
-            raise ValueError("Cancelling employee is inactive")
+        self.plate_operations_authorization.authorize_property(
+            user_id=employee.id,
+            property_id=assignment.property_id,
+        )
 
-        if employee.role not in {"admin", "employee"}:
-            raise ValueError("Only Nestify employees can cancel installations")
+        if assignment.status not in {"assigned", "in_progress", "submitted"}:
+            raise ValueError("Installation assignment cannot be cancelled")
 
         if not reason.strip():
             raise ValueError("Cancellation reason is required")

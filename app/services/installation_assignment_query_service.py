@@ -8,6 +8,9 @@ from app.repositories.address_plate_repository import (
 from app.repositories.installation_assignment_repository import (
     InstallationAssignmentRepository,
 )
+from app.services.plate_operations_authorization_service import (
+    PlateOperationsAuthorizationService,
+)
 
 
 class InstallationAssignmentQueryService:
@@ -16,11 +19,20 @@ class InstallationAssignmentQueryService:
             InstallationAssignmentRepository(db)
         )
         self.address_plate_repository = AddressPlateRepository(db)
+        self.plate_operations_authorization = (
+            PlateOperationsAuthorizationService(db)
+        )
 
     def list_dispatched_plates(
         self,
+        user_id: UUID,
         property_id: UUID,
     ) -> list[dict]:
+        self.plate_operations_authorization.authorize_property(
+            user_id=user_id,
+            property_id=property_id,
+        )
+
         plates = (
             self.address_plate_repository
             .get_dispatched_by_property_id(property_id)
@@ -80,14 +92,31 @@ class InstallationAssignmentQueryService:
 
     def list_assignments(
         self,
+        user_id: UUID,
         status: str | None = None,
     ) -> list[dict]:
-        if status is None:
-            records = self.installation_assignment_repository.get_enriched_records()
+        user = self.plate_operations_authorization.require_authorized_user(
+            user_id
+        )
+
+        if user.role == "admin":
+            if status is None:
+                records = (
+                    self.installation_assignment_repository
+                    .get_enriched_records()
+                )
+            else:
+                records = (
+                    self.installation_assignment_repository
+                    .get_enriched_records_by_status(status)
+                )
         else:
             records = (
                 self.installation_assignment_repository
-                .get_enriched_records_by_status(status)
+                .get_enriched_records_for_user(
+                    user_id=user_id,
+                    status=status,
+                )
             )
 
         return [

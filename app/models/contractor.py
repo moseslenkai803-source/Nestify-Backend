@@ -8,6 +8,8 @@ from app.models.base import Base
 
 
 class Contractor(Base):
+    """Organization that receives installation work through its members."""
+
     __tablename__ = "contractors"
 
     __table_args__ = (

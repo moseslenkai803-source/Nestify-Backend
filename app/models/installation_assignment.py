@@ -20,6 +20,8 @@ class InstallationAssignment(Base):
             "status IN ('assigned', 'in_progress', 'submitted', 'completed', 'cancelled')",
             name="ck_installation_assignment_status",
         ),
+        # Completed and cancelled work remains historical; only active work
+        # occupies the property's and plate's unique assignment slots.
         Index(
             "uq_installation_assignments_active_property",
             "property_id",
