@@ -19,6 +19,8 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     connection = op.get_bind()
 
+    # Fail before changing constraints rather than silently accepting
+    # assignments whose member belongs to a different contractor.
     mismatch_count = connection.execute(
         sa.text(
             """
