@@ -90,6 +90,8 @@ def upgrade() -> None:
         server_default=sa.text("false"),
     )
 
+    # Legacy locations have no authenticated submitter or review decision;
+    # retain them as non-current history instead of inventing approval.
     op.create_foreign_key(
         "property_locations_submitted_by_id_fkey",
         "property_locations",
@@ -194,6 +196,8 @@ def downgrade() -> None:
         )
 
     connection = op.get_bind()
+    # Prevent a concurrent submission/review from creating history after the
+    # downgrade safety check but before its destructive DDL runs.
     connection.execute(
         sa.text(
             "LOCK TABLE property_locations, property_location_verifications "

@@ -97,6 +97,24 @@ def cleanup_installation_test_context(
     ]
 
     db.execute(
+        text(
+            "DELETE FROM property_location_verifications "
+            "WHERE location_id IN ("
+            "SELECT id FROM property_locations "
+            "WHERE property_id = :property_id)"
+        ),
+        {"property_id": property_id},
+    )
+
+    db.execute(
+        text(
+            "DELETE FROM property_locations "
+            "WHERE property_id = :property_id"
+        ),
+        {"property_id": property_id},
+    )
+
+    db.execute(
         text("DELETE FROM properties WHERE id = :property_id"),
         {"property_id": property_id},
     )

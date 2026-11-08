@@ -4,6 +4,7 @@ from app.models.property import Property
 from app.models.user import User
 from app.models.property_address import PropertyAddress
 from app.models.property_location import PropertyLocation
+from app.models.property_location_verification import PropertyLocationVerification
 from app.models.address_plate import AddressPlate
 from app.models.address_plate_lifecycle_event import AddressPlateLifecycleEvent
 from app.models.address_plate_request import AddressPlateRequest
@@ -33,6 +34,7 @@ __all__ = [
     "Property",
     "PropertyAddress",
     "PropertyLocation",
+    "PropertyLocationVerification",
     "AddressPlate",
     "AddressPlateLifecycleEvent",
     "AddressPlateRequest",

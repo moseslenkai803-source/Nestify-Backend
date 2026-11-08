@@ -32,4 +32,4 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Run property-location migration upgrade test
-        run: python -m pytest -q tests/integration/test_property_location_migration_upgrade.py
+        run: python -m pytest -q tests/migrations/test_property_location_migration_upgrade.py
