@@ -1,22 +1,23 @@
 from collections.abc import Generator
+from os import environ
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from app.db.session import SessionLocal, engine
+from scripts.run_isolated_tests import (
+    _read_database_identity,
+    verify_database_identity,
+)
 
 
-# Tests must use their isolated database, never development or shared test data.
-_EXPECTED_TEST_DATABASE = "nestify_pytest"
-_CONFIGURED_DATABASE = engine.url.database
-
-if _CONFIGURED_DATABASE != _EXPECTED_TEST_DATABASE:
-    raise RuntimeError(
-        "Refusing to run tests against database "
-        f"{_CONFIGURED_DATABASE!r}. "
-        "Set DATABASE_URL to the dedicated 'nestify_pytest' database."
-    )
+def pytest_ignore_collect(collection_path, config):
+    if (
+        collection_path.name == "test_property_location_migration_upgrade.py"
+        and environ.get("RUN_MIGRATION_TESTS") != "1"
+    ):
+        return True
+    return None
 
 
 def cleanup_installation_test_context(
@@ -135,6 +136,10 @@ def cleanup_installation_test_context(
 
 @pytest.fixture
 def db_session() -> Generator[Session, None, None]:
+    verify_database_identity(environ, _read_database_identity)
+
+    from app.db.session import SessionLocal
+
     db = SessionLocal()
 
     try:

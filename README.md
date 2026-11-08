@@ -739,6 +739,34 @@ Example:
 Landlord A cannot modify Landlord B's property.
 ```
 
+### Running integration tests safely
+
+Integration tests require Docker and must be run through the disposable
+PostgreSQL/PostGIS runner. The runner creates a fresh database container,
+verifies its endpoint and per-run identity marker, applies Alembic migrations,
+and removes the container after pytest exits:
+
+```bash
+python scripts/run_isolated_tests.py tests/integration
+```
+
+To run a focused integration test, pass its path instead. The runner does not
+use the application's configured development or production database.
+
+Pure unit tests that do not require a database can run directly without Docker.
+Database-backed unit tests must use the isolated runner, which verifies the
+runner-owned database identity before creating a session:
+
+```bash
+python scripts/run_isolated_tests.py tests/units
+```
+
+For a focused database-backed unit test:
+
+```bash
+python scripts/run_isolated_tests.py tests/units/test_contractor_service.py
+```
+
 ---
 
 ## 20. Database migrations
