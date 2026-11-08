@@ -33,6 +33,7 @@ class EmployeeClearanceRepository:
             select(EmployeeClearance)
             .where(EmployeeClearance.id == clearance_id)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return self.db.scalar(statement)
 
@@ -80,5 +81,21 @@ class EmployeeClearanceRepository:
                 EmployeeClearance.employee_id == employee_id,
                 EmployeeClearance.clearance == clearance,
             )
+        )
+        return self.db.scalar(statement)
+
+    def get_by_employee_and_clearance_for_update(
+        self,
+        employee_id: UUID,
+        clearance: str,
+    ) -> EmployeeClearance | None:
+        statement = (
+            select(EmployeeClearance)
+            .where(
+                EmployeeClearance.employee_id == employee_id,
+                EmployeeClearance.clearance == clearance,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return self.db.scalar(statement)

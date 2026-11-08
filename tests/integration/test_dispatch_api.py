@@ -844,3 +844,28 @@ def test_list_dispatches_api_requires_plate_operations_clearance(
 
     finally:
         app.dependency_overrides.clear()
+
+
+
+def test_list_dispatches_api_allows_admin_without_employee_clearance(
+    db_session,
+):
+    app.dependency_overrides[get_db] = lambda: db_session
+
+    try:
+        client = TestClient(app)
+        access_token = create_user_access_token(
+            db_session,
+            role="admin",
+        )
+
+        response = client.get(
+            "/api/v1/dispatches",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+        assert response.status_code == 200
+        assert isinstance(response.json(), list)
+
+    finally:
+        app.dependency_overrides.pop(get_db, None)

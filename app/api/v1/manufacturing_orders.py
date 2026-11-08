@@ -6,6 +6,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.address_plate import AddressPlateResponse
 from app.schemas.manufacturing_order import (
+    ManufacturingOrderCancel,
     ManufacturingOrderCreate,
     ManufacturingOrderResponse,
 )
@@ -30,7 +31,7 @@ def create_manufacturing_order(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ManufacturingOrderService(db)
 
@@ -56,7 +57,7 @@ def list_manufacturing_orders(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ManufacturingOrderService(db)
 
@@ -79,7 +80,7 @@ def get_manufacturing_order(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ManufacturingOrderService(db)
 
@@ -102,7 +103,7 @@ def approve_manufacturing_order(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ManufacturingOrderService(db)
 
@@ -133,7 +134,7 @@ def start_manufacturing_order(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ManufacturingOrderService(db)
 
@@ -163,7 +164,7 @@ def complete_manufacturing_order(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ManufacturingOrderService(db)
 
@@ -185,12 +186,14 @@ def complete_manufacturing_order(
             detail=str(exc),
         ) from exc
 
+
 @router.post(
     "/{order_code}/cancel",
     response_model=ManufacturingOrderResponse,
 )
 def cancel_manufacturing_order(
     order_code: str,
+    cancellation: ManufacturingOrderCancel,
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
@@ -201,6 +204,8 @@ def cancel_manufacturing_order(
     try:
         return service.cancel_order(
             order_code=order_code,
+            cancelled_by=current_employee.id,
+            reason=cancellation.reason,
         )
 
     except ValueError as exc:
@@ -215,6 +220,7 @@ def cancel_manufacturing_order(
             detail=str(exc),
         ) from exc
 
+
 @router.get(
     "/{order_code}/plates",
     response_model=list[AddressPlateResponse],
@@ -224,7 +230,7 @@ def get_manufacturing_order_plates(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = ManufacturingOrderService(db)
 

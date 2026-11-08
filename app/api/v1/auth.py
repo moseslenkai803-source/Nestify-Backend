@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
+from app.api.rate_limit import rate_limit_dependency
 from app.core.security import create_access_token
 from app.db.session import get_db
 from app.models.user import User
@@ -33,10 +34,25 @@ router = APIRouter(
     "/register",
     response_model=LandlordRegistrationResponse,
     status_code=201,
+    dependencies=[
+        Depends(rate_limit_dependency(
+            policy_name="auth-register",
+            allow_emergency_fallback=False,
+            limit=5,
+            window_seconds=60,
+        )),
+        Depends(rate_limit_dependency(
+            policy_name="auth-register-account",
+            allow_emergency_fallback=False,
+            limit=3,
+            window_seconds=3600,
+            identity_field="email",
+        )),
+    ],
 )
 def register_landlord(
     registration_data: LandlordRegistrationRequest,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = RegistrationService(db)
 
@@ -69,10 +85,16 @@ def register_landlord(
     "/employee-invitations/accept",
     response_model=EmployeeInvitationAcceptResponse,
     status_code=201,
+    dependencies=[Depends(rate_limit_dependency(
+        policy_name="auth-invitation-accept",
+        allow_emergency_fallback=False,
+        limit=5,
+        window_seconds=60,
+    ))],
 )
 def accept_employee_invitation(
     invitation_data: EmployeeInvitationAcceptRequest,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = EmployeeInvitationService(db)
 
@@ -107,10 +129,25 @@ def accept_employee_invitation(
 @router.post(
     "/login",
     response_model=TokenResponse,
+    dependencies=[
+        Depends(rate_limit_dependency(
+            policy_name="auth-login",
+            allow_emergency_fallback=False,
+            limit=10,
+            window_seconds=60,
+        )),
+        Depends(rate_limit_dependency(
+            policy_name="auth-login-account",
+            allow_emergency_fallback=False,
+            limit=5,
+            window_seconds=300,
+            identity_field="email",
+        )),
+    ],
 )
 def login(
     login_data: LoginRequest,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = UserService(db)
 
@@ -141,7 +178,7 @@ def login(
 )
 def get_me(
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     permissions: list[str] = []
 

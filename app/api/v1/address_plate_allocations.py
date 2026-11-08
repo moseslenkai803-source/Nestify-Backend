@@ -31,7 +31,7 @@ def allocate_address_plate(
     current_employee: User = Depends(
         require_employee_clearance("plate_operations")
     ),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_db, scope='function'),
 ):
     service = AddressPlateAllocationService(db)
 

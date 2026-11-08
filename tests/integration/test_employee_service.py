@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 from threading import Event, Thread
 
 import pytest
@@ -7,6 +8,7 @@ from app.db.session import SessionLocal
 
 from app.models.employee import Employee
 from app.models.employee_clearance import EmployeeClearance
+from app.models.landlord import Landlord
 from app.models.user import User
 from app.services.employee_service import EmployeeService
 
@@ -122,6 +124,36 @@ def test_create_employee_rejects_non_employee_user(db_session):
             department="Operations",
             position="Officer",
         )
+
+
+def test_create_employee_rejects_user_with_landlord_profile(db_session):
+    user = create_employee_user(db_session)
+
+    landlord = Landlord(
+        user_id=user.id,
+        display_name="Existing Landlord",
+        phone="+254700000001",
+        landlord_type="individual",
+    )
+    db_session.add(landlord)
+    db_session.flush()
+
+    service = EmployeeService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Landlord profiles cannot be registered as employees",
+    ):
+        service.create_employee(
+            user_id=user.id,
+            employee_number="EMP-LANDLORD-CONFLICT",
+            department="Operations",
+            position="Officer",
+        )
+
+    assert service.employee_repository.get_by_user_id(user.id) is None
+    assert service.landlord_repository.get_by_user_id(user.id) is not None
+    assert user.role == "employee"
 
 
 def test_create_employee_rejects_duplicate_employee_for_user(
@@ -577,6 +609,7 @@ def test_clearance_operations_reject_terminated_employee(
         )
 
 
+@pytest.mark.independent_db_transactions
 def test_create_employee_serializes_concurrent_creation_for_same_user(
     db_session,
 ):
@@ -676,6 +709,44 @@ def test_create_employee_serializes_concurrent_creation_for_same_user(
         first_session.close()
 
 
+@pytest.mark.independent_db_transactions
+def test_get_employee_for_update_refreshes_stale_session_state(db_session):
+    user = create_employee_user(db_session)
+    employee = EmployeeService(db_session).create_employee(
+        user_id=user.id,
+        employee_number=f"EMP-REFRESH-{uuid.uuid4().hex[:12].upper()}",
+        department="Operations",
+        position="Officer",
+    )
+    employee_id = employee.id
+    db_session.commit()
+
+    stale_session = SessionLocal()
+    writer_session = SessionLocal()
+
+    try:
+        repository = EmployeeService(stale_session).employee_repository
+        loaded_employee = repository.get_by_id(employee_id)
+
+        assert loaded_employee is not None
+        assert loaded_employee.ended_at is None
+
+        updated_employee = writer_session.get(Employee, employee_id)
+        assert updated_employee is not None
+        updated_employee.ended_at = datetime.now(UTC)
+        writer_session.commit()
+
+        refreshed_employee = repository.get_by_id_for_update(employee_id)
+
+        assert refreshed_employee is loaded_employee
+        assert refreshed_employee.ended_at is not None
+    finally:
+        stale_session.rollback()
+        stale_session.close()
+        writer_session.close()
+
+
+@pytest.mark.independent_db_transactions
 def test_terminate_employee_serializes_concurrent_termination(
     db_session,
 ):

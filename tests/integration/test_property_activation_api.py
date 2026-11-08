@@ -1,5 +1,9 @@
 import uuid
 
+from datetime import UTC, datetime
+from app.models.property_installation import PropertyInstallation
+from app.models.property_installation_verification import PropertyInstallationVerification
+
 from fastapi.testclient import TestClient
 
 from app.core.security import create_access_token
@@ -14,6 +18,44 @@ from app.models.user import User
 from app.models.employee import Employee
 from app.models.employee_clearance import EmployeeClearance
 from app.services.property_access_service import PropertyAccessService
+
+
+def _add_verified_activation_evidence(
+    db_session,
+    property,
+    plate,
+    installer_id,
+    verified_by,
+):
+    from datetime import UTC, datetime
+
+    from app.models.property_installation import PropertyInstallation
+    from app.models.property_installation_verification import (
+        PropertyInstallationVerification,
+    )
+
+    now = datetime.now(UTC)
+    installation = PropertyInstallation(
+        property_id=property.id,
+        plate_id=plate.id,
+        installer_id=installer_id,
+        latitude=-1.286389,
+        longitude=36.817223,
+        captured_at=now,
+        status="verified",
+    )
+    db_session.add(installation)
+    db_session.flush()
+
+    verification = PropertyInstallationVerification(
+        installation_id=installation.id,
+        verified_by=verified_by,
+        status="verified",
+        verified_at=now,
+        notes="Verified installation evidence for activation API test",
+    )
+    db_session.add(verification)
+    db_session.flush()
 
 
 def test_activate_property_api(db_session):
@@ -77,6 +119,13 @@ def test_activate_property_api(db_session):
                 )
         db_session.flush()
 
+        _add_verified_activation_evidence(
+            db_session,
+            property,
+            plate,
+            installer_id=user.id,
+            verified_by=user.id,
+        )
         def override_get_db():
                 yield db_session
 
@@ -230,6 +279,13 @@ def test_activate_property_api_allows_employee_across_landlord_ownership(
         )
     db_session.flush()
 
+    _add_verified_activation_evidence(
+        db_session,
+        property,
+        plate,
+        installer_id=employee.id,
+        verified_by=employee.id,
+    )
     PropertyAccessService(db_session).grant_access(
         user_id=employee.id,
         property_id=property.id,
@@ -703,7 +759,7 @@ def test_activate_property_api_rejects_unverified_plate(
 
         assert response.status_code == 400
         assert response.json()["detail"] == (
-            "Only verified plates can be activated"
+            "A verified installation with a successful verification record is required before activation"
         )
 
         db_session.refresh(property)
@@ -809,6 +865,13 @@ def test_activate_property_api_rejects_already_active_plate(
             )
         db_session.flush()
 
+        _add_verified_activation_evidence(
+            db_session,
+            property,
+            plate,
+            installer_id=employee.id,
+            verified_by=employee.id,
+        )
         PropertyAccessService(db_session).grant_access(
             user_id=employee.id,
             property_id=property.id,

@@ -4,6 +4,7 @@ from app.models.property import Property
 from app.models.user import User
 from app.models.property_address import PropertyAddress
 from app.models.property_location import PropertyLocation
+from app.models.property_location_verification import PropertyLocationVerification
 from app.models.address_plate import AddressPlate
 from app.models.address_plate_lifecycle_event import AddressPlateLifecycleEvent
 from app.models.address_plate_request import AddressPlateRequest
@@ -24,6 +25,7 @@ from app.models.listing import Listing
 from app.models.employee import Employee
 from app.models.employee_clearance import EmployeeClearance
 from app.models.employee_invitation import EmployeeInvitation
+from app.models.email_outbox import EmailOutbox
 
 __all__ = [
     "Base",
@@ -32,6 +34,7 @@ __all__ = [
     "Property",
     "PropertyAddress",
     "PropertyLocation",
+    "PropertyLocationVerification",
     "AddressPlate",
     "AddressPlateLifecycleEvent",
     "AddressPlateRequest",
@@ -52,4 +55,5 @@ __all__ = [
     "Employee",
     "EmployeeClearance",
     "EmployeeInvitation",
+    "EmailOutbox",
 ]

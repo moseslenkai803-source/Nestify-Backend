@@ -739,6 +739,34 @@ Example:
 Landlord A cannot modify Landlord B's property.
 ```
 
+### Running integration tests safely
+
+Integration tests require Docker and must be run through the disposable
+PostgreSQL/PostGIS runner. The runner creates a fresh database container,
+verifies its endpoint and per-run identity marker, applies Alembic migrations,
+and removes the container after pytest exits:
+
+```bash
+python scripts/run_isolated_tests.py tests/integration
+```
+
+To run a focused integration test, pass its path instead. The runner does not
+use the application's configured development or production database.
+
+Pure unit tests that do not require a database can run directly without Docker.
+Database-backed unit tests must use the isolated runner, which verifies the
+runner-owned database identity before creating a session:
+
+```bash
+python scripts/run_isolated_tests.py tests/units
+```
+
+For a focused database-backed unit test:
+
+```bash
+python scripts/run_isolated_tests.py tests/units/test_contractor_service.py
+```
+
 ---
 
 ## 20. Database migrations
@@ -793,6 +821,60 @@ CORS_ORIGINS
 The actual environment configuration is documented separately from secret
 values.
 
+### Employee invitation email delivery
+
+Outside development, employee invitations are delivered through an encrypted
+transactional outbox. Configure these environment variables:
+
+- `ENVIRONMENT`
+- `FRONTEND_BASE_URL`
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_FROM_EMAIL`
+- `SMTP_USE_SSL`
+- `SMTP_STARTTLS`
+- `OUTBOX_ENCRYPTION_KEYS`
+- `OUTBOX_ACTIVE_ENCRYPTION_KEY_VERSION`
+
+If SMTP authentication is required, configure both `SMTP_USERNAME` and
+`SMTP_PASSWORD`. Never commit real credentials or encryption keys.
+
+- Development responses include the invitation URL for testing. In
+  development, the invitation email is not queued by the outbox.
+- Outside development, the invitation and encrypted outbox payload are stored
+  in the same database transaction. The API does not send email inline and
+  does not expose the raw invitation URL in its response.
+- Invitation tokens expire after 24 hours. Token hashes are stored for
+  verification, while the outbox payload containing the invitation URL is
+  encrypted before being stored in the database.
+- Both API and worker processes need compatible outbox encryption settings.
+  Retain old key versions while queued records may still need decryption.
+- Production SMTP must use either implicit SSL or STARTTLS, not both.
+- If secure encryption or queueing fails, the request fails rather than
+  returning an invitation that cannot be delivered.
+- A successful API response confirms that the invitation and email job were
+  committed; it does not mean the email has already arrived.
+
+#### Running the email outbox worker
+
+Run the worker separately from FastAPI, with the same database and compatible
+SMTP and encryption configuration:
+
+```bash
+python -m app.workers.email_outbox
+```
+
+The worker polls for eligible jobs, claims each job before sending, and
+retries failures with bounded exponential backoff. Jobs that exhaust their
+attempts are marked `dead_letter` and require operational review. Starting
+the API alone does not deliver queued emails.
+
+Delivery is at-least-once, not exactly-once. If SMTP accepts a message but
+the worker loses the response or stops before recording success, a retry can
+send a duplicate. The outbox makes the invitation and email job atomic with
+respect to the database, but it cannot make SMTP and the database one
+atomic transaction.
+
 ---
 
 ## 22. Production requirements
@@ -810,6 +892,8 @@ Before the backend is considered production-ready, it should have:
 - Automated tests
 - API documentation
 - Environment configuration
+- Configured and verified production SMTP delivery
+- Shared rate limiting for public endpoints across application instances
 - Database backups
 - Health checks
 - Security controls
@@ -819,6 +903,56 @@ Before the backend is considered production-ready, it should have:
 - Staging environment
 
 Production readiness means more than successfully running the API locally.
+
+### Trusted ingress and client IP identity
+
+Public IP-based rate limits require a trustworthy client IP address.
+
+The intended deployment contract is:
+
+- Development uses the direct connection address exposed by the ASGI request.
+- Staging and production use the `CF-Connecting-IP` request header.
+- The application parses this value as exactly one IP address and normalizes
+  it before using it as a rate-limit identity.
+- Missing, malformed, whitespace-padded, or comma-separated values are
+  rejected with HTTP 503. The rate limiter must not silently fall back to an
+  untrusted forwarded header.
+- `X-Forwarded-For` is not used as the rate-limit identity.
+
+The intended staging and production configuration relies on requests
+reaching the application through Render's public ingress, which is expected
+to supply the `CF-Connecting-IP` client address. Verify this behavior in
+each deployed environment before relying on it. This is a hosting trust
+assumption, not proof that Nestify has separately configured a Cloudflare
+zone or WAF.
+
+Before changing hosting providers, ingress architecture, or proxy routing,
+reassess this trust boundary. Verify which proxy directly connects to the
+application, which component sets the client-IP header, and whether clients
+can reach the application through an alternate path. Never trust a
+client-supplied forwarding header merely because its value is syntactically
+valid.
+
+The current `render.yaml` defines production resources. Staging must use
+separate application services and isolated database and Redis resources; it
+must not share production data or rate-limit state.
+
+### Redis emergency fallback recovery
+
+The local rate-limit fallback is not cleared by a single successful Redis
+operation. A successful rate-limit decision (`ALLOWED` or `LIMITED`) or
+successful Redis health check starts or advances recovery. The fallback is
+cleared only after a later successful observation at least
+`RATE_LIMIT_RECOVERY_GRACE_SECONDS` after the first observation. Redis
+failures reset this recovery interval.
+
+This is an observation-based grace period, not continuous Redis monitoring:
+the application does not independently probe Redis between successful
+observations. A delayed failure from an in-flight request can conservatively
+reset recovery or activate fallback after another request observed success.
+This may cause unnecessary fallback activation, but does not silently treat
+an observed Redis failure as sustained recovery.
+
 
 ---
 
@@ -1172,7 +1306,18 @@ Current development stages:
 - [ ] Testing
 - [ ] Security hardening
 - [ ] Staging deployment
+  - [ ] Separate staging API and required worker services
+  - [ ] Isolated staging PostgreSQL and Redis resources
+  - [ ] `ENVIRONMENT=staging` configured
+  - [ ] Verify `CF-Connecting-IP` through the deployed ingress
+  - [ ] Verify missing and malformed client-IP headers fail closed
+  - [ ] Verify `X-Forwarded-For` cannot override the client-IP identity
+  - [ ] Verify migrations, health checks, and rate limiting
 - [ ] Production deployment
+  - [ ] Confirm production ingress supplies the expected client-IP header
+  - [ ] Verify malformed or missing client-IP headers fail closed
+  - [ ] Verify production database and Redis are isolated from staging
+  - [ ] Verify migrations, health checks, and shared rate limiting
 
 ---
 

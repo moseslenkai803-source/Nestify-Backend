@@ -8,9 +8,16 @@ from app.models.base import Base
 
 
 class ContractorMember(Base):
+    """Associates a user with a contractor organization for assigned work."""
+
     __tablename__ = "contractor_members"
 
     __table_args__ = (
+        UniqueConstraint(
+            "id",
+            "contractor_id",
+            name="uq_contractor_members_id_contractor_id",
+        ),
         UniqueConstraint(
             "contractor_id",
             "user_id",

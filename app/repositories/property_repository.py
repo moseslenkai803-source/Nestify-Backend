@@ -21,6 +21,7 @@ class PropertyRepository:
             select(Property)
             .where(Property.id == property_id)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
 
         return self.db.scalar(statement)
@@ -45,6 +46,13 @@ class PropertyRepository:
             .filter(Property.landlord_id == landlord_id)
             .all()
         )
+
+    def get_all(self) -> list[Property]:
+        statement = select(Property).order_by(
+            Property.name,
+            Property.id,
+        )
+        return list(self.db.scalars(statement).all())
 
     def add(self, property: Property) -> Property:
         self.db.add(property)

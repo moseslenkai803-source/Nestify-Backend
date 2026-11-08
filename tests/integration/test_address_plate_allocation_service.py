@@ -535,3 +535,180 @@ def test_allocate_plate_serializes_concurrent_allocations_for_same_property(
         second_session.rollback()
         first_session.close()
         second_session.close()
+
+
+def test_allocate_plate_serializes_concurrent_allocations_for_same_request(
+    db_session,
+):
+    user, property, employee = create_landlord_and_property(db_session)
+
+    request = AddressPlateRequest(
+        property_id=property.id,
+        requested_by=user.id,
+        status="approved",
+    )
+    db_session.add(request)
+    db_session.flush()
+
+    create_manufactured_plate(db_session, performed_by=user.id)
+    create_manufactured_plate(db_session, performed_by=user.id)
+
+    request_id = request.id
+    employee_id = employee.id
+
+    db_session.commit()
+
+    first_session = SessionLocal()
+    second_session = SessionLocal()
+
+    first_employee = first_session.get(User, employee_id)
+    second_employee = second_session.get(User, employee_id)
+
+    assert first_employee is not None
+    assert second_employee is not None
+
+    second_started = Event()
+    second_finished = Event()
+    second_result = {}
+    second_error = {}
+    thread = None
+
+    try:
+        first_service = AddressPlateAllocationService(first_session)
+
+        locked_request = (
+            first_service.address_plate_request_repository
+            .get_by_id_for_update(request_id)
+        )
+        assert locked_request is not None
+
+        def allocate_from_second_transaction():
+            try:
+                second_service = AddressPlateAllocationService(
+                    second_session
+                )
+                second_started.set()
+
+                result = second_service.allocate_plate(
+                    request_id=request_id,
+                    user=second_employee,
+                )
+                second_result["plate_id"] = result.id
+            except Exception as exc:
+                second_error["error"] = exc
+            finally:
+                second_finished.set()
+
+        thread = Thread(target=allocate_from_second_transaction)
+        thread.start()
+
+        assert second_started.wait(timeout=2)
+        assert not second_finished.wait(timeout=0.2)
+
+        first_result = first_service.allocate_plate(
+            request_id=request_id,
+            user=first_employee,
+        )
+
+        assert first_result.property_id == locked_request.property_id
+        first_session.commit()
+
+        assert second_finished.wait(timeout=5)
+        thread.join(timeout=2)
+        assert not thread.is_alive()
+
+        assert "plate_id" not in second_result
+        assert isinstance(second_error.get("error"), ValueError)
+        assert str(second_error["error"]) == (
+            "Address plate request is not approved"
+        )
+
+        second_session.rollback()
+
+        allocated_plates = (
+            second_session.query(AddressPlate)
+            .filter(AddressPlate.property_id == locked_request.property_id)
+            .all()
+        )
+
+        assert len(allocated_plates) == 1
+        assert allocated_plates[0].id == first_result.id
+
+        fulfilled_request = second_session.get(
+            AddressPlateRequest,
+            request_id,
+        )
+        assert fulfilled_request is not None
+        assert fulfilled_request.status == "fulfilled"
+
+    finally:
+        # Release the first transaction's row lock before waiting for the
+        # competing thread, especially when an assertion fails.
+        first_session.rollback()
+
+        if thread is not None:
+            thread.join(timeout=5)
+            if thread.is_alive():
+                second_session.rollback()
+                thread.join(timeout=2)
+
+        second_session.rollback()
+        first_session.close()
+        second_session.close()
+
+
+def test_allocate_plate_rolls_back_when_lifecycle_recording_fails(
+    db_session,
+    monkeypatch,
+):
+    user, property, employee = create_landlord_and_property(db_session)
+
+    request = AddressPlateRequest(
+        property_id=property.id,
+        requested_by=user.id,
+        status="approved",
+    )
+    db_session.add(request)
+    db_session.flush()
+
+    plate = create_manufactured_plate(
+        db_session,
+        performed_by=user.id,
+    )
+
+    request_id = request.id
+    plate_id = plate.id
+
+    # Keep the setup durable so rollback only undoes the attempted allocation.
+    db_session.commit()
+
+    service = AddressPlateAllocationService(db_session)
+
+    def fail_record_allocation(*args, **kwargs):
+        raise RuntimeError("simulated lifecycle failure")
+
+    monkeypatch.setattr(
+        service.lifecycle_service,
+        "record_allocation",
+        fail_record_allocation,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="simulated lifecycle failure",
+    ):
+        service.allocate_plate(
+            request_id=request_id,
+            user=employee,
+        )
+
+    db_session.rollback()
+
+    persisted_plate = db_session.get(AddressPlate, plate_id)
+    persisted_request = db_session.get(AddressPlateRequest, request_id)
+
+    assert persisted_plate is not None
+    assert persisted_plate.property_id is None
+
+    assert persisted_request is not None
+    assert persisted_request.status == "approved"

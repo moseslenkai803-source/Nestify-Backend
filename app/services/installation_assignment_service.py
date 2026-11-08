@@ -1,3 +1,4 @@
+import math
 from datetime import UTC, datetime
 from uuid import UUID
 
@@ -15,6 +16,7 @@ from app.repositories.property_installation_repository import PropertyInstallati
 from app.repositories.property_repository import PropertyRepository
 from app.repositories.user_repository import UserRepository
 from app.services.address_plate_lifecycle_service import AddressPlateLifecycleService
+from app.services.plate_operations_authorization_service import PlateOperationsAuthorizationService
 
 
 class InstallationAssignmentService:
@@ -30,6 +32,7 @@ class InstallationAssignmentService:
         self.property_installation_repository = PropertyInstallationRepository(db)
         self.user_repository = UserRepository(db)
         self.lifecycle_service = AddressPlateLifecycleService(db)
+        self.plate_operations_authorization = PlateOperationsAuthorizationService(db)
 
     def _require_plate_dispatched(self, plate_id: UUID) -> None:
         latest_event = self.lifecycle_service.get_latest_event(plate_id)
@@ -38,6 +41,20 @@ class InstallationAssignmentService:
             raise ValueError(
                 "Address plate must be dispatched before installation"
             )
+
+    def _require_active_assignment_contractor(
+        self,
+        assignment: InstallationAssignment,
+    ) -> None:
+        contractor = self.contractor_repository.get_by_id_for_update(
+            assignment.contractor_id
+        )
+
+        if contractor is None:
+            raise ValueError("Contractor not found")
+
+        if contractor.status != "active":
+            raise ValueError("Contractor is inactive")
 
     def create_assignment(
         self,
@@ -48,6 +65,8 @@ class InstallationAssignmentService:
         assigned_by: UUID,
         due_at: datetime | None = None,
     ) -> InstallationAssignment:
+        # Property and plate locks serialize assignment creation against
+        # competing assignments and state changes to either resource.
         property = self.property_repository.get_by_id_for_update(property_id)
 
         if property is None:
@@ -101,11 +120,10 @@ class InstallationAssignmentService:
         if assigned_user is None:
             raise ValueError("Assigning employee not found")
 
-        if not assigned_user.is_active:
-            raise ValueError("Assigning employee is inactive")
-
-        if assigned_user.role not in {"admin", "employee"}:
-            raise ValueError("Only Nestify employees can assign installations")
+        self.plate_operations_authorization.authorize_property(
+            user_id=assigned_user.id,
+            property_id=property_id,
+        )
 
         existing_property_assignment = (
             self.installation_assignment_repository.get_active_by_property_id(
@@ -129,6 +147,8 @@ class InstallationAssignmentService:
                 "Address plate already has an active installation assignment"
             )
 
+        # These checks provide clear domain errors; the partial unique indexes
+        # remain the final guard against concurrent active assignments.
         assignment = InstallationAssignment(
             property_id=property_id,
             plate_id=plate_id,
@@ -158,6 +178,8 @@ class InstallationAssignmentService:
         if assignment.status != "assigned":
             raise ValueError("Installation assignment is not awaiting start")
 
+        self._require_active_assignment_contractor(assignment)
+
         contractor_member = (
             self.contractor_member_repository.get_by_id_for_update(
                 assignment.contractor_member_id
@@ -166,6 +188,11 @@ class InstallationAssignmentService:
 
         if contractor_member is None:
             raise ValueError("Contractor member not found")
+
+        if contractor_member.contractor_id != assignment.contractor_id:
+            raise ValueError(
+                "Contractor member does not belong to this contractor"
+            )
 
         if contractor_member.user_id != contractor_user_id:
             raise ValueError(
@@ -208,19 +235,18 @@ class InstallationAssignmentService:
         if assignment is None:
             raise ValueError("Installation assignment not found")
 
-        if assignment.status not in {"assigned", "in_progress", "submitted"}:
-            raise ValueError("Installation assignment cannot be cancelled")
-
         employee = self.user_repository.get_by_id(cancelled_by)
 
         if employee is None:
             raise ValueError("Cancelling employee not found")
 
-        if not employee.is_active:
-            raise ValueError("Cancelling employee is inactive")
+        self.plate_operations_authorization.authorize_property(
+            user_id=employee.id,
+            property_id=assignment.property_id,
+        )
 
-        if employee.role not in {"admin", "employee"}:
-            raise ValueError("Only Nestify employees can cancel installations")
+        if assignment.status not in {"assigned", "in_progress", "submitted"}:
+            raise ValueError("Installation assignment cannot be cancelled")
 
         if not reason.strip():
             raise ValueError("Cancellation reason is required")
@@ -244,6 +270,25 @@ class InstallationAssignmentService:
         captured_at: datetime,
         notes: str | None = None,
     ) -> PropertyInstallation:
+        if not math.isfinite(latitude):
+            raise ValueError("Latitude must be finite")
+        if not -90 <= latitude <= 90:
+            raise ValueError("Latitude must be between -90 and 90")
+
+        if not math.isfinite(longitude):
+            raise ValueError("Longitude must be finite")
+        if not -180 <= longitude <= 180:
+            raise ValueError("Longitude must be between -180 and 180")
+
+        if accuracy_meters is not None:
+            if not math.isfinite(accuracy_meters):
+                raise ValueError("Accuracy must be finite")
+            if accuracy_meters < 0:
+                raise ValueError("Accuracy must be greater than or equal to 0")
+
+        if captured_at.tzinfo is None or captured_at.utcoffset() is None:
+            raise ValueError("Captured timestamp must be timezone-aware")
+
         assignment = self.installation_assignment_repository.get_by_id_for_update(
             assignment_id
         )
@@ -256,6 +301,18 @@ class InstallationAssignmentService:
                 "Installation assignment is not in progress"
             )
 
+        # Serialize installation submissions for this property. Keep this
+        # lock until commit so competing creation paths cannot both pass
+        # the submitted-installation check.
+        property_record = self.property_repository.get_by_id_for_update(
+            assignment.property_id
+        )
+
+        if property_record is None:
+            raise ValueError("Property not found")
+
+        self._require_active_assignment_contractor(assignment)
+
         contractor_member = (
             self.contractor_member_repository.get_by_id_for_update(
                 assignment.contractor_member_id
@@ -264,6 +321,11 @@ class InstallationAssignmentService:
 
         if contractor_member is None:
             raise ValueError("Contractor member not found")
+
+        if contractor_member.contractor_id != assignment.contractor_id:
+            raise ValueError(
+                "Contractor member does not belong to this contractor"
+            )
 
         if contractor_member.user_id != contractor_user_id:
             raise ValueError(
@@ -288,19 +350,12 @@ class InstallationAssignmentService:
 
         self._require_plate_dispatched(assignment.plate_id)
 
-        if not -90 <= latitude <= 90:
-            raise ValueError("Latitude must be between -90 and 90")
-
-        if not -180 <= longitude <= 180:
-            raise ValueError("Longitude must be between -180 and 180")
-
-        if accuracy_meters is not None and accuracy_meters < 0:
+        if self.property_installation_repository.has_submitted_for_property(
+            assignment.property_id
+        ):
             raise ValueError(
-                "Accuracy must be greater than or equal to 0"
+                "Property already has a submitted installation"
             )
-
-        if captured_at.tzinfo is None:
-            raise ValueError("Captured timestamp must be timezone-aware")
 
         existing_installation = (
             self.property_installation_repository.get_by_assignment_id_for_update(

@@ -11,6 +11,7 @@ from app.repositories.employee_clearance_repository import (
     EmployeeClearanceRepository,
 )
 from app.repositories.employee_repository import EmployeeRepository
+from app.repositories.landlord_repository import LandlordRepository
 from app.repositories.user_repository import UserRepository
 
 
@@ -19,6 +20,7 @@ class EmployeeService:
         self.db = db
         self.employee_repository = EmployeeRepository(db)
         self.employee_clearance_repository = EmployeeClearanceRepository(db)
+        self.landlord_repository = LandlordRepository(db)
         self.user_repository = UserRepository(db)
 
     def create_employee(
@@ -52,6 +54,10 @@ class EmployeeService:
 
         if user.role != "employee":
             raise ValueError("Only employee users can have employee records")
+
+        existing_landlord = self.landlord_repository.get_by_user_id(user_id)
+        if existing_landlord is not None:
+            raise ValueError("Landlord profiles cannot be registered as employees")
 
         existing_employee = self.employee_repository.get_by_user_id(user_id)
 

@@ -1,8 +1,10 @@
 import uuid
+from datetime import UTC, datetime
 
 import pytest
 
 from app.core.property_actions import PropertyAction
+from app.models.employee import Employee
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_access import PropertyAccess
@@ -17,6 +19,7 @@ def create_user(
     *,
     role="landlord",
     is_active=True,
+    create_employee_record=True,
 ):
     user = User(
         email=f"{uuid.uuid4()}@example.com",
@@ -26,6 +29,18 @@ def create_user(
     )
     db_session.add(user)
     db_session.flush()
+
+    if role == "employee" and create_employee_record:
+        db_session.add(
+            Employee(
+                user_id=user.id,
+                employee_number=f"AUTH-{uuid.uuid4().hex[:20].upper()}",
+                department="Operations",
+                position="Test Employee",
+            )
+        )
+        db_session.flush()
+
     return user
 
 
@@ -241,6 +256,52 @@ def test_revoked_property_access_cannot_authorize_property(
         ValueError,
         match="User is not authorized for this property",
     ):
+        service.authorize(
+            user=employee,
+            property_id=property.id,
+            action=PropertyAction.PLATE_OPERATIONS,
+        )
+
+
+def test_employee_without_employee_record_cannot_use_property_grant(
+    db_session,
+):
+    owner = create_user(db_session)
+    landlord = create_landlord(db_session, owner)
+    property = create_property(db_session, landlord)
+    employee = create_user(
+        db_session,
+        role="employee",
+        create_employee_record=False,
+    )
+    grant_property_access(db_session, employee, property)
+    service = PropertyAuthorizationService(db_session)
+
+    with pytest.raises(ValueError, match="Employee record not found"):
+        service.authorize(
+            user=employee,
+            property_id=property.id,
+            action=PropertyAction.PLATE_OPERATIONS,
+        )
+
+
+def test_terminated_employee_cannot_use_property_grant_if_account_active(
+    db_session,
+):
+    owner = create_user(db_session)
+    landlord = create_landlord(db_session, owner)
+    property = create_property(db_session, landlord)
+    employee = create_user(db_session, role="employee")
+    employee_record = (
+        db_session.query(Employee)
+        .filter(Employee.user_id == employee.id)
+        .one()
+    )
+    employee_record.ended_at = datetime.now(UTC)
+    grant_property_access(db_session, employee, property)
+    service = PropertyAuthorizationService(db_session)
+
+    with pytest.raises(ValueError, match="Employee is terminated"):
         service.authorize(
             user=employee,
             property_id=property.id,

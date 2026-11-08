@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.orm import Session, aliased
 
 from app.models.address_plate import AddressPlate
@@ -8,6 +8,7 @@ from app.models.contractor import Contractor
 from app.models.contractor_member import ContractorMember
 from app.models.installation_assignment import InstallationAssignment
 from app.models.property import Property
+from app.models.property_access import PropertyAccess
 from app.models.user import User
 
 
@@ -41,6 +42,7 @@ class InstallationAssignmentRepository:
             select(InstallationAssignment)
             .where(InstallationAssignment.id == assignment_id)
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         return self.db.scalar(statement)
 
@@ -145,6 +147,35 @@ class InstallationAssignmentRepository:
                 InstallationAssignment.created_at.desc(),
                 InstallationAssignment.id.desc(),
             )
+        )
+
+        return self.db.execute(statement).all()
+
+    def get_enriched_records_for_user(
+        self,
+        user_id: UUID,
+        status: str | None = None,
+    ) -> list[tuple]:
+        has_property_access = exists(
+            select(1).where(
+                PropertyAccess.user_id == user_id,
+                PropertyAccess.property_id
+                == InstallationAssignment.property_id,
+                PropertyAccess.access_type == "plate_operations",
+                PropertyAccess.is_active.is_(True),
+            )
+        )
+
+        statement = self._enriched_statement().where(has_property_access)
+
+        if status is not None:
+            statement = statement.where(
+                InstallationAssignment.status == status,
+            )
+
+        statement = statement.order_by(
+            InstallationAssignment.created_at.desc(),
+            InstallationAssignment.id.desc(),
         )
 
         return self.db.execute(statement).all()

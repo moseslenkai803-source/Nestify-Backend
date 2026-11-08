@@ -26,5 +26,13 @@ class DispatchResponse(BaseModel):
     recipient_phone: str
     tracking_reference: str | None
     created_by: UUID
+    ready_by: UUID | None
+    ready_at: datetime | None
+    dispatched_by: UUID | None
+    dispatched_at: datetime | None
+    delivered_by: UUID | None
+    delivered_at: datetime | None
+    cancelled_by: UUID | None
+    cancelled_at: datetime | None
     created_at: datetime
     updated_at: datetime
