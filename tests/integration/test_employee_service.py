@@ -1,4 +1,5 @@
 import uuid
+from datetime import UTC, datetime
 from threading import Event, Thread
 
 import pytest
@@ -608,6 +609,7 @@ def test_clearance_operations_reject_terminated_employee(
         )
 
 
+@pytest.mark.independent_db_transactions
 def test_create_employee_serializes_concurrent_creation_for_same_user(
     db_session,
 ):
@@ -707,6 +709,44 @@ def test_create_employee_serializes_concurrent_creation_for_same_user(
         first_session.close()
 
 
+@pytest.mark.independent_db_transactions
+def test_get_employee_for_update_refreshes_stale_session_state(db_session):
+    user = create_employee_user(db_session)
+    employee = EmployeeService(db_session).create_employee(
+        user_id=user.id,
+        employee_number=f"EMP-REFRESH-{uuid.uuid4().hex[:12].upper()}",
+        department="Operations",
+        position="Officer",
+    )
+    employee_id = employee.id
+    db_session.commit()
+
+    stale_session = SessionLocal()
+    writer_session = SessionLocal()
+
+    try:
+        repository = EmployeeService(stale_session).employee_repository
+        loaded_employee = repository.get_by_id(employee_id)
+
+        assert loaded_employee is not None
+        assert loaded_employee.ended_at is None
+
+        updated_employee = writer_session.get(Employee, employee_id)
+        assert updated_employee is not None
+        updated_employee.ended_at = datetime.now(UTC)
+        writer_session.commit()
+
+        refreshed_employee = repository.get_by_id_for_update(employee_id)
+
+        assert refreshed_employee is loaded_employee
+        assert refreshed_employee.ended_at is not None
+    finally:
+        stale_session.rollback()
+        stale_session.close()
+        writer_session.close()
+
+
+@pytest.mark.independent_db_transactions
 def test_terminate_employee_serializes_concurrent_termination(
     db_session,
 ):
