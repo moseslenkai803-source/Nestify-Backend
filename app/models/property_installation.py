@@ -1,7 +1,17 @@
 import uuid
 from datetime import datetime, UTC
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, String, Text, Uuid, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    Uuid,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -11,6 +21,20 @@ class PropertyInstallation(Base):
     __tablename__ = "property_installations"
 
     __table_args__ = (
+        CheckConstraint(
+            "latitude BETWEEN -90 AND 90",
+            name="ck_property_installations_latitude_range",
+        ),
+        CheckConstraint(
+            "longitude BETWEEN -180 AND 180",
+            name="ck_property_installations_longitude_range",
+        ),
+        CheckConstraint(
+            "accuracy_meters IS NULL OR "
+            "(accuracy_meters >= 0 AND "
+            "accuracy_meters < 'Infinity'::double precision)",
+            name="ck_property_installations_accuracy_finite_nonnegative",
+        ),
         Index(
             "uq_property_installations_one_submitted_per_property",
             "property_id",

@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class InstallationAssignmentCreate(BaseModel):
@@ -57,8 +57,17 @@ class InstallationAssignmentResponse(BaseModel):
 
 
 class InstallationAssignmentSubmit(BaseModel):
-    latitude: float
-    longitude: float
-    accuracy_meters: float | None = None
+    latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
+    longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
+    accuracy_meters: float | None = Field(
+        default=None, ge=0, allow_inf_nan=False
+    )
     captured_at: datetime
     notes: str | None = None
+
+    @field_validator("captured_at")
+    @classmethod
+    def captured_at_must_be_timezone_aware(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("captured_at must be timezone-aware")
+        return value

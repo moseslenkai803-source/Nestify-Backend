@@ -24,7 +24,7 @@ from sqlalchemy.pool import NullPool
 ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = ROOT / "alembic.ini"
 PARENT_REVISION = "6c1f8e2a4b70"
-TARGET_REVISION = "a94c2e7d61f0"
+TARGET_REVISION = "d6a9f2c41b70"
 TEST_DATABASE_NAME = "nestify_migration_test"
 DENIED_DATABASE_NAMES = {"nestify", "nestify_pytest"}
 POSTGIS_IMAGE = "postgis/postgis:16-3.4"
@@ -36,6 +36,8 @@ pytestmark = pytest.mark.skipif(
 
 FIXTURE_USER_ID = UUID("a1b2c3d4-1000-4000-8000-000000000001")
 FIXTURE_LANDLORD_ID = UUID("a1b2c3d4-1000-4000-8000-000000000002")
+FIXTURE_PLATE_ID = UUID("a1b2c3d4-3000-4000-8000-000000000001")
+FIXTURE_INSTALLATION_ID = UUID("a1b2c3d4-3000-4000-8000-000000000002")
 FIXTURE_ROWS = (
     {
         "property_id": UUID("a1b2c3d4-1000-4000-8000-000000000011"),
@@ -244,6 +246,48 @@ def _seed_legacy_rows(connection) -> None:
             },
         )
 
+    installation_created_at = FIXTURE_ROWS[0]["created_at"]
+    installation_updated_at = FIXTURE_ROWS[0]["updated_at"]
+    installation_captured_at = FIXTURE_ROWS[0]["captured_at"]
+
+    connection.execute(
+        text(
+            "INSERT INTO address_plates "
+            "(id, manufacturing_order_id, property_id, plate_code, status, "
+            "activated_at, created_at, updated_at) "
+            "VALUES (:id, NULL, :property_id, :plate_code, 'unactivated', "
+            "NULL, :created_at, :updated_at)"
+        ),
+        {
+            "id": FIXTURE_PLATE_ID,
+            "property_id": FIXTURE_ROWS[0]["property_id"],
+            "plate_code": "MIGRATION-TEST-PLATE-001",
+            "created_at": installation_created_at,
+            "updated_at": installation_updated_at,
+        },
+    )
+
+    connection.execute(
+        text(
+            "INSERT INTO property_installations "
+            "(id, property_id, plate_id, assignment_id, installer_id, "
+            "latitude, longitude, accuracy_meters, captured_at, status, "
+            "notes, created_at, updated_at) "
+            "VALUES (:id, :property_id, :plate_id, NULL, :installer_id, "
+            "-1.2921, 36.8219, 4.5, :captured_at, 'submitted', NULL, "
+            ":created_at, :updated_at)"
+        ),
+        {
+            "id": FIXTURE_INSTALLATION_ID,
+            "property_id": FIXTURE_ROWS[0]["property_id"],
+            "plate_id": FIXTURE_PLATE_ID,
+            "installer_id": FIXTURE_USER_ID,
+            "captured_at": installation_captured_at,
+            "created_at": installation_created_at,
+            "updated_at": installation_updated_at,
+        },
+    )
+
 
 def _location_snapshot(connection) -> dict[UUID, dict]:
     result = connection.execute(
@@ -269,6 +313,27 @@ def _property_snapshot(connection) -> dict[UUID, dict]:
         )
     ).mappings()
     return {row["id"]: dict(row) for row in result}
+
+
+def _installation_snapshot(connection) -> dict[UUID, dict]:
+    result = connection.execute(
+        text(
+            "SELECT id, property_id, plate_id, assignment_id, installer_id, "
+            "latitude, longitude, accuracy_meters, captured_at, status, "
+            "notes, created_at, updated_at "
+            "FROM property_installations ORDER BY id"
+        )
+    ).mappings()
+    return {row["id"]: dict(row) for row in result}
+
+
+def _assert_installations_preserved(
+    connection,
+    before: dict[UUID, dict],
+) -> None:
+    after = _installation_snapshot(connection)
+    assert set(after) == set(before) == {FIXTURE_INSTALLATION_ID}
+    assert after == before
 
 
 def _assert_legacy_data_preserved(connection, before: dict[UUID, dict]) -> None:
@@ -324,7 +389,7 @@ def _catalog_constraints(connection) -> dict[str, dict]:
             "JOIN pg_namespace AS ns ON ns.oid = rel.relnamespace "
             "WHERE ns.nspname = 'public' "
             "AND rel.relname IN "
-            "('property_locations', 'property_location_verifications')"
+            "('property_locations', 'property_location_verifications', 'property_installations')"
         )
     ).mappings()
     return {row["conname"]: dict(row) for row in rows}
@@ -389,8 +454,14 @@ def _assert_schema_objects(connection) -> None:
         "property_locations_submitted_by_id_fkey": "f",
         "uq_property_locations_property_version": "u",
         "ck_property_locations_version_number_positive": "c",
+        "ck_property_locations_latitude_range": "c",
+        "ck_property_locations_longitude_range": "c",
+        "ck_property_locations_accuracy_finite_nonnegative": "c",
         "ck_property_locations_status": "c",
         "ck_property_locations_current_requires_approval": "c",
+        "ck_property_installations_latitude_range": "c",
+        "ck_property_installations_longitude_range": "c",
+        "ck_property_installations_accuracy_finite_nonnegative": "c",
         "property_location_verifications_pkey": "p",
         "property_location_verifications_location_id_fkey": "f",
         "property_location_verifications_verified_by_fkey": "f",
@@ -430,6 +501,31 @@ def _assert_schema_objects(connection) -> None:
     assert "version_number > 0" in constraints[
         "ck_property_locations_version_number_positive"
     ]["definition"]
+    assert "latitude" in constraints[
+        "ck_property_locations_latitude_range"
+    ]["definition"]
+    assert "longitude" in constraints[
+        "ck_property_locations_longitude_range"
+    ]["definition"]
+    accuracy_definition = constraints[
+        "ck_property_locations_accuracy_finite_nonnegative"
+    ]["definition"]
+    assert "accuracy_meters" in accuracy_definition
+    assert "Infinity" in accuracy_definition
+
+    installation_latitude_definition = constraints[
+        "ck_property_installations_latitude_range"
+    ]["definition"]
+    assert "latitude" in installation_latitude_definition
+    installation_longitude_definition = constraints[
+        "ck_property_installations_longitude_range"
+    ]["definition"]
+    assert "longitude" in installation_longitude_definition
+    installation_accuracy_definition = constraints[
+        "ck_property_installations_accuracy_finite_nonnegative"
+    ]["definition"]
+    assert "accuracy_meters" in installation_accuracy_definition
+    assert "Infinity" in installation_accuracy_definition
     assert "NOT is_current" in constraints[
         "ck_property_locations_current_requires_approval"
     ]["definition"]
@@ -510,6 +606,63 @@ def _assert_constraints_enforced(connection) -> None:
                 ),
                 {"id": FIXTURE_ROWS[0]["location_id"]},
             )
+
+    # PostgreSQL must independently reject out-of-range and non-finite
+    # coordinates and accuracy values, even when application validation
+    # is bypassed.
+    invalid_numeric_values = (
+        ("latitude", "91"),
+        ("latitude", "-91"),
+        ("latitude", "'NaN'::double precision"),
+        ("latitude", "'Infinity'::double precision"),
+        ("latitude", "'-Infinity'::double precision"),
+        ("longitude", "181"),
+        ("longitude", "-181"),
+        ("longitude", "'NaN'::double precision"),
+        ("longitude", "'Infinity'::double precision"),
+        ("longitude", "'-Infinity'::double precision"),
+        ("accuracy_meters", "-1"),
+        ("accuracy_meters", "'NaN'::double precision"),
+        ("accuracy_meters", "'Infinity'::double precision"),
+        ("accuracy_meters", "'-Infinity'::double precision"),
+    )
+    for column, invalid_value in invalid_numeric_values:
+        with pytest.raises(IntegrityError):
+            with connection.begin_nested():
+                connection.execute(
+                    text(
+                        f"UPDATE property_locations SET {column} = "
+                        f"{invalid_value} WHERE id = :id"
+                    ),
+                    {"id": FIXTURE_ROWS[0]["location_id"]},
+                )
+
+    installation_invalid_numeric_values = (
+        ("latitude", "91"),
+        ("latitude", "-91"),
+        ("latitude", "'NaN'::double precision"),
+        ("latitude", "'Infinity'::double precision"),
+        ("latitude", "'-Infinity'::double precision"),
+        ("longitude", "181"),
+        ("longitude", "-181"),
+        ("longitude", "'NaN'::double precision"),
+        ("longitude", "'Infinity'::double precision"),
+        ("longitude", "'-Infinity'::double precision"),
+        ("accuracy_meters", "-1"),
+        ("accuracy_meters", "'NaN'::double precision"),
+        ("accuracy_meters", "'Infinity'::double precision"),
+        ("accuracy_meters", "'-Infinity'::double precision"),
+    )
+    for column, invalid_value in installation_invalid_numeric_values:
+        with pytest.raises(IntegrityError):
+            with connection.begin_nested():
+                connection.execute(
+                    text(
+                        f"UPDATE property_installations SET {column} = "
+                        f"{invalid_value} WHERE id = :id"
+                    ),
+                    {"id": FIXTURE_INSTALLATION_ID},
+                )
 
     with pytest.raises(IntegrityError):
         with connection.begin_nested():
@@ -655,8 +808,10 @@ def test_property_location_migration_upgrade_preserves_legacy_data(
         with engine.connect() as connection:
             before = _location_snapshot(connection)
             properties_before = _property_snapshot(connection)
+            installations_before = _installation_snapshot(connection)
         assert len(before) == len(FIXTURE_ROWS)
         assert len(properties_before) == len(FIXTURE_ROWS)
+        assert set(installations_before) == {FIXTURE_INSTALLATION_ID}
         assert {row["geometry_srid"] for row in before.values()} == {4326}
 
         target_upgrade = _run_alembic(url, TARGET_REVISION)
@@ -671,6 +826,7 @@ def test_property_location_migration_upgrade_preserves_legacy_data(
             ) == TARGET_REVISION
             _assert_legacy_data_preserved(connection, before)
             _assert_properties_preserved(connection, properties_before)
+            _assert_installations_preserved(connection, installations_before)
             _assert_schema_objects(connection)
             _assert_constraints_enforced(connection)
             assert connection.scalar(
