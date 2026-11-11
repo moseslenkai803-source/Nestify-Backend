@@ -97,6 +97,8 @@ def require_admin(
 def require_employee_clearance(
     required_clearance: str,
 ):
+    # This is an early route-level gate. Property-scoped operations must also
+    # recheck grants in their service transaction to serialize revocations.
     def dependency(
         current_user: User = Depends(get_current_user),
         db: Session = Depends(get_db, scope='function'),

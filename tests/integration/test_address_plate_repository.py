@@ -1,3 +1,4 @@
+import pytest
 import uuid
 from datetime import UTC, datetime, timedelta
 from threading import Event, Thread
@@ -8,6 +9,7 @@ from app.models.manufacturing_order import ManufacturingOrder
 from app.models.property import Property
 from app.models.user import User
 from app.db.session import SessionLocal
+from tests.conftest import cleanup_installation_test_context
 from app.repositories.address_plate_repository import AddressPlateRepository
 
 
@@ -631,6 +633,7 @@ def test_get_next_manufactured_plate_for_update_returns_oldest_eligible_plate(
     assert result.status == "unactivated"
 
 
+@pytest.mark.independent_db_transactions
 def test_get_next_manufactured_plate_for_update_waits_for_locked_plate(
     db_session,
 ):
@@ -700,6 +703,9 @@ def test_get_next_manufactured_plate_for_update_waits_for_locked_plate(
             ),
         ]
     )
+    property_id = property_record.id
+    user_id = user.id
+    plate_ids = [first_plate.id, second_plate.id]
     db_session.commit()
 
     first_session = SessionLocal()
@@ -710,6 +716,7 @@ def test_get_next_manufactured_plate_for_update_waits_for_locked_plate(
     second_finished = Event()
     second_result = {}
     second_error = {}
+    thread = None
 
     try:
         first_repository = AddressPlateRepository(first_session)
@@ -760,10 +767,25 @@ def test_get_next_manufactured_plate_for_update_waits_for_locked_plate(
         assert second_result["plate_id"] != first_plate.id
 
     finally:
-        if thread.is_alive():
-            thread.join(timeout=2)
-
         first_session.rollback()
-        second_session.rollback()
+
+        if thread is not None:
+            thread.join(timeout=5)
+
+        thread_stopped = thread is None or not thread.is_alive()
         first_session.close()
+        assert thread_stopped, "Repository worker did not stop during teardown"
+
+        second_session.rollback()
         second_session.close()
+
+        cleanup_session = SessionLocal()
+        try:
+            cleanup_installation_test_context(
+                cleanup_session,
+                property_id,
+                [user_id],
+                plate_ids=plate_ids,
+            )
+        finally:
+            cleanup_session.close()

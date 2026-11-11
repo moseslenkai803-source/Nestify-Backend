@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token
-from app.db.session import get_db
 from app.main import app
 from app.models.address_plate_request import AddressPlateRequest
 from app.models.landlord import Landlord
@@ -17,10 +16,6 @@ from app.services.property_service import PropertyService
 def test_create_address_plate_request_api(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -85,15 +80,11 @@ def test_create_address_plate_request_api(
         assert request.status == "pending"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 def test_create_address_plate_request_api_denies_unauthorized_user(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -148,16 +139,12 @@ def test_create_address_plate_request_api_denies_unauthorized_user(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_address_plate_request_api_rejects_duplicate_pending_request(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -213,16 +200,12 @@ def test_create_address_plate_request_api_rejects_duplicate_pending_request(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_address_plate_request_api_rejects_property_with_active_plate(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -279,7 +262,7 @@ def test_create_address_plate_request_api_rejects_property_with_active_plate(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def create_plate_operations_employee(db_session: Session):
@@ -319,10 +302,6 @@ def create_plate_operations_employee(db_session: Session):
 def test_list_address_plate_requests_api_returns_pending_requests(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -404,16 +383,12 @@ def test_list_address_plate_requests_api_returns_pending_requests(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_address_plate_requests_api_filters_by_status(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -487,16 +462,12 @@ def test_list_address_plate_requests_api_filters_by_status(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_address_plate_requests_api_denies_employee_without_plate_operations_clearance(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -542,16 +513,12 @@ def test_list_address_plate_requests_api_denies_employee_without_plate_operation
         assert response.status_code == 403
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_approve_address_plate_request_api(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -614,16 +581,12 @@ def test_approve_address_plate_request_api(
         assert request.status == "approved"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_reject_address_plate_request_api(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -686,16 +649,12 @@ def test_reject_address_plate_request_api(
         assert request.status == "rejected"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_approve_address_plate_request_api_denies_non_employee(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -752,16 +711,12 @@ def test_approve_address_plate_request_api_denies_non_employee(
         assert request.status == "pending"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_reject_address_plate_request_api_denies_non_employee(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -818,16 +773,12 @@ def test_reject_address_plate_request_api_denies_non_employee(
         assert request.status == "pending"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_approve_address_plate_request_api_returns_404_for_missing_request(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -851,16 +802,12 @@ def test_approve_address_plate_request_api_returns_404_for_missing_request(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_approve_address_plate_request_api_rejects_already_approved_request(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -919,16 +866,12 @@ def test_approve_address_plate_request_api_rejects_already_approved_request(
         assert request.status == "approved"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_reject_address_plate_request_api_rejects_already_approved_request(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -987,4 +930,4 @@ def test_reject_address_plate_request_api_rejects_already_approved_request(
         assert request.status == "approved"
 
     finally:
-        app.dependency_overrides.clear()
+        pass

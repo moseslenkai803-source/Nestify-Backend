@@ -24,7 +24,6 @@ def client_fixture():
 
 
 def test_register_landlord_success(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         response = client.post(
@@ -54,11 +53,10 @@ def test_register_landlord_success(db_session):
         assert "password_hash" not in data
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_register_landlord_rejects_invalid_email(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         response = client.post(
@@ -74,11 +72,10 @@ def test_register_landlord_rejects_invalid_email(db_session):
         assert response.status_code == 422
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_register_landlord_rejects_missing_required_field(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         response = client.post(
@@ -93,11 +90,10 @@ def test_register_landlord_rejects_missing_required_field(db_session):
         assert response.status_code == 422
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_register_landlord_rejects_duplicate_email(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         payload = {
@@ -121,11 +117,10 @@ def test_register_landlord_rejects_duplicate_email(db_session):
         assert second_response.status_code == 400
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_register_landlord_persists_user_and_landlord(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         email = "persisted@example.com"
@@ -164,11 +159,10 @@ def test_register_landlord_persists_user_and_landlord(db_session):
         assert str(landlord.id) == data["landlord_id"]
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_login_success(client, db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         registration_response = client.post(
@@ -200,11 +194,10 @@ def test_login_success(client, db_session):
         assert data["token_type"] == "bearer"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_login_rejects_wrong_password(client, db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         registration_response = client.post(
@@ -231,11 +224,10 @@ def test_login_rejects_wrong_password(client, db_session):
         assert response.json()["detail"] == "Invalid email or password"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_login_rejects_unknown_email(client, db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         response = client.post(
@@ -250,9 +242,10 @@ def test_login_rejects_unknown_email(client, db_session):
         assert response.json()["detail"] == "Invalid email or password"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
+@pytest.mark.independent_db_transactions
 def test_register_landlord_rolls_back_user_when_landlord_creation_fails(
     db_session,
     monkeypatch,
@@ -266,7 +259,7 @@ def test_register_landlord_rolls_back_user_when_landlord_creation_fails(
         else:
             db_session.commit()
 
-    app.dependency_overrides[get_db] = transactional_db
+    monkeypatch.setitem(app.dependency_overrides, get_db, transactional_db)
 
     try:
         from app.services.registration_service import RegistrationService
@@ -313,10 +306,9 @@ def test_register_landlord_rolls_back_user_when_landlord_creation_fails(
         assert user is None
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 def test_get_me_returns_authenticated_employee(client, db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         employee = User(
@@ -349,11 +341,10 @@ def test_get_me_returns_authenticated_employee(client, db_session):
         assert "password_hash" not in data
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_me_rejects_missing_token(client, db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         response = client.get("/api/v1/auth/me")
@@ -361,11 +352,10 @@ def test_get_me_rejects_missing_token(client, db_session):
         assert response.status_code == 401
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_me_rejects_invalid_token(client, db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         response = client.get(
@@ -376,11 +366,10 @@ def test_get_me_rejects_invalid_token(client, db_session):
         assert response.status_code == 401
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_me_rejects_inactive_user(client, db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         employee = User(
@@ -405,11 +394,10 @@ def test_get_me_rejects_inactive_user(client, db_session):
         assert response.json()["detail"] == "User account is inactive"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_me_returns_landlord_identity(client, db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         landlord = User(
@@ -441,12 +429,11 @@ def test_get_me_returns_landlord_identity(client, db_session):
         assert data["is_active"] is True
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_me_returns_only_active_employee_clearances(db_session):
 
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         user = User(
@@ -502,13 +489,12 @@ def test_get_me_returns_only_active_employee_clearances(db_session):
         assert data["clearance"] == "legacy_clearance"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_me_returns_no_permissions_for_ended_employee(db_session):
     from datetime import UTC, datetime
 
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         user = User(
@@ -547,11 +533,10 @@ def test_get_me_returns_no_permissions_for_ended_employee(db_session):
         assert response.json()["permissions"] == []
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_me_returns_admin_permission(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         admin = User(
@@ -573,11 +558,10 @@ def test_get_me_returns_admin_permission(db_session):
         assert response.json()["permissions"] == ["admin"]
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_me_returns_empty_permissions_for_landlord(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         landlord = User(
@@ -599,7 +583,7 @@ def test_get_me_returns_empty_permissions_for_landlord(db_session):
         assert response.json()["permissions"] == []
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 # Route-level authentication rate-limit integration tests
 

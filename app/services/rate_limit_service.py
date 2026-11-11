@@ -30,7 +30,11 @@ return count
 
 
 class RateLimitService:
-    """Shared Redis rate limiter with a bounded local emergency fallback."""
+    """Shared Redis limiter with a bounded, process-local emergency fallback.
+
+    The fallback is intentionally not cluster-wide; callers decide whether a
+    sensitive policy may accept that weaker guarantee during Redis outages.
+    """
 
     def __init__(
         self,

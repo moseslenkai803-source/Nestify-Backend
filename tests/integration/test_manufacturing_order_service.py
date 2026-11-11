@@ -107,6 +107,7 @@ def test_create_manufacturing_orders_generate_unique_codes(
     assert first_order.order_code != second_order.order_code
 
 
+@pytest.mark.independent_db_transactions
 def test_approve_order_refreshes_stale_order_state(db_session):
     employee = create_employee(db_session)
     service = ManufacturingOrderService(db_session)
@@ -482,6 +483,7 @@ def test_complete_manufacturing_order_cannot_be_completed_twice(
     assert len(plates) == 2
 
 
+@pytest.mark.independent_db_transactions
 def test_complete_manufacturing_order_serializes_concurrent_completion_attempts(
     db_session,
 ):

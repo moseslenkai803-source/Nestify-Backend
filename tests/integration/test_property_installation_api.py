@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token
-from app.db.session import get_db
 from app.main import app
 from app.models.address_plate import AddressPlate
 from app.models.address_plate_lifecycle_event import AddressPlateLifecycleEvent
@@ -19,10 +18,6 @@ from app.services.property_access_service import PropertyAccessService
 
 
 def test_create_property_installation_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -159,16 +154,12 @@ def test_create_property_installation_api(db_session: Session):
         assert installation.status == "submitted"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_property_installation_api_allows_authorized_employee(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -273,16 +264,12 @@ def test_create_property_installation_api_allows_authorized_employee(
         assert response.status_code == 201
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_property_installation_api_denies_employee_without_property_access(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -373,16 +360,12 @@ def test_create_property_installation_api_denies_employee_without_property_acces
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_property_installation_api_returns_404_for_missing_property(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -438,16 +421,12 @@ def test_create_property_installation_api_returns_404_for_missing_property(
         assert response.json()["detail"] == "Property not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_property_installation_api_returns_404_for_missing_plate(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -534,16 +513,12 @@ def test_create_property_installation_api_returns_404_for_missing_plate(
         assert response.json()["detail"] == "Address plate not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_property_installation_api_rejects_plate_linked_to_another_property(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -650,4 +625,4 @@ def test_create_property_installation_api_rejects_plate_linked_to_another_proper
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass

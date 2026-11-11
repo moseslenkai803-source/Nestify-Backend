@@ -113,6 +113,7 @@ def test_create_address_raises_when_property_already_has_address(db_session):
         )
 
 
+@pytest.mark.independent_db_transactions
 def test_create_address_serializes_concurrent_creations_for_same_property(
     db_session,
 ):

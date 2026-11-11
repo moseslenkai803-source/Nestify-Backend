@@ -4,6 +4,9 @@ from sqlalchemy.orm import Session
 from app.models.address_plate import AddressPlate
 from app.repositories.address_plate_repository import AddressPlateRepository
 from app.repositories.property_address_repository import PropertyAddressRepository
+from app.repositories.property_location_repository import (
+    PropertyLocationRepository,
+)
 from app.repositories.property_installation_repository import (
     PropertyInstallationRepository,
 )
@@ -22,6 +25,7 @@ class PropertyActivationService:
         self.address_plate_repository = AddressPlateRepository(db)
         self.property_service = PropertyService(db)
         self.property_address_repository = PropertyAddressRepository(db)
+        self.property_location_repository = PropertyLocationRepository(db)
         self.installation_repository = PropertyInstallationRepository(db)
         self.installation_verification_repository = (
             PropertyInstallationVerificationRepository(db)
@@ -58,6 +62,15 @@ class PropertyActivationService:
         if address is None:
             raise ValueError(
                 "Property must have an address before activation"
+            )
+
+        if (
+            self.property_location_repository
+            .get_current_verified_location_by_property_id(property.id)
+            is None
+        ):
+            raise ValueError(
+                "Property must have a current approved location before activation"
             )
 
         plate = self.address_plate_repository.get_by_plate_code(

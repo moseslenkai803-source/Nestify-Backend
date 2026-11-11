@@ -18,6 +18,8 @@ SessionLocal = sessionmaker(
 
 
 def get_db() -> Generator[Session, None, None]:
+    # The request dependency owns this transaction: successful requests commit,
+    # while exceptions and commit failures roll it back.
     db = SessionLocal()
 
     try:

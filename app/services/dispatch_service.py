@@ -227,6 +227,8 @@ class DispatchService:
         dispatch.dispatched_by = performed_by
         dispatch.dispatched_at = datetime.now(UTC)
 
+        # Dispatch state and every plate's lifecycle event commit together
+        # through the request transaction; partial dispatch is not valid.
         for item in items:
             self.lifecycle_service.record_event(
                 plate_id=item.plate_id,

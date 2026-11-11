@@ -245,6 +245,8 @@ class EmailOutboxWorker:
         now = datetime.now(UTC)
 
         with self.session_factory() as db:
+            # A slow worker must not overwrite the state of a job reclaimed
+            # under a newer lease.
             result = db.execute(
                 update(EmailOutbox)
                 .where(

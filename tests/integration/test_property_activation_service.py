@@ -4,6 +4,8 @@ from threading import Event, Thread
 
 import pytest
 
+from tests.conftest import cleanup_installation_test_context
+
 from app.db.session import SessionLocal
 from app.models.address_plate import AddressPlate
 from app.models.address_plate_lifecycle_event import AddressPlateLifecycleEvent
@@ -14,11 +16,45 @@ from app.models.property_installation_verification import PropertyInstallationVe
 from app.models.landlord import Landlord
 from app.models.property_access import PropertyAccess
 from app.models.property_address import PropertyAddress
+from app.models.property_location import PropertyLocation
+from app.models.property_location_verification import (
+    PropertyLocationVerification,
+)
 from app.models.user import User
 from app.services.address_plate_lifecycle_service import AddressPlateLifecycleService
 from app.services.manufacturing_order_service import ManufacturingOrderService
 from app.services.property_activation_service import PropertyActivationService
 from app.services.property_service import PropertyService
+
+
+def add_approved_property_location(db_session, property_id, verified_by):
+    now = datetime.now(UTC)
+    location = PropertyLocation(
+        property_id=property_id,
+        version_number=1,
+        is_current=True,
+        latitude=-1.2921,
+        longitude=36.8219,
+        location="SRID=4326;POINT(36.8219 -1.2921)",
+        source="test_fixture",
+        capture_method="manual_entry",
+        captured_at=now,
+        status="approved",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    db_session.add(
+        PropertyLocationVerification(
+            location_id=location.id,
+            verified_by=verified_by,
+            decision="approved",
+            verification_method="test_fixture",
+            verified_at=now,
+        )
+    )
+    db_session.flush()
+    return location
 
 
 def test_activate_property_activates_verified_plate(db_session):
@@ -217,6 +253,11 @@ def test_activate_property_activates_verified_plate(db_session):
 
     property.status = "verified"
     db_session.flush()
+    add_approved_property_location(
+        db_session,
+        property.id,
+        verified_by=reviewer.id,
+    )
 
     activation_service = PropertyActivationService(db_session)
 
@@ -280,6 +321,56 @@ def test_activate_property_requires_address(db_session):
             activated_by=user.id,
         )
 
+
+
+def test_activate_property_requires_current_approved_location(db_session):
+    user = User(
+        email=f"activation-no-location-{uuid.uuid4()}@example.com",
+        password_hash="test-hash",
+        role="landlord",
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    landlord = Landlord(
+        user_id=user.id,
+        display_name="No Location Test Landlord",
+        phone="+254700000003",
+        landlord_type="individual",
+    )
+    db_session.add(landlord)
+    db_session.flush()
+
+    property_service = PropertyService(db_session)
+    property_record = property_service.create_property(
+        landlord_id=landlord.id,
+        name="Property Without Approved Location",
+        property_type="residential",
+    )
+
+    property_record.status = "verified"
+    db_session.add(
+        PropertyAddress(
+            property_id=property_record.id,
+            formatted_address="Property Without Approved Location Address",
+        )
+    )
+    db_session.flush()
+
+    activation_service = PropertyActivationService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Property must have a current approved location before activation",
+    ):
+        activation_service.activate_property(
+            property_id=property_record.id,
+            plate_code="PLATE-DOES-NOT-MATTER",
+            activated_by=user.id,
+        )
+
+    db_session.refresh(property_record)
+    assert property_record.status == "verified"
 
 
 def test_activate_property_rejects_missing_property(db_session):
@@ -394,6 +485,7 @@ def test_activate_property_rejects_already_active_property(db_session):
 
 
 
+@pytest.mark.independent_db_transactions
 def test_activate_property_serializes_concurrent_activation_attempts(
     db_session,
 ):
@@ -599,9 +691,15 @@ def test_activate_property_serializes_concurrent_activation_attempts(
 
     property.status = "verified"
     db_session.flush()
+    add_approved_property_location(
+        db_session,
+        property.id,
+        verified_by=employee_two.id,
+    )
 
     property_id = property.id
     plate_code = allocated_plate.plate_code
+    user_ids = [user.id, employee_one.id, employee_two.id]
 
     db_session.commit()
 
@@ -671,13 +769,38 @@ def test_activate_property_serializes_concurrent_activation_attempts(
         )
 
     finally:
-        if thread is not None and thread.is_alive():
-            thread.join(timeout=2)
-
+        # Release the first transaction lock before waiting for the worker.
         first_session.rollback()
-        second_session.rollback()
+
+        if thread is not None:
+            thread.join(timeout=5)
+
+        thread_stopped = thread is None or not thread.is_alive()
+
         first_session.close()
-        second_session.close()
+
+        if thread_stopped:
+            second_session.rollback()
+            second_session.close()
+
+            cleanup_session = SessionLocal()
+            try:
+                cleanup_installation_test_context(
+                    cleanup_session,
+                    property_id,
+                    user_ids,
+                    manufacturing_order_id=manufacturing_order.id,
+                    dispatch_id=dispatch.id,
+                )
+            except Exception:
+                cleanup_session.rollback()
+                raise
+            finally:
+                cleanup_session.close()
+
+        assert thread_stopped, (
+            "Concurrent activation thread did not terminate"
+        )
 
 
 def _create_activation_evidence_context(db_session):
@@ -711,6 +834,11 @@ def _create_activation_evidence_context(db_session):
             property_id=property.id,
             formatted_address="Activation Evidence Address",
         )
+    )
+    add_approved_property_location(
+        db_session,
+        property.id,
+        verified_by=user.id,
     )
 
     plate = AddressPlate(

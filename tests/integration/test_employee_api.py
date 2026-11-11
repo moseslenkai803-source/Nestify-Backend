@@ -3,7 +3,6 @@ import uuid
 from fastapi.testclient import TestClient
 
 from app.core.security import create_access_token
-from app.db.session import get_db
 from app.main import app
 from app.models.employee import Employee
 from app.models.employee_clearance import EmployeeClearance
@@ -37,7 +36,6 @@ def create_access_token_for_user(user):
 
 
 def test_create_employee_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -106,11 +104,10 @@ def test_create_employee_api(db_session):
         ]
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_employee_api_rejects_non_admin(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -144,11 +141,10 @@ def test_create_employee_api_rejects_non_admin(db_session):
         assert response.json()["detail"] == "Admin access required"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_employee_api_rejects_landlord(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -182,11 +178,10 @@ def test_create_employee_api_rejects_landlord(db_session):
         assert response.json()["detail"] == "Admin access required"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_employee_api_rejects_contractor(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -220,11 +215,10 @@ def test_create_employee_api_rejects_contractor(db_session):
         assert response.json()["detail"] == "Admin access required"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_employee_api_rejects_inactive_admin(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -259,11 +253,10 @@ def test_create_employee_api_rejects_inactive_admin(db_session):
         assert response.json()["detail"] == "User account is inactive"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_employee_api_requires_authentication(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -286,11 +279,10 @@ def test_create_employee_api_requires_authentication(db_session):
         assert response.status_code == 401
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_employee_api_rejects_missing_user(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -319,13 +311,12 @@ def test_create_employee_api_rejects_missing_user(db_session):
         assert response.json()["detail"] == "User not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_employee_api_rejects_non_employee_target_user(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -361,13 +352,12 @@ def test_create_employee_api_rejects_non_employee_target_user(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_employee_candidates_api_returns_eligible_employee_users(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -407,13 +397,12 @@ def test_list_employee_candidates_api_returns_eligible_employee_users(
         }
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_employee_candidates_api_excludes_non_employee_users(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -458,13 +447,12 @@ def test_list_employee_candidates_api_excludes_non_employee_users(
         assert str(contractor.id) not in returned_ids
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_employee_candidates_api_excludes_inactive_employee_users(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -504,13 +492,12 @@ def test_list_employee_candidates_api_excludes_inactive_employee_users(
         assert str(inactive_employee.id) not in returned_ids
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_employee_candidates_api_excludes_users_with_employee_records(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -560,13 +547,12 @@ def test_list_employee_candidates_api_excludes_users_with_employee_records(
         assert str(existing_employee_user.id) not in returned_ids
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_employee_candidates_api_rejects_non_admin(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -589,13 +575,12 @@ def test_list_employee_candidates_api_rejects_non_admin(
         assert response.json()["detail"] == "Admin access required"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_employee_candidates_api_rejects_unauthenticated_request(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -607,13 +592,12 @@ def test_list_employee_candidates_api_rejects_unauthenticated_request(
         assert response.status_code == 401
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_employee_candidates_api_returns_only_safe_fields(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -656,13 +640,12 @@ def test_list_employee_candidates_api_returns_only_safe_fields(
         assert "is_active" not in candidate_items[0]
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_employee_candidates_api_route_is_not_captured_by_employee_id(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -694,11 +677,10 @@ def test_list_employee_candidates_api_route_is_not_captured_by_employee_id(
         assert str(candidate.id) in returned_ids
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_employees_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -754,13 +736,12 @@ def test_list_employees_api(db_session):
         assert str(second.id) in returned_ids
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_active_employees_api_excludes_terminated_employee(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -825,11 +806,10 @@ def test_list_active_employees_api_excludes_terminated_employee(
         assert str(terminated_employee.id) not in returned_ids
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_employee_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -872,13 +852,12 @@ def test_get_employee_api(db_session):
         assert data["employee_number"] == "EMP-API-GET"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_employee_api_returns_404_for_missing_employee(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -903,11 +882,10 @@ def test_get_employee_api_returns_404_for_missing_employee(
         assert response.json()["detail"] == "Employee not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_add_employee_clearance_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -961,11 +939,10 @@ def test_add_employee_clearance_api(db_session):
         assert record.is_active is True
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_employee_clearances_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1029,11 +1006,10 @@ def test_list_employee_clearances_api(db_session):
         }
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_active_employee_clearances_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1091,11 +1067,10 @@ def test_list_active_employee_clearances_api(db_session):
         assert data[0]["is_active"] is True
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_remove_employee_clearance_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1151,11 +1126,10 @@ def test_remove_employee_clearance_api(db_session):
         assert clearance.is_active is False
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_reactivate_employee_clearance_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1213,13 +1187,12 @@ def test_reactivate_employee_clearance_api(db_session):
         assert clearance.is_active is True
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_remove_employee_clearance_api_returns_404_for_missing_clearance(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1260,13 +1233,12 @@ def test_remove_employee_clearance_api_returns_404_for_missing_clearance(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_employee_clearance_api_returns_404_for_missing_employee(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1294,11 +1266,10 @@ def test_employee_clearance_api_returns_404_for_missing_employee(
         assert response.json()["detail"] == "Employee not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_terminate_employee_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1365,13 +1336,12 @@ def test_terminate_employee_api(db_session):
         assert second.is_active is False
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_terminate_employee_api_returns_404_for_missing_employee(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1394,13 +1364,12 @@ def test_terminate_employee_api_returns_404_for_missing_employee(
         assert response.json()["detail"] == "Employee not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_terminate_employee_api_rejects_already_terminated_employee(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1450,13 +1419,12 @@ def test_terminate_employee_api_rejects_already_terminated_employee(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_terminated_employee_api_cannot_receive_clearance(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1508,13 +1476,12 @@ def test_terminated_employee_api_cannot_receive_clearance(
         assert response.json()["detail"] == "Employee is terminated"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_employee_api_rejects_invalid_create_payload(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1542,4 +1509,4 @@ def test_employee_api_rejects_invalid_create_payload(
         assert response.status_code == 422
 
     finally:
-        app.dependency_overrides.clear()
+        pass

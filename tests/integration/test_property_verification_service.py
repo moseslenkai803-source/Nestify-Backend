@@ -1,19 +1,52 @@
 import uuid
+from datetime import UTC, datetime
 from threading import Event, Thread
 
 import pytest
 from sqlalchemy.exc import IntegrityError
 
 from app.db.session import SessionLocal
-
+from tests.conftest import cleanup_installation_test_context
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_address import PropertyAddress
+from app.models.property_location import PropertyLocation
+from app.models.property_location_verification import (
+    PropertyLocationVerification,
+)
 from app.models.property_verification import PropertyVerification
 from app.models.user import User
 from app.repositories.property_verification_repository import PropertyVerificationRepository
- 
 from app.services.property_verification_service import PropertyVerificationService
+
+
+def add_approved_property_location(db_session, property_id, verified_by):
+    now = datetime.now(UTC)
+    location = PropertyLocation(
+        property_id=property_id,
+        version_number=1,
+        is_current=True,
+        latitude=-1.2921,
+        longitude=36.8219,
+        location="SRID=4326;POINT(36.8219 -1.2921)",
+        source="test_fixture",
+        capture_method="manual_entry",
+        captured_at=now,
+        status="approved",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    verification = PropertyLocationVerification(
+        location_id=location.id,
+        verified_by=verified_by,
+        decision="approved",
+        verification_method="test_fixture",
+        verified_at=now,
+    )
+    db_session.add(verification)
+    db_session.flush()
+    return location
 
 
 def create_verified_property(db_session):
@@ -79,6 +112,7 @@ def add_property_address(db_session, property_id):
     return address
 
 
+@pytest.mark.independent_db_transactions
 def test_verify_property_serializes_concurrent_verification_attempts(
     db_session,
 ):
@@ -95,6 +129,18 @@ def test_verify_property_serializes_concurrent_verification_attempts(
     )
     db_session.add(employee_two)
     db_session.flush()
+    landlord_user_id = (
+        db_session.query(Landlord.user_id)
+        .filter(Landlord.id == property_record.landlord_id)
+        .scalar()
+    )
+    assert landlord_user_id is not None
+    user_ids = [employee_one.id, employee_two.id, landlord_user_id]
+    add_approved_property_location(
+        db_session,
+        property_record.id,
+        verified_by=employee_one.id,
+    )
 
     property_id = property_record.id
     db_session.commit()
@@ -169,13 +215,36 @@ def test_verify_property_serializes_concurrent_verification_attempts(
         }
 
     finally:
-        if thread is not None and thread.is_alive():
-            thread.join(timeout=2)
-
+        # Release the property lock before waiting for the worker.
         first_session.rollback()
-        second_session.rollback()
+
+        if thread is not None:
+            thread.join(timeout=5)
+
+        thread_stopped = thread is None or not thread.is_alive()
+
         first_session.close()
-        second_session.close()
+
+        if thread_stopped:
+            second_session.rollback()
+            second_session.close()
+
+            cleanup_session = SessionLocal()
+            try:
+                cleanup_installation_test_context(
+                    cleanup_session,
+                    property_id,
+                    user_ids,
+                )
+            except Exception:
+                cleanup_session.rollback()
+                raise
+            finally:
+                cleanup_session.close()
+
+        assert thread_stopped, (
+            "Concurrent verification thread did not terminate"
+        )
 
 def test_database_rejects_invalid_property_verification_status(db_session):
     employee, property_record = create_verified_property(db_session)
@@ -200,6 +269,11 @@ def test_verify_property_creates_verified_record_and_updates_property(
 ):
     employee, property_record = create_verified_property(db_session)
     add_property_address(db_session, property_record.id)
+    add_approved_property_location(
+        db_session,
+        property_record.id,
+        verified_by=employee.id,
+    )
 
     service = PropertyVerificationService(db_session)
 
@@ -216,6 +290,33 @@ def test_verify_property_creates_verified_record_and_updates_property(
     assert result.notes == "All required information verified"
     assert result.verified_at is not None
     assert property_record.status == "verified"
+
+
+def test_verify_property_requires_current_approved_location(db_session):
+    employee, property_record = create_verified_property(db_session)
+    add_property_address(db_session, property_record.id)
+
+    service = PropertyVerificationService(db_session)
+
+    with pytest.raises(
+        ValueError,
+        match="Property must have a current approved location before verification",
+    ):
+        service.verify_property(
+            property_id=property_record.id,
+            verified_by=employee.id,
+            status="verified",
+        )
+
+    db_session.refresh(property_record)
+    assert property_record.status == "draft"
+
+    assert (
+        db_session.query(PropertyVerification)
+        .filter_by(property_id=property_record.id)
+        .count()
+        == 0
+    )
 
 
 def test_rejected_property_verification_preserves_property_status(
@@ -282,6 +383,11 @@ def test_verify_property_does_not_require_active_address_plate(
 ):
     employee, property_record = create_verified_property(db_session)
     add_property_address(db_session, property_record.id)
+    add_approved_property_location(
+        db_session,
+        property_record.id,
+        verified_by=employee.id,
+    )
 
     service = PropertyVerificationService(db_session)
 

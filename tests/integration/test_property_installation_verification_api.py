@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token
-from app.db.session import get_db
 from app.main import app
 from app.models.address_plate import AddressPlate
 from app.models.address_plate_lifecycle_event import AddressPlateLifecycleEvent
@@ -23,7 +22,6 @@ from app.services.property_access_service import PropertyAccessService
 
 
 def test_verify_property_installation_api(db_session: Session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -173,14 +171,13 @@ def test_verify_property_installation_api(db_session: Session):
         assert verification.notes == "Installation evidence confirmed."
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 
 def test_verify_property_installation_api_allows_admin_without_property_access(
     db_session: Session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -279,12 +276,11 @@ def test_verify_property_installation_api_allows_admin_without_property_access(
         assert installation.status == "verified"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 
 def test_reject_property_installation_api(db_session: Session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -405,12 +401,11 @@ def test_reject_property_installation_api(db_session: Session):
         assert verification.verified_by == reviewer.id
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 
 def test_verify_property_installation_api_denies_user_without_property_access(db_session: Session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -518,12 +513,11 @@ def test_verify_property_installation_api_denies_user_without_property_access(db
         assert verifications == []
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 
 def test_verify_property_installation_api_denies_wrong_clearance(db_session: Session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -637,12 +631,11 @@ def test_verify_property_installation_api_denies_wrong_clearance(db_session: Ses
         assert verifications == []
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 
 def test_verify_property_installation_api_denies_non_employee(db_session: Session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -743,12 +736,11 @@ def test_verify_property_installation_api_denies_non_employee(db_session: Sessio
         assert verifications == []
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 
 def test_verify_property_installation_api_missing_property(db_session: Session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -794,12 +786,11 @@ def test_verify_property_installation_api_missing_property(db_session: Session):
         assert response.json()["detail"] == "Property not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 
 def test_verify_property_installation_api_missing_installation(db_session: Session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -878,12 +869,11 @@ def test_verify_property_installation_api_missing_installation(db_session: Sessi
         assert response.json()["detail"] == "Installation not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 
 def test_verify_property_installation_api_rejects_wrong_property(db_session: Session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1016,12 +1006,11 @@ def test_verify_property_installation_api_rejects_wrong_property(db_session: Ses
         assert verifications == []
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 
 def test_verify_property_installation_api_rejects_already_verified(db_session: Session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1135,12 +1124,11 @@ def test_verify_property_installation_api_rejects_already_verified(db_session: S
         assert verifications == []
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 
 def test_verify_property_installation_api_rejects_invalid_status(db_session: Session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1253,13 +1241,12 @@ def test_verify_property_installation_api_rejects_invalid_status(db_session: Ses
         assert verifications == []
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_pending_property_installations_api_returns_authorized_submitted_installations(
     db_session: Session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1364,13 +1351,12 @@ def test_list_pending_property_installations_api_returns_authorized_submitted_in
         assert data[0]["status"] == "submitted"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_pending_property_installations_api_returns_all_submitted_installations_for_admin(
     db_session: Session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1486,14 +1472,13 @@ def test_list_pending_property_installations_api_returns_all_submitted_installat
         assert str(verified_installation.id) not in result_ids
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 
 def test_list_pending_property_installations_api_excludes_unauthorized_properties(
     db_session: Session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1622,13 +1607,12 @@ def test_list_pending_property_installations_api_excludes_unauthorized_propertie
         assert str(unauthorized_installation.id) not in result_ids
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_pending_property_installations_api_excludes_non_submitted_installations(
     db_session: Session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1741,13 +1725,12 @@ def test_list_pending_property_installations_api_excludes_non_submitted_installa
         assert str(verified_installation.id) not in result_ids
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_pending_property_installations_api_denies_wrong_clearance(
     db_session: Session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1789,4 +1772,4 @@ def test_list_pending_property_installations_api_denies_wrong_clearance(
         assert response.json()["detail"] == "Insufficient employee clearance"
 
     finally:
-        app.dependency_overrides.clear()
+        pass

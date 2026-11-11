@@ -8,7 +8,7 @@ class OutboxEncryptionError(RuntimeError):
 
 
 class OutboxEncryptionService:
-    """Encrypt outbox payloads using a configured, versioned Fernet key ring."""
+    """Encrypt payloads with versioned keys so old jobs survive key rotation."""
 
     def __init__(self) -> None:
         self._keys = settings.outbox_encryption_keys

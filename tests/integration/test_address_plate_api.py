@@ -3,7 +3,6 @@ import uuid
 from fastapi.testclient import TestClient
 
 from app.core.security import create_access_token
-from app.db.session import get_db
 from app.main import app
 from app.models.user import User
 from app.services.manufacturing_order_service import ManufacturingOrderService
@@ -27,7 +26,6 @@ def create_plate_operations_employee(db_session):
 
 
 def test_get_address_plate_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -76,13 +74,12 @@ def test_get_address_plate_api(db_session):
         assert data["activated_at"] is None
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_address_plate_api_returns_404_for_missing_plate(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -95,4 +92,4 @@ def test_get_address_plate_api_returns_404_for_missing_plate(
         assert response.json()["detail"] == "Plate not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass

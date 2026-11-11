@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token
-from app.db.session import get_db
 from app.main import app
 from app.models.building import Building
 from app.models.floor import Floor
@@ -121,10 +120,6 @@ def auth_headers(user: User) -> dict[str, str]:
 
 
 def test_create_property_listing_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -155,14 +150,10 @@ def test_create_property_listing_api(db_session: Session):
         assert data["status"] == "draft"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_floor_listing_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -198,14 +189,10 @@ def test_create_floor_listing_api(db_session: Session):
         assert data["status"] == "draft"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_space_listing_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -244,16 +231,12 @@ def test_create_space_listing_api(db_session: Session):
         assert data["status"] == "draft"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_property_listing_api_denies_another_landlord(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -279,16 +262,12 @@ def test_create_property_listing_api_denies_another_landlord(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_property_listing_api_returns_404_for_missing_property(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -310,14 +289,10 @@ def test_create_property_listing_api_returns_404_for_missing_property(
         assert response.json()["detail"] == "Property not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_publish_listing_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -354,16 +329,12 @@ def test_publish_listing_api(db_session: Session):
         assert data["status"] == "published"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_publish_listing_api_rejects_inactive_property(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -400,16 +371,12 @@ def test_publish_listing_api_rejects_inactive_property(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_publish_listing_api_returns_404_for_missing_listing(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -425,14 +392,10 @@ def test_publish_listing_api_returns_404_for_missing_listing(
         assert response.json()["detail"] == "Listing not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_unpublish_listing_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -475,16 +438,12 @@ def test_unpublish_listing_api(db_session: Session):
         assert data["status"] == "unpublished"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_unpublish_listing_api_rejects_unpublished_listing(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -515,4 +474,4 @@ def test_unpublish_listing_api_rejects_unpublished_listing(
         assert response.json()["detail"] == "Listing is not published"
 
     finally:
-        app.dependency_overrides.clear()
+        pass

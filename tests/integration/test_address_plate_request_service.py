@@ -4,6 +4,7 @@ from threading import Event, Thread
 import pytest
 
 from app.db.session import SessionLocal
+from tests.conftest import cleanup_installation_test_context
 
 from app.models.address_plate import AddressPlate
 from app.models.address_plate_request import AddressPlateRequest
@@ -258,6 +259,7 @@ def test_approve_request_raises_when_request_is_not_pending(db_session):
         service.approve_request(request.id)
 
 
+@pytest.mark.independent_db_transactions
 def test_approve_and_reject_request_serialize_concurrent_transitions(db_session):
     user = User(
         email=f"concurrent-request-{uuid.uuid4()}@example.com",
@@ -292,8 +294,11 @@ def test_approve_and_reject_request_serialize_concurrent_transitions(db_session)
         property_id=property.id,
         requested_by=user.id,
     )
+    property_id = property.id
+    user_id = user.id
     db_session.commit()
 
+    thread = None
     first_session = SessionLocal()
     second_session = SessionLocal()
 
@@ -353,9 +358,26 @@ def test_approve_and_reject_request_serialize_concurrent_transitions(db_session)
 
     finally:
         first_session.rollback()
-        second_session.rollback()
+
+        if thread is not None:
+            thread.join(timeout=5)
+
+        thread_stopped = thread is None or not thread.is_alive()
         first_session.close()
+        assert thread_stopped, "Request transition worker did not stop during teardown"
+
+        second_session.rollback()
         second_session.close()
+
+        cleanup_session = SessionLocal()
+        try:
+            cleanup_installation_test_context(
+                cleanup_session,
+                property_id,
+                [user_id],
+            )
+        finally:
+            cleanup_session.close()
 
 
 def test_reject_request_changes_pending_request_to_rejected(db_session):
@@ -501,6 +523,7 @@ def test_create_request_raises_when_property_has_allocated_plate(db_session):
             requested_by=user.id,
         )
 
+@pytest.mark.independent_db_transactions
 def test_create_request_serializes_concurrent_requests_for_same_property(
     db_session,
 ):
@@ -603,10 +626,24 @@ def test_create_request_serializes_concurrent_requests_for_same_property(
 
 
     finally:
-        if thread is not None and thread.is_alive():
-            thread.join(timeout=2)
-
         first_session.rollback()
-        second_session.rollback()
+
+        if thread is not None:
+            thread.join(timeout=5)
+
+        thread_stopped = thread is None or not thread.is_alive()
         first_session.close()
+        assert thread_stopped, "Request creation worker did not stop during teardown"
+
+        second_session.rollback()
         second_session.close()
+
+        cleanup_session = SessionLocal()
+        try:
+            cleanup_installation_test_context(
+                cleanup_session,
+                property_id,
+                [user_id],
+            )
+        finally:
+            cleanup_session.close()

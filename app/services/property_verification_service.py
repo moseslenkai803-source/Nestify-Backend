@@ -9,6 +9,9 @@ from app.repositories.property_verification_repository import (
 )
 from app.repositories.property_address_repository import PropertyAddressRepository
 from app.repositories.property_repository import PropertyRepository
+from app.repositories.property_location_repository import (
+    PropertyLocationRepository,
+)
 
 
 class PropertyVerificationService:
@@ -16,6 +19,7 @@ class PropertyVerificationService:
         self.db = db
         self.property_repository = PropertyRepository(db)
         self.property_address_repository = PropertyAddressRepository(db)
+        self.property_location_repository = PropertyLocationRepository(db)
         self.property_verification_repository = (
             PropertyVerificationRepository(db)
         )
@@ -44,6 +48,18 @@ class PropertyVerificationService:
         if address is None:
             raise ValueError(
                 "Property must have an address before verification"
+            )
+
+        # Rejection remains available to record failed evidence; only a
+        # successful verification requires an approved location decision.
+        if (
+            status == "verified"
+            and self.property_location_repository
+            .get_current_verified_location_by_property_id(property_id)
+            is None
+        ):
+            raise ValueError(
+                "Property must have a current approved location before verification"
             )
 
         verification = PropertyVerification(

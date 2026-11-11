@@ -14,6 +14,8 @@ from app.repositories.address_plate_repository import AddressPlateRepository
 
 
 class AddressPlateLifecycleService:
+    """Append lifecycle events in order while serializing on the plate row."""
+
     LIFECYCLE_TRANSITIONS = {
         "manufactured": "allocated",
         "allocated": "dispatched",

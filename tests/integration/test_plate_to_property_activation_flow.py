@@ -12,6 +12,10 @@ from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_access import PropertyAccess
 from app.models.property_address import PropertyAddress
+from app.models.property_location import PropertyLocation
+from app.models.property_location_verification import (
+    PropertyLocationVerification,
+)
 from app.models.user import User
 from app.services.address_plate_allocation_service import (
     AddressPlateAllocationService,
@@ -90,6 +94,21 @@ def test_plate_to_property_activation_flow(db_session):
     ])
     db_session.flush()
 
+    plate_employee_record = (
+        db_session.query(Employee)
+        .filter(Employee.user_id == plate_employee.id)
+        .one()
+    )
+
+    db_session.add(
+        EmployeeClearance(
+            employee_id=plate_employee_record.id,
+            clearance="plate_operations",
+            is_active=True,
+        )
+    )
+    db_session.flush()
+
     contractor = Contractor(
         name="Golden Path Contractor",
         contractor_type="company",
@@ -161,6 +180,34 @@ def test_plate_to_property_activation_flow(db_session):
         locality="Westlands",
     )
     db_session.add(address)
+    db_session.flush()
+
+    now = datetime.now(UTC)
+    location = PropertyLocation(
+        property_id=property.id,
+        version_number=1,
+        submitted_by_id=landlord_user.id,
+        submitted_at=now,
+        is_current=True,
+        latitude=-1.2921,
+        longitude=36.8219,
+        location="SRID=4326;POINT(36.8219 -1.2921)",
+        source="test_fixture",
+        capture_method="manual_entry",
+        captured_at=now,
+        status="approved",
+    )
+    db_session.add(location)
+    db_session.flush()
+    db_session.add(
+        PropertyLocationVerification(
+            location_id=location.id,
+            verified_by=verification_employee.id,
+            decision="approved",
+            verification_method="test_fixture",
+            verified_at=now,
+        )
+    )
     db_session.flush()
 
     verification_service = PropertyVerificationService(db_session)

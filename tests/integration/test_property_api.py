@@ -1,18 +1,22 @@
 from datetime import UTC, datetime
 from uuid import UUID
 import uuid
+import pytest
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token
-from app.db.session import get_db
 from app.main import app
 from app.models.landlord import Landlord
 from app.models.address_plate import AddressPlate
 from app.models.address_plate_lifecycle_event import AddressPlateLifecycleEvent
 from app.models.property import Property
 from app.models.property_address import PropertyAddress
+from app.models.property_location import PropertyLocation
+from app.models.property_location_verification import (
+    PropertyLocationVerification,
+)
 from app.models.property_installation import PropertyInstallation
 from app.models.property_installation_verification import PropertyInstallationVerification
 from app.models.user import User
@@ -61,11 +65,37 @@ def _add_verified_activation_evidence(
     db_session.flush()
 
 
-def test_create_property_api(db_session: Session):
-    def override_get_db():
-        yield db_session
+def _add_approved_property_location(db_session, property_id, verified_by):
+    now = datetime.now(UTC)
+    location = PropertyLocation(
+        property_id=property_id,
+        version_number=1,
+        is_current=True,
+        latitude=-1.2921,
+        longitude=36.8219,
+        location="SRID=4326;POINT(36.8219 -1.2921)",
+        source="test_fixture",
+        capture_method="manual_entry",
+        captured_at=now,
+        submitted_by_id=verified_by,
+        submitted_at=now,
+        status="approved",
+    )
+    db_session.add(location)
+    db_session.flush()
+    db_session.add(
+        PropertyLocationVerification(
+            location_id=location.id,
+            verified_by=verified_by,
+            decision="approved",
+            verification_method="test_fixture",
+            verified_at=now,
+        )
+    )
+    db_session.flush()
 
-    app.dependency_overrides[get_db] = override_get_db
+
+def test_create_property_api(db_session: Session):
 
     try:
         client = TestClient(app)
@@ -113,16 +143,12 @@ def test_create_property_api(db_session: Session):
         assert data["property_code"].startswith("NEST-")
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_property_address_api_denies_another_landlord(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -190,16 +216,12 @@ def test_create_property_address_api_denies_another_landlord(
         assert response.json()["detail"] == "Property not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_property_address_api_denies_another_landlord(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -272,16 +294,12 @@ def test_get_property_address_api_denies_another_landlord(
         assert response.json()["detail"] == "Property not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_property_address_api_allows_authorized_user(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -367,14 +385,10 @@ def test_get_property_address_api_allows_authorized_user(
         assert data["locality"] == "Nairobi"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_property_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -433,16 +447,12 @@ def test_get_property_api(db_session: Session):
         assert data["status"] == "draft"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_property_api_denies_access_to_another_landlords_property(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -515,16 +525,12 @@ def test_get_property_api_denies_access_to_another_landlords_property(
         assert response.json()["detail"] == "Property not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_property_api_allows_authorized_user(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -610,14 +616,10 @@ def test_get_property_api_allows_authorized_user(
         assert data["property_type"] == "residential"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_property_api_returns_404_for_missing_property(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -654,14 +656,10 @@ def test_get_property_api_returns_404_for_missing_property(db_session: Session):
         assert response.json()["detail"] == "Property not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_properties_api_returns_landlord_properties(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -728,16 +726,12 @@ def test_list_properties_api_returns_landlord_properties(db_session: Session):
         assert data[1]["landlord_id"] == str(landlord.id)
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_properties_api_returns_empty_list_for_landlord_with_no_properties(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -774,14 +768,10 @@ def test_list_properties_api_returns_empty_list_for_landlord_with_no_properties(
         assert response.json() == []
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_property_address_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -839,14 +829,10 @@ def test_create_property_address_api(db_session: Session):
         assert data["locality"] == "Karen"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_property_address_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -908,16 +894,12 @@ def test_get_property_address_api(db_session: Session):
         assert data["locality"] == "Westlands"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_property_address_api_returns_404_when_missing(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -962,14 +944,10 @@ def test_get_property_address_api_returns_404_when_missing(
         assert response.json()["detail"] == "Property address not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_activate_property_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1011,6 +989,12 @@ def test_activate_property_api(db_session: Session):
         )
         db_session.add(address)
         db_session.flush()
+
+        _add_approved_property_location(
+            db_session,
+            property.id,
+            verified_by=user.id,
+        )
 
         plate = AddressPlate(
             property_id=property.id,
@@ -1099,14 +1083,10 @@ def test_activate_property_api(db_session: Session):
         assert property.status == "active"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_property_location_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1167,19 +1147,77 @@ def test_create_property_location_api(db_session: Session):
         assert data["source"] == "device_gps"
         assert data["capture_method"] == "user_confirmed_device_location"
         assert data["accuracy_meters"] == 12.5
-        assert data["status"] == "unverified"
+        assert data["status"] == "pending"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
+
+
+def test_create_property_location_api_returns_conflict_for_pending_version(
+    db_session: Session,
+):
+
+    try:
+        client = TestClient(app)
+        user = User(
+            email=f"location-conflict-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(user)
+        db_session.flush()
+        landlord = Landlord(
+            user_id=user.id,
+            display_name="Location Conflict Landlord",
+            phone="+254700000000",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Location Conflict Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        PropertyLocationService(db_session).create_location(
+            property_id=property.id,
+            submitted_by_id=user.id,
+            latitude=-1.2921,
+            longitude=36.8219,
+            source="device_gps",
+            capture_method="user_confirmed_device_location",
+            captured_at=datetime.now(UTC),
+        )
+        access_token = create_access_token(subject=str(user.id))
+
+        response = client.post(
+            f"/api/v1/properties/{property.id}/location",
+            headers={"Authorization": f"Bearer {access_token}"},
+            json={
+                "latitude": -1.3000,
+                "longitude": 36.8300,
+                "source": "landlord_provided",
+                "capture_method": "manual_entry",
+                "captured_at": "2026-09-23T08:00:00Z",
+            },
+        )
+
+        assert response.status_code == 409
+        assert response.json()["detail"] == (
+            "Property already has a pending location"
+        )
+    finally:
+        pass
 
 
 def test_create_property_location_api_denies_another_landlord(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1250,16 +1288,12 @@ def test_create_property_location_api_denies_another_landlord(
         assert response.json()["detail"] == "Property not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_property_location_api_rejects_invalid_coordinates(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1309,22 +1343,89 @@ def test_create_property_location_api_rejects_invalid_coordinates(
             },
         )
 
-        assert response.status_code == 400
-        assert response.json()["detail"] == (
-            "Latitude must be between -90 and 90"
-        )
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["loc"] == [
+            "body",
+            "latitude",
+        ]
 
     finally:
-        app.dependency_overrides.clear()
+        pass
+
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("source", ""),
+        ("source", "   "),
+        ("source", "x" * 51),
+        ("capture_method", ""),
+        ("capture_method", "   "),
+        ("capture_method", "x" * 101),
+    ],
+)
+def test_create_property_location_api_rejects_invalid_provenance(
+    db_session: Session,
+    field: str,
+    value: str,
+):
+    try:
+        client = TestClient(app)
+        user = User(
+            email=f"location-provenance-{uuid.uuid4()}@example.com",
+            password_hash="test-hash",
+            role="landlord",
+        )
+        db_session.add(user)
+        db_session.flush()
+
+        landlord = Landlord(
+            user_id=user.id,
+            display_name="Provenance Test Landlord",
+            phone="+254700000000",
+            landlord_type="individual",
+        )
+        db_session.add(landlord)
+        db_session.flush()
+
+        property = Property(
+            landlord_id=landlord.id,
+            property_code=f"NEST-{uuid.uuid4().hex[:12].upper()}",
+            name="Provenance Test Property",
+            property_type="residential",
+            status="draft",
+        )
+        db_session.add(property)
+        db_session.flush()
+
+        payload = {
+            "latitude": -1.2921,
+            "longitude": 36.8219,
+            "source": "device_gps",
+            "capture_method": "user_confirmed_device_location",
+            "captured_at": "2026-09-23T08:00:00Z",
+        }
+        payload[field] = value
+
+        response = client.post(
+            f"/api/v1/properties/{property.id}/location",
+            headers={
+                "Authorization": f"Bearer {create_access_token(subject=str(user.id))}",
+            },
+            json=payload,
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"][0]["loc"] == ["body", field]
+
+    finally:
+        pass
 
 
 def test_get_property_location_api_denies_another_landlord(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1359,6 +1460,7 @@ def test_get_property_location_api_denies_another_landlord(
         location_service = PropertyLocationService(db_session)
         location_service.create_location(
             property_id=property.id,
+            submitted_by_id=owner_user.id,
             latitude=-1.2921,
             longitude=36.8219,
             source="device_gps",
@@ -1401,14 +1503,10 @@ def test_get_property_location_api_denies_another_landlord(
         assert response.json()["detail"] == "Property not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_property_location_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1443,6 +1541,7 @@ def test_get_property_location_api(db_session: Session):
         location_service = PropertyLocationService(db_session)
         location_service.create_location(
             property_id=property.id,
+            submitted_by_id=user.id,
             latitude=-1.2921,
             longitude=36.8219,
             source="device_gps",
@@ -1452,6 +1551,24 @@ def test_get_property_location_api(db_session: Session):
                 "2026-09-23T08:00:00+00:00"
             ),
         )
+
+        location = (
+            db_session.query(PropertyLocation)
+            .filter_by(property_id=property.id)
+            .one()
+        )
+        location.status = "approved"
+        location.is_current = True
+        db_session.add(
+            PropertyLocationVerification(
+                location_id=location.id,
+                verified_by=user.id,
+                decision="approved",
+                verification_method="test_fixture",
+                verified_at=datetime.now(UTC),
+            )
+        )
+        db_session.flush()
 
         access_token = create_access_token(
             subject=str(user.id),
@@ -1467,26 +1584,21 @@ def test_get_property_location_api(db_session: Session):
         assert response.status_code == 200
 
         data = response.json()
-
         assert data["property_id"] == str(property.id)
         assert data["latitude"] == -1.2921
         assert data["longitude"] == 36.8219
         assert data["source"] == "device_gps"
         assert data["capture_method"] == "user_confirmed_device_location"
         assert data["accuracy_meters"] == 12.5
-        assert data["status"] == "unverified"
+        assert data["status"] == "approved"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_property_location_api_returns_not_found_when_missing(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1530,18 +1642,16 @@ def test_get_property_location_api_returns_not_found_when_missing(
         )
 
         assert response.status_code == 404
-        assert response.json()["detail"] == "Property location not found"
+        assert response.json()["detail"] == (
+            "Current approved property location not found"
+        )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 def test_property_portfolio_api_admin_sees_all_landlords(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1597,16 +1707,12 @@ def test_property_portfolio_api_admin_sees_all_landlords(
         assert expected_names.issubset(returned_names)
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_property_portfolio_api_denies_employee(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1628,16 +1734,12 @@ def test_property_portfolio_api_denies_employee(
         assert response.json()["detail"] == "Admin access required"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_property_portfolio_api_denies_landlord(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1659,16 +1761,12 @@ def test_property_portfolio_api_denies_landlord(
         assert response.json()["detail"] == "Admin access required"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_property_portfolio_api_requires_authentication(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1677,16 +1775,12 @@ def test_property_portfolio_api_requires_authentication(
         assert response.status_code == 401
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_accessible_properties_api_returns_active_properties(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1776,16 +1870,12 @@ def test_list_accessible_properties_api_returns_active_properties(
         assert data[0]["status"] == "draft"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_accessible_properties_api_deduplicates_multiple_access_types(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1875,16 +1965,12 @@ def test_list_accessible_properties_api_deduplicates_multiple_access_types(
         assert data[0]["id"] == str(property.id)
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_accessible_properties_api_excludes_inactive_access(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -1966,16 +2052,12 @@ def test_list_accessible_properties_api_excludes_inactive_access(
         assert response.json() == []
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_accessible_properties_api_returns_empty_for_employee_without_access(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -2022,16 +2104,12 @@ def test_list_accessible_properties_api_returns_empty_for_employee_without_acces
         assert response.json() == []
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_accessible_properties_api_requires_authentication(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -2043,16 +2121,12 @@ def test_list_accessible_properties_api_requires_authentication(
         assert response.status_code == 401
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_accessible_properties_api_denies_landlord(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -2080,4 +2154,4 @@ def test_list_accessible_properties_api_denies_landlord(
         assert response.json()["detail"] == "Employee access required"
 
     finally:
-        app.dependency_overrides.clear()
+        pass

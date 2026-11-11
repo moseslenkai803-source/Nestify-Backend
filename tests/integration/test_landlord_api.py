@@ -3,7 +3,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.db.session import get_db
 from app.api.dependencies import get_current_user
 from app.services.user_service import UserService
 from app.services.registration_service import RegistrationService
@@ -18,7 +17,6 @@ def test_onboard_landlord_route_success(db_session):
     user = user_service.create_user(email=email, password="password123", role="customer")
     
     # Override dependencies: Inject active user session context directly
-    app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_current_user] = lambda: user
 
     try:
@@ -42,7 +40,7 @@ def test_onboard_landlord_route_success(db_session):
         assert "id" in data
         
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_current_user, None)
 
 
 def test_onboard_landlord_fails_if_already_landlord(db_session):
@@ -56,7 +54,6 @@ def test_onboard_landlord_fails_if_already_landlord(db_session):
         phone="+254799111111"
     )
     
-    app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_current_user] = lambda: user
 
     try:
@@ -74,7 +71,7 @@ def test_onboard_landlord_fails_if_already_landlord(db_session):
         assert "already registered as a landlord" in response.json()["detail"]
         
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_current_user, None)
 
 
 
@@ -97,7 +94,6 @@ def test_onboard_landlord_rejects_employee_account(db_session):
     db_session.add(employee)
     db_session.flush()
 
-    app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_current_user] = lambda: user
 
     try:
@@ -117,14 +113,13 @@ def test_onboard_landlord_rejects_employee_account(db_session):
         assert user.role == "employee"
         assert LandlordRepository(db_session).get_by_user_id(user.id) is None
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_current_user, None)
 
 def test_onboard_landlord_validation_error(db_session):
     # Arrange: Setup basic authenticated context boundary hooks
     user_service = UserService(db_session)
     user = user_service.create_user(email=f"val-{uuid.uuid4()}@example.com", password="password123")
     
-    app.dependency_overrides[get_db] = lambda: db_session
     app.dependency_overrides[get_current_user] = lambda: user
 
     try:
@@ -140,4 +135,4 @@ def test_onboard_landlord_validation_error(db_session):
         assert response.status_code == 422
         
     finally:
-        app.dependency_overrides.clear()
+        app.dependency_overrides.pop(get_current_user, None)

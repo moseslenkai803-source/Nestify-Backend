@@ -12,6 +12,12 @@ from app.models.employee import Employee
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_location import PropertyLocation
+from app.models.property_location_verification import (
+    PropertyLocationVerification,
+)
+from app.repositories.property_location_repository import (
+    PropertyLocationRepository,
+)
 from app.models.property_access import PropertyAccess
 from app.models.user import User
 from app.core.property_actions import PropertyAction
@@ -854,3 +860,125 @@ def test_create_location_rejects_naive_captured_at(db_session):
             property,
             **payload,
         )
+
+
+def test_current_verified_location_requires_approved_current_state_and_evidence(
+    db_session,
+):
+    property = create_test_property(db_session)
+    owner_id = db_session.get(Landlord, property.landlord_id).user_id
+    now = datetime.now(UTC)
+
+    locations = [
+        PropertyLocation(
+            property_id=property.id,
+            version_number=1,
+            submitted_by_id=owner_id,
+            submitted_at=now,
+            is_current=False,
+            latitude=-1.25,
+            longitude=36.75,
+            location="SRID=4326;POINT(36.75 -1.25)",
+            source="test_fixture",
+            capture_method="manual_entry",
+            captured_at=now,
+            status="approved",
+        ),
+        PropertyLocation(
+            property_id=property.id,
+            version_number=2,
+            submitted_by_id=owner_id,
+            submitted_at=now,
+            is_current=False,
+            latitude=-1.26,
+            longitude=36.76,
+            location="SRID=4326;POINT(36.76 -1.26)",
+            source="test_fixture",
+            capture_method="manual_entry",
+            captured_at=now,
+            status="rejected",
+        ),
+        PropertyLocation(
+            property_id=property.id,
+            version_number=3,
+            submitted_by_id=owner_id,
+            submitted_at=now,
+            is_current=True,
+            latitude=-1.27,
+            longitude=36.77,
+            location="SRID=4326;POINT(36.77 -1.27)",
+            source="test_fixture",
+            capture_method="manual_entry",
+            captured_at=now,
+            status="approved",
+        ),
+    ]
+    db_session.add_all(locations)
+    db_session.flush()
+
+    db_session.add_all(
+        [
+            PropertyLocationVerification(
+                location_id=locations[0].id,
+                verified_by=owner_id,
+                decision="approved",
+                verification_method="test_fixture",
+                verified_at=now,
+            ),
+            PropertyLocationVerification(
+                location_id=locations[1].id,
+                verified_by=owner_id,
+                decision="rejected",
+                verification_method="test_fixture",
+                verified_at=now,
+            ),
+            PropertyLocationVerification(
+                location_id=locations[2].id,
+                verified_by=owner_id,
+                decision="approved",
+                verification_method="test_fixture",
+                verified_at=now,
+            ),
+        ]
+    )
+    db_session.flush()
+
+    result = PropertyLocationRepository(
+        db_session
+    ).get_current_verified_location_by_property_id(property.id)
+
+    assert result is not None
+    assert result.id == locations[2].id
+    assert result.status == "approved"
+    assert result.is_current is True
+
+
+def test_current_verified_location_rejects_location_without_verification(
+    db_session,
+):
+    property = create_test_property(db_session)
+    owner_id = db_session.get(Landlord, property.landlord_id).user_id
+    now = datetime.now(UTC)
+
+    location = PropertyLocation(
+        property_id=property.id,
+        version_number=1,
+        submitted_by_id=owner_id,
+        submitted_at=now,
+        is_current=True,
+        latitude=-1.27,
+        longitude=36.77,
+        location="SRID=4326;POINT(36.77 -1.27)",
+        source="test_fixture",
+        capture_method="manual_entry",
+        captured_at=now,
+        status="approved",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    result = PropertyLocationRepository(
+        db_session
+    ).get_current_verified_location_by_property_id(property.id)
+
+    assert result is None

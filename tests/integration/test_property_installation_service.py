@@ -553,6 +553,7 @@ def test_create_installation_rejects_submission_when_older_record_is_submitted(
         )
 
 
+@pytest.mark.independent_db_transactions
 def test_create_installation_serializes_concurrent_submissions_for_same_property(
     db_session,
 ):
@@ -650,23 +651,33 @@ def test_create_installation_serializes_concurrent_submissions_for_same_property
         assert installations[0].status == "submitted"
 
     finally:
-        if thread is not None:
-            thread.join(timeout=2)
-
+        # Release the property lock before waiting for the worker.
         first_session.rollback()
-        second_session.rollback()
-        first_session.close()
-        second_session.close()
 
-        cleanup_session = SessionLocal()
-        try:
-            cleanup_installation_test_context(
-                cleanup_session,
-                property_id,
-                [landlord_user_id, installer_id],
-            )
-        finally:
-            cleanup_session.close()
+        if thread is not None:
+            thread.join(timeout=5)
+
+        thread_stopped = thread is None or not thread.is_alive()
+
+        first_session.close()
+
+        if thread_stopped:
+            second_session.rollback()
+            second_session.close()
+
+            cleanup_session = SessionLocal()
+            try:
+                cleanup_installation_test_context(
+                    cleanup_session,
+                    property_id,
+                    [landlord_user_id, installer_id],
+                )
+            finally:
+                cleanup_session.close()
+
+        assert thread_stopped, (
+            "Concurrent installation thread did not terminate"
+        )
 
 def test_database_rejects_duplicate_submitted_installation_for_property(
     db_session,

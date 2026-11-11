@@ -1,19 +1,55 @@
 import uuid
+from datetime import UTC, datetime
 
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token
-from app.db.session import get_db
 from app.main import app
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.property_address import PropertyAddress
+from app.models.property_location import PropertyLocation
+from app.models.property_location_verification import (
+    PropertyLocationVerification,
+)
 from app.models.property_verification import PropertyVerification
 from app.models.user import User
 from app.models.employee import Employee
 from app.models.employee_clearance import EmployeeClearance
 from app.services.property_access_service import PropertyAccessService
+
+
+def add_approved_property_location(db_session, property_id, verified_by):
+    now = datetime.now(UTC)
+    location = PropertyLocation(
+        property_id=property_id,
+        version_number=1,
+        is_current=True,
+        latitude=-1.2921,
+        longitude=36.8219,
+        location="SRID=4326;POINT(36.8219 -1.2921)",
+        source="test_fixture",
+        capture_method="manual_entry",
+        captured_at=now,
+        submitted_by_id=verified_by,
+        submitted_at=now,
+        status="approved",
+    )
+    db_session.add(location)
+    db_session.flush()
+
+    db_session.add(
+        PropertyLocationVerification(
+            location_id=location.id,
+            verified_by=verified_by,
+            decision="approved",
+            verification_method="test_fixture",
+            verified_at=now,
+        )
+    )
+    db_session.flush()
+    return location
 
 
 def create_property_verification_fixture(
@@ -104,13 +140,17 @@ def create_property_verification_fixture(
 
 
 def test_verify_property_api(db_session: Session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
 
         property_record, reviewer = create_property_verification_fixture(
             db_session
+        )
+        add_approved_property_location(
+            db_session,
+            property_record.id,
+            verified_by=reviewer.id,
         )
 
         access_token = create_access_token(subject=str(reviewer.id))
@@ -151,13 +191,12 @@ def test_verify_property_api(db_session: Session):
         assert verification.notes == "Property information verified."
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_reject_property_api_preserves_property_status(
     db_session: Session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -199,13 +238,12 @@ def test_reject_property_api_preserves_property_status(
         assert verification.status == "rejected"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_verify_property_api_denies_employee_without_property_access(
     db_session: Session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -231,11 +269,10 @@ def test_verify_property_api_denies_employee_without_property_access(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_verify_property_api_requires_address(db_session: Session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -261,13 +298,12 @@ def test_verify_property_api_requires_address(db_session: Session):
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_verify_property_api_rejects_invalid_status(
     db_session: Session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -289,4 +325,4 @@ def test_verify_property_api_rejects_invalid_status(
         assert response.status_code == 422
 
     finally:
-        app.dependency_overrides.clear()
+        pass

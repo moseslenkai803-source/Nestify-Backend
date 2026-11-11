@@ -1,3 +1,4 @@
+import pytest
 import hashlib
 from urllib.parse import parse_qs, urlparse
 import uuid
@@ -26,7 +27,6 @@ def make_user(db, role):
 
 
 def test_admin_can_create_employee_invitation(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
     try:
         admin = make_user(db_session, "admin")
         token = create_access_token(subject=str(admin.id))
@@ -60,11 +60,10 @@ def test_admin_can_create_employee_invitation(db_session):
         assert invitation.token_hash != invitation_token
         assert invitation.redeemed_at is None
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_admin_cannot_create_invitation_with_unsupported_clearance(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
     try:
         admin = make_user(db_session, "admin")
         token = create_access_token(subject=str(admin.id))
@@ -82,14 +81,13 @@ def test_admin_cannot_create_invitation_with_unsupported_clearance(db_session):
 
         assert response.status_code == 400, response.text
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_invitation_acceptance_creates_employee_and_is_one_time(db_session):
     from app.models.employee import Employee
     from app.models.employee_clearance import EmployeeClearance
 
-    app.dependency_overrides[get_db] = lambda: db_session
     client = TestClient(app)
     try:
         admin = make_user(db_session, "admin")
@@ -141,11 +139,10 @@ def test_invitation_acceptance_creates_employee_and_is_one_time(db_session):
         )
         assert reused.status_code == 400
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_non_admin_cannot_create_employee_invitation(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
     try:
         employee = make_user(db_session, "employee")
         token = create_access_token(subject=str(employee.id))
@@ -165,11 +162,10 @@ def test_non_admin_cannot_create_employee_invitation(db_session):
             email="blocked@example.com"
         ).count() == 0
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_invalid_invitation_token_does_not_create_user(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
     try:
         response = TestClient(app).post(
             "/api/v1/auth/employee-invitations/accept",
@@ -183,13 +179,12 @@ def test_invalid_invitation_token_does_not_create_user(db_session):
             email="nobody@example.com"
         ).count() == 0
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_expired_invitation_is_rejected(db_session):
     from datetime import UTC, datetime, timedelta
 
-    app.dependency_overrides[get_db] = lambda: db_session
     client = TestClient(app)
     try:
         admin = make_user(db_session, "admin")
@@ -231,11 +226,10 @@ def test_expired_invitation_is_rejected(db_session):
             email="expired.employee@example.com"
         ).count() == 0
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_invitation_acceptance_rejects_short_password(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
     try:
         response = TestClient(app).post(
             "/api/v1/auth/employee-invitations/accept",
@@ -243,13 +237,12 @@ def test_invitation_acceptance_rejects_short_password(db_session):
         )
         assert response.status_code == 422
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_failed_employee_creation_rolls_back_invited_user(db_session, monkeypatch):
     from app.services.employee_service import EmployeeService
 
-    app.dependency_overrides[get_db] = lambda: db_session
     client = TestClient(app)
     email = f"rollback-{uuid.uuid4()}@example.com"
     try:
@@ -291,12 +284,11 @@ def test_failed_employee_creation_rolls_back_invited_user(db_session, monkeypatc
         ).one()
         assert invitation.redeemed_at is None
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_invitation_creation_blocked_outside_development(db_session, monkeypatch):
     monkeypatch.setattr(settings, "environment", "production")
-    app.dependency_overrides[get_db] = lambda: db_session
     email = f"blocked-{uuid.uuid4()}@example.com"
     try:
         admin = make_user(db_session, "admin")
@@ -315,7 +307,7 @@ def test_invitation_creation_blocked_outside_development(db_session, monkeypatch
         assert response.status_code == 503, response.text
         assert db_session.query(EmployeeInvitation).filter_by(email=email).count() == 0
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_production_invitation_queues_encrypted_email_without_returning_url(
@@ -341,7 +333,6 @@ def test_production_invitation_queues_encrypted_email_without_returning_url(
 
     send_email = Mock()
     monkeypatch.setattr(EmailService, "send_employee_invitation", send_email)
-    app.dependency_overrides[get_db] = lambda: db_session
     email = f"production-{uuid.uuid4()}@example.com"
 
     try:
@@ -391,7 +382,7 @@ def test_production_invitation_queues_encrypted_email_without_returning_url(
             invitation_token.encode("utf-8")
         ).hexdigest()
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_production_invitation_fails_closed_without_encryption_key(
@@ -406,7 +397,6 @@ def test_production_invitation_fails_closed_without_encryption_key(
     monkeypatch.setattr(EmailService, "validate_configuration", Mock())
     monkeypatch.setattr(settings, "outbox_encryption_keys", {})
     monkeypatch.setattr(settings, "outbox_active_encryption_key_version", "v1")
-    app.dependency_overrides[get_db] = lambda: db_session
     email = f"failed-queue-{uuid.uuid4()}@example.com"
 
     try:
@@ -430,9 +420,10 @@ def test_production_invitation_fails_closed_without_encryption_key(
         ).count() == 0
         assert db_session.query(EmailOutbox).count() == 0
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
+@pytest.mark.independent_db_transactions
 def test_production_invitation_rolls_back_when_outbox_insert_fails(
     db_session, monkeypatch
 ):
@@ -482,7 +473,7 @@ def test_production_invitation_rolls_back_when_outbox_insert_fails(
     monkeypatch.setattr(
         db_session_module, "SessionLocal", failing_session_factory
     )
-    app.dependency_overrides.clear()
+    app.dependency_overrides.pop(get_db, None)
 
     try:
         response = TestClient(
@@ -514,7 +505,7 @@ def test_production_invitation_rolls_back_when_outbox_insert_fails(
             == 0
         )
     finally:
-        app.dependency_overrides.clear()
+        pass
 
         # The administrator was committed for request authentication;
         # explicitly clean up all data created by this test.

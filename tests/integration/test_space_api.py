@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token
-from app.db.session import get_db
 from app.main import app
 from app.models.building import Building
 from app.models.floor import Floor
@@ -95,10 +94,6 @@ def create_floor(
 
 
 def test_create_space_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -136,14 +131,10 @@ def test_create_space_api(db_session: Session):
         assert data["status"] == "draft"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_spaces_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -193,14 +184,10 @@ def test_list_spaces_api(db_session: Session):
         }
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_space_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -244,16 +231,12 @@ def test_get_space_api(db_session: Session):
         assert data["status"] == "active"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_space_api_denies_another_landlord(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -291,16 +274,12 @@ def test_create_space_api_denies_another_landlord(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_space_api_denies_another_landlord(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -343,16 +322,12 @@ def test_get_space_api_denies_another_landlord(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_space_api_returns_404_for_missing_space(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -378,16 +353,12 @@ def test_get_space_api_returns_404_for_missing_space(
         assert response.json()["detail"] == "Space not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_space_api_returns_404_for_wrong_parent_floor(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -432,16 +403,12 @@ def test_get_space_api_returns_404_for_wrong_parent_floor(
         assert response.json()["detail"] == "Space not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_space_api_returns_404_for_wrong_parent_property(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -488,16 +455,12 @@ def test_get_space_api_returns_404_for_wrong_parent_property(
         assert response.json()["detail"] == "Space not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_spaces_api_returns_404_for_wrong_parent_building(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -536,16 +499,12 @@ def test_list_spaces_api_returns_404_for_wrong_parent_building(
         assert response.json()["detail"] == "Building not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_space_api_returns_404_for_wrong_parent_floor(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -586,16 +545,12 @@ def test_create_space_api_returns_404_for_wrong_parent_floor(
         assert response.json()["detail"] == "Floor not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_space_api_rejects_duplicate_space_number_within_floor(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -643,4 +598,4 @@ def test_create_space_api_rejects_duplicate_space_number_within_floor(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass

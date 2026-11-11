@@ -174,7 +174,7 @@ def test_list_installation_assignment_property_plates_api(
         ]
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_installation_assignment_property_plates_api_excludes_non_dispatched_latest_event(
@@ -301,7 +301,7 @@ def test_list_installation_assignment_property_plates_api_excludes_non_dispatche
         assert response.json() == []
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_installation_assignment_property_plates_api_requires_plate_operations_clearance(
@@ -354,7 +354,7 @@ def test_list_installation_assignment_property_plates_api_requires_plate_operati
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 def test_list_installation_assignment_contractors_api(db_session):
 
@@ -432,7 +432,7 @@ def test_list_installation_assignment_contractors_api(db_session):
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_installation_assignment_contractors_api_requires_plate_operations_clearance(
@@ -485,7 +485,7 @@ def test_list_installation_assignment_contractors_api_requires_plate_operations_
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_installation_assignment_contractor_members_api(
@@ -579,7 +579,7 @@ def test_list_installation_assignment_contractor_members_api(
         assert data[0]["is_active"] is True
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_installation_assignment_contractor_members_api_returns_404_for_missing_contractor(
@@ -630,7 +630,7 @@ def test_list_installation_assignment_contractor_members_api_returns_404_for_mis
         assert response.json()["detail"] == "Contractor not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_installation_assignment_contractor_members_api_rejects_inactive_contractor(
@@ -689,7 +689,7 @@ def test_list_installation_assignment_contractor_members_api_rejects_inactive_co
         assert response.json()["detail"] == "Contractor is inactive"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_installation_assignment_contractor_members_api_requires_plate_operations_clearance(
@@ -742,7 +742,7 @@ def test_list_installation_assignment_contractor_members_api_requires_plate_oper
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_installation_assignment_api(db_session):
@@ -901,7 +901,7 @@ def test_create_installation_assignment_api(db_session):
         assert assignment.status == "assigned"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_installation_assignment_api_allows_admin(db_session):
@@ -1033,7 +1033,7 @@ def test_create_installation_assignment_api_allows_admin(db_session):
         assert assignment.status == "assigned"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_installation_assignment_api_requires_plate_operations_clearance(
@@ -1092,7 +1092,7 @@ def test_create_installation_assignment_api_requires_plate_operations_clearance(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_installation_assignment_api_rejects_non_employee(
@@ -1134,7 +1134,7 @@ def test_create_installation_assignment_api_rejects_non_employee(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_installation_assignment_api_returns_404_for_missing_property(
@@ -1191,7 +1191,7 @@ def test_create_installation_assignment_api_returns_404_for_missing_property(
         assert response.json()["detail"] == "Property not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_installation_assignment_api_returns_404_for_missing_plate(
@@ -1301,7 +1301,7 @@ def test_create_installation_assignment_api_returns_404_for_missing_plate(
         assert response.json()["detail"] == "Address plate not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_installation_assignment_api_rejects_plate_from_different_property(
@@ -1431,7 +1431,7 @@ def test_create_installation_assignment_api_rejects_plate_from_different_propert
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_installation_assignment_api_returns_404_for_missing_contractor(
@@ -1526,7 +1526,7 @@ def test_create_installation_assignment_api_returns_404_for_missing_contractor(
         assert response.json()["detail"] == "Contractor not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_installation_assignment_api_returns_404_for_missing_contractor_member(
@@ -1627,7 +1627,7 @@ def test_create_installation_assignment_api_returns_404_for_missing_contractor_m
         assert response.json()["detail"] == "Contractor member not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_installation_assignment_api_rejects_member_from_different_contractor(
@@ -1755,7 +1755,7 @@ def test_create_installation_assignment_api_rejects_member_from_different_contra
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_installation_assignment_api_rejects_inactive_contractor(
@@ -1873,7 +1873,7 @@ def test_create_installation_assignment_api_rejects_inactive_contractor(
         assert response.json()["detail"] == "Contractor is inactive"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_installation_assignment_api_rejects_inactive_contractor_member(
@@ -1991,7 +1991,7 @@ def test_create_installation_assignment_api_rejects_inactive_contractor_member(
         assert response.json()["detail"] == "Contractor member is inactive"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_installation_assignment_api_rejects_inactive_contractor_member_user(
@@ -2111,7 +2111,7 @@ def test_create_installation_assignment_api_rejects_inactive_contractor_member_u
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_installation_assignment_api_rejects_inactive_assigning_employee(
@@ -2229,7 +2229,7 @@ def test_create_installation_assignment_api_rejects_inactive_assigning_employee(
         assert response.status_code == 401
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_installation_assignment_api_rejects_duplicate_active_property_assignment(
@@ -2370,7 +2370,7 @@ def test_create_installation_assignment_api_rejects_duplicate_active_property_as
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 
@@ -2521,7 +2521,7 @@ def test_start_installation_assignment_api(
         assert assignment.status == "in_progress"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_start_installation_assignment_api_rejects_wrong_contractor_user(
@@ -2653,7 +2653,7 @@ def test_start_installation_assignment_api_rejects_wrong_contractor_user(
         assert assignment.status == "assigned"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_start_installation_assignment_api_rejects_user_whose_role_is_no_longer_contractor(
@@ -2782,7 +2782,7 @@ def test_start_installation_assignment_api_rejects_user_whose_role_is_no_longer_
         assert assignment.status == "assigned"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_submit_installation_assignment_api_rejects_user_whose_role_is_no_longer_contractor(
@@ -2920,7 +2920,7 @@ def test_submit_installation_assignment_api_rejects_user_whose_role_is_no_longer
         assert assignment.status == "in_progress"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_submit_installation_assignment_api(db_session):
@@ -3081,7 +3081,7 @@ def test_submit_installation_assignment_api(db_session):
         assert assignment.status == "submitted"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 def test_submit_installation_assignment_api_rejects_wrong_contractor_user(db_session):
 
@@ -3217,7 +3217,7 @@ def test_submit_installation_assignment_api_rejects_wrong_contractor_user(db_ses
         assert assignment.status == "in_progress"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 def test_submit_installation_assignment_api_rejects_assignment_not_in_progress(db_session):
 
@@ -3347,7 +3347,7 @@ def test_submit_installation_assignment_api_rejects_assignment_not_in_progress(d
         assert assignment.status == "assigned"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_cancel_installation_assignment_api(db_session):
@@ -3487,7 +3487,7 @@ def test_cancel_installation_assignment_api(db_session):
         assert assignment.cancellation_reason == "Contractor scheduling changed."
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_cancel_installation_assignment_api_allows_admin(db_session):
@@ -3600,7 +3600,7 @@ def test_cancel_installation_assignment_api_allows_admin(db_session):
         assert assignment.cancellation_reason == "Contractor scheduling changed."
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_cancel_installation_assignment_api_requires_plate_operations_clearance(db_session):
@@ -3646,7 +3646,7 @@ def test_cancel_installation_assignment_api_requires_plate_operations_clearance(
         assert response.json()["detail"] == "Insufficient employee clearance"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_cancel_installation_assignment_api_rejects_contractor(db_session):
@@ -3675,7 +3675,7 @@ def test_cancel_installation_assignment_api_rejects_contractor(db_session):
         assert response.json()["detail"] == "Employee access required"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_cancel_installation_assignment_api_rejects_completed_assignment(db_session):
@@ -3806,7 +3806,7 @@ def test_cancel_installation_assignment_api_rejects_completed_assignment(db_sess
         assert assignment.status == "completed"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 def test_list_installation_assignments_api(db_session):
 
@@ -3938,7 +3938,7 @@ def test_list_installation_assignments_api(db_session):
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_installation_assignments_api_filters_by_status(db_session):
@@ -4070,7 +4070,7 @@ def test_list_installation_assignments_api_filters_by_status(db_session):
         assert any(item["id"] == str(assignment.id) for item in data)
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_installation_assignments_api_unknown_status_returns_empty(
@@ -4117,7 +4117,7 @@ def test_list_installation_assignments_api_unknown_status_returns_empty(
         assert response.json() == []
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_installation_assignments_api_requires_plate_operations_clearance(
@@ -4164,4 +4164,4 @@ def test_list_installation_assignments_api_requires_plate_operations_clearance(
         assert response.json()["detail"] == "Insufficient employee clearance"
 
     finally:
-        app.dependency_overrides.clear()
+        pass

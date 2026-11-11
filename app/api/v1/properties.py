@@ -299,9 +299,12 @@ def get_property_location(
             if detail in {
                 "Property not found",
                 "Current approved property location not found",
+                "User is not authorized for this property",
             }
             else 403
         )
+        if detail == "User is not authorized for this property":
+            detail = "Property not found"
         raise HTTPException(
             status_code=status_code,
             detail=detail,

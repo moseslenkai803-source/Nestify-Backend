@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from app.core.security import create_access_token
-from app.db.session import get_db
 from app.main import app
 from app.models.building import Building
 from app.models.floor import Floor
@@ -64,10 +63,6 @@ def create_property(
 
 
 def test_create_floor_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -113,16 +108,12 @@ def test_create_floor_api(db_session: Session):
         assert data["status"] == "draft"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_floor_api_rejects_duplicate_floor_number(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -173,14 +164,10 @@ def test_create_floor_api_rejects_duplicate_floor_number(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_floors_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -237,14 +224,10 @@ def test_list_floors_api(db_session: Session):
         }
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_floor_api(db_session: Session):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -294,16 +277,12 @@ def test_get_floor_api(db_session: Session):
         assert data["status"] == "active"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_floor_api_denies_another_landlord(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -349,16 +328,12 @@ def test_create_floor_api_denies_another_landlord(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_floor_api_denies_another_landlord(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -410,16 +385,12 @@ def test_get_floor_api_denies_another_landlord(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_floor_api_returns_404_for_missing_floor(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -452,16 +423,12 @@ def test_get_floor_api_returns_404_for_missing_floor(
         assert response.json()["detail"] == "Floor not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_floor_api_returns_404_for_wrong_parent_property(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -512,16 +479,12 @@ def test_get_floor_api_returns_404_for_wrong_parent_property(
         assert response.json()["detail"] == "Floor not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_floors_api_returns_404_for_wrong_parent_building(
     db_session: Session,
 ):
-    def override_get_db():
-        yield db_session
-
-    app.dependency_overrides[get_db] = override_get_db
 
     try:
         client = TestClient(app)
@@ -579,4 +542,4 @@ def test_list_floors_api_returns_404_for_wrong_parent_building(
         assert response.json()["detail"] == "Building not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass

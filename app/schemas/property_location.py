@@ -8,14 +8,21 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class PropertyLocationCreate(BaseModel):
     latitude: float = Field(ge=-90, le=90, allow_inf_nan=False)
     longitude: float = Field(ge=-180, le=180, allow_inf_nan=False)
-    source: str
-    capture_method: str
+    source: str = Field(min_length=1, max_length=50)
+    capture_method: str = Field(min_length=1, max_length=100)
     accuracy_meters: float | None = Field(
         default=None,
         ge=0,
         allow_inf_nan=False,
     )
     captured_at: datetime
+
+    @field_validator("source", "capture_method")
+    @classmethod
+    def reject_blank_provenance(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Value must not be blank")
+        return value
 
     @field_validator("captured_at")
     @classmethod

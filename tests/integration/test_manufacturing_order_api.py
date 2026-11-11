@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from fastapi.testclient import TestClient
 
 from app.core.security import create_access_token
-from app.db.session import get_db
 from app.main import app
 from app.models.manufacturing_order import ManufacturingOrder
 from app.models.address_plate import AddressPlate
@@ -48,7 +47,6 @@ def create_plate_operations_employee(db_session):
 
 
 def test_create_manufacturing_order_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -95,7 +93,7 @@ def test_create_manufacturing_order_api(db_session):
         assert order.created_by == employee_id
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def create_user_access_token(
@@ -141,7 +139,6 @@ def create_user_access_token(
 def test_create_manufacturing_order_api_requires_plate_operations_clearance(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -168,11 +165,10 @@ def test_create_manufacturing_order_api_requires_plate_operations_clearance(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_manufacturing_order_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -209,13 +205,12 @@ def test_get_manufacturing_order_api(db_session):
         assert data["created_by"] == str(employee_id)
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_manufacturing_order_api_returns_404_for_missing_order(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -237,11 +232,10 @@ def test_get_manufacturing_order_api_returns_404_for_missing_order(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_approve_manufacturing_order_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -280,13 +274,12 @@ def test_approve_manufacturing_order_api(db_session):
         assert order.approved_by == employee_id
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_approve_manufacturing_order_api_returns_404_for_missing_order(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -308,13 +301,12 @@ def test_approve_manufacturing_order_api_returns_404_for_missing_order(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_approve_manufacturing_order_api_rejects_non_draft_order(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -352,10 +344,9 @@ def test_approve_manufacturing_order_api_rejects_non_draft_order(
         assert order.approved_by == employee_id
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 def test_start_manufacturing_order_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -395,13 +386,12 @@ def test_start_manufacturing_order_api(db_session):
         assert order.started_at is not None
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_start_manufacturing_order_api_returns_404_for_missing_order(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -423,13 +413,12 @@ def test_start_manufacturing_order_api_returns_404_for_missing_order(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_start_manufacturing_order_api_rejects_non_approved_order(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -466,12 +455,11 @@ def test_start_manufacturing_order_api_rejects_non_approved_order(
         assert order.started_at is None
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 def test_complete_manufacturing_order_api_creates_plate_inventory(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -538,13 +526,12 @@ def test_complete_manufacturing_order_api_creates_plate_inventory(
             assert events[0].performed_by == employee_id
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_complete_manufacturing_order_api_returns_404_for_missing_order(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -566,13 +553,12 @@ def test_complete_manufacturing_order_api_returns_404_for_missing_order(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_complete_manufacturing_order_api_rejects_non_production_order(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -620,10 +606,9 @@ def test_complete_manufacturing_order_api_rejects_non_production_order(
         assert plates == []
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 def test_cancel_manufacturing_order_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -664,13 +649,12 @@ def test_cancel_manufacturing_order_api(db_session):
         assert order.status == "cancelled"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_cancel_manufacturing_order_api_returns_404_for_missing_order(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -693,13 +677,12 @@ def test_cancel_manufacturing_order_api_returns_404_for_missing_order(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_cancel_manufacturing_order_api_rejects_completed_order(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -737,13 +720,12 @@ def test_cancel_manufacturing_order_api_rejects_completed_order(
         assert order.status == "completed"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_cancel_manufacturing_order_api_allows_admin_without_clearance(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -772,13 +754,12 @@ def test_cancel_manufacturing_order_api_allows_admin_without_clearance(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_cancel_manufacturing_order_api_requires_plate_operations_clearance(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -811,13 +792,12 @@ def test_cancel_manufacturing_order_api_requires_plate_operations_clearance(
         assert order.status == "draft"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_cancel_manufacturing_order_api_rejects_contractor(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -849,13 +829,12 @@ def test_cancel_manufacturing_order_api_rejects_contractor(
         assert order.status == "draft"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_cancel_manufacturing_order_api_rejects_ended_employee(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -893,13 +872,12 @@ def test_cancel_manufacturing_order_api_rejects_ended_employee(
         assert order.status == "draft"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_cancel_manufacturing_order_api_rejects_whitespace_reason(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -928,10 +906,9 @@ def test_cancel_manufacturing_order_api_rejects_whitespace_reason(
         assert order.status == "draft"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 def test_get_manufacturing_order_plates_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -994,13 +971,12 @@ def test_get_manufacturing_order_plates_api(db_session):
             assert plate["property_id"] is None
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_manufacturing_order_plates_api_returns_404_for_missing_order(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1022,11 +998,10 @@ def test_get_manufacturing_order_plates_api_returns_404_for_missing_order(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_manufacturing_orders_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1070,13 +1045,12 @@ def test_list_manufacturing_orders_api(db_session):
         assert second_order.order_code in returned_codes
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_manufacturing_orders_api_filters_by_status(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1121,13 +1095,12 @@ def test_list_manufacturing_orders_api_filters_by_status(
         assert all(item["status"] == "approved" for item in data)
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_manufacturing_orders_api_rejects_invalid_status(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -1150,4 +1123,4 @@ def test_list_manufacturing_orders_api_rejects_invalid_status(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass

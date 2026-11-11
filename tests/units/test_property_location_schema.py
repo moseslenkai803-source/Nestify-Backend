@@ -75,3 +75,22 @@ def test_property_location_schema_rejects_naive_captured_at():
 
     with pytest.raises(ValidationError, match="timezone-aware"):
         PropertyLocationCreate(**payload)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("source", ""),
+        ("source", "   "),
+        ("source", "x" * 51),
+        ("capture_method", ""),
+        ("capture_method", "   "),
+        ("capture_method", "x" * 101),
+    ],
+)
+def test_property_location_schema_rejects_invalid_provenance(field, value):
+    payload = valid_payload()
+    payload[field] = value
+
+    with pytest.raises(ValidationError):
+        PropertyLocationCreate(**payload)

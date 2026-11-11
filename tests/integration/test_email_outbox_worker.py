@@ -115,6 +115,7 @@ def worker_context(db_session, monkeypatch):
         cleanup()
 
 
+@pytest.mark.independent_db_transactions
 def test_worker_sends_email_and_marks_outbox_sent(worker_context):
     context = worker_context
     outbox = context["create_outbox"]()
@@ -139,6 +140,7 @@ def test_worker_sends_email_and_marks_outbox_sent(worker_context):
     assert "token=test-token" in call["invitation_url"]
 
 
+@pytest.mark.independent_db_transactions
 def test_worker_reschedules_failed_email_without_logging_payload(
     worker_context, caplog
 ):
@@ -166,6 +168,7 @@ def test_worker_reschedules_failed_email_without_logging_payload(
     assert "secret" not in caplog.text
 
 
+@pytest.mark.independent_db_transactions
 def test_worker_dead_letters_expired_lease_at_attempt_limit(worker_context):
     context = worker_context
     outbox = context["create_outbox"](
@@ -191,6 +194,7 @@ def test_worker_dead_letters_expired_lease_at_attempt_limit(worker_context):
     context["email_service"].send_employee_invitation.assert_not_called()
 
 
+@pytest.mark.independent_db_transactions
 def test_worker_dead_letters_email_failure_on_final_attempt(worker_context):
     context = worker_context
     outbox = context["create_outbox"](attempt_count=MAX_ATTEMPTS - 1)
@@ -215,6 +219,7 @@ def test_worker_dead_letters_email_failure_on_final_attempt(worker_context):
 
 
 
+@pytest.mark.independent_db_transactions
 def test_worker_reclaims_expired_lease(worker_context):
     context = worker_context
     old_lease_id = uuid.uuid4()
@@ -240,6 +245,7 @@ def test_worker_reclaims_expired_lease(worker_context):
     context["email_service"].send_employee_invitation.assert_called_once()
 
 
+@pytest.mark.independent_db_transactions
 def test_stale_lease_cannot_overwrite_newer_worker_state(worker_context):
     context = worker_context
     current_lease_id = uuid.uuid4()
@@ -274,6 +280,7 @@ def test_stale_lease_cannot_overwrite_newer_worker_state(worker_context):
     assert outbox.sent_at is not None
 
 
+@pytest.mark.independent_db_transactions
 def test_worker_does_not_send_expired_invitation(worker_context):
     context = worker_context
     context["invitation"].expires_at = (
@@ -296,6 +303,7 @@ def test_worker_does_not_send_expired_invitation(worker_context):
     context["email_service"].send_employee_invitation.assert_not_called()
 
 
+@pytest.mark.independent_db_transactions
 def test_worker_does_not_send_redeemed_invitation(worker_context):
     context = worker_context
     context["invitation"].redeemed_at = datetime.now(UTC)
@@ -316,6 +324,7 @@ def test_worker_does_not_send_redeemed_invitation(worker_context):
     context["email_service"].send_employee_invitation.assert_not_called()
 
 
+@pytest.mark.independent_db_transactions
 def test_claim_skips_outbox_job_locked_by_another_session(worker_context):
     from sqlalchemy import select
 
@@ -362,6 +371,7 @@ def test_claim_skips_outbox_job_locked_by_another_session(worker_context):
         locking_session.close()
 
 
+@pytest.mark.independent_db_transactions
 def test_expired_lease_cannot_record_success_or_failure(worker_context):
     context = worker_context
     expired_lease_id = uuid.uuid4()

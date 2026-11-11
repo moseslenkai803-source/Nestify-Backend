@@ -5,6 +5,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 
 from app.db.session import SessionLocal
+from tests.conftest import cleanup_installation_test_context
 from app.models.address_plate import AddressPlate
 from app.models.address_plate_lifecycle_event import (
     AddressPlateLifecycleEvent,
@@ -435,11 +436,14 @@ def test_get_latest_event_returns_latest_lifecycle_event(db_session):
     assert result.event_type == "allocated"
 
 
+@pytest.mark.independent_db_transactions
 def test_record_event_serializes_concurrent_lifecycle_transitions(
     db_session,
 ):
     employee = create_employee(db_session)
     plate = create_plate(db_session)
+    employee_id = employee.id
+    plate_id = plate.id
 
     setup_service = AddressPlateLifecycleService(db_session)
 
@@ -460,6 +464,7 @@ def test_record_event_serializes_concurrent_lifecycle_transitions(
     second_finished = Event()
     second_error = {}
 
+    thread = None
     try:
         first_service = AddressPlateLifecycleService(first_session)
 
@@ -512,10 +517,25 @@ def test_record_event_serializes_concurrent_lifecycle_transitions(
         )
 
     finally:
-        if thread.is_alive():
-            thread.join(timeout=2)
-
         first_session.rollback()
-        second_session.rollback()
+
+        if thread is not None:
+            thread.join(timeout=5)
+
+        thread_stopped = thread is None or not thread.is_alive()
         first_session.close()
+        assert thread_stopped, "Lifecycle worker did not stop during teardown"
+
+        second_session.rollback()
         second_session.close()
+
+        cleanup_session = SessionLocal()
+        try:
+            cleanup_installation_test_context(
+                cleanup_session,
+                None,
+                [employee_id],
+                plate_ids=[plate_id],
+            )
+        finally:
+            cleanup_session.close()

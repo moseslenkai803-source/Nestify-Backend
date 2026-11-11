@@ -179,6 +179,8 @@ class PropertyInstallationVerificationService:
 
         assignment = None
         if installation.assignment_id is not None:
+            # Lock assignment before installation so cancellation/submission
+            # races cannot verify stale assignment state.
             assignment = self.installation_assignment_repository.get_by_id_for_update(
                 installation.assignment_id
             )
@@ -254,6 +256,8 @@ class PropertyInstallationVerificationService:
                 assignment.status = "in_progress"
 
         if status == "verified":
+            # Persist the installation decision and both lifecycle transitions
+            # in one transaction so activation cannot observe partial evidence.
             self.lifecycle_service.record_event(
                 plate_id=installation.plate_id,
                 event_type="installed",

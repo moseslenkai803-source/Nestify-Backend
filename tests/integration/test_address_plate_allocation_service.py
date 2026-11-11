@@ -18,6 +18,7 @@ from app.services.address_plate_allocation_service import (
     AddressPlateAllocationService,
 )
 from app.services.property_access_service import PropertyAccessService
+from tests.conftest import cleanup_installation_test_context
 
 
 def create_landlord_and_property(db_session):
@@ -411,6 +412,7 @@ def test_allocate_plate_uses_only_available_inventory(db_session):
     assert active_plate.status == "active"
 
 
+@pytest.mark.independent_db_transactions
 def test_allocate_plate_serializes_concurrent_allocations_for_same_property(
     db_session,
 ):
@@ -429,16 +431,18 @@ def test_allocate_plate_serializes_concurrent_allocations_for_same_property(
     db_session.add_all([first_request, second_request])
     db_session.flush()
 
-    create_manufactured_plate(
+    first_plate = create_manufactured_plate(
         db_session,
         performed_by=user.id,
     )
-    create_manufactured_plate(
+    second_plate = create_manufactured_plate(
         db_session,
         performed_by=user.id,
     )
 
     property_id = property.id
+    user_id = user.id
+    plate_ids = [first_plate.id, second_plate.id]
     first_request_id = first_request.id
     second_request_id = second_request.id
     employee_id = employee.id
@@ -528,15 +532,31 @@ def test_allocate_plate_serializes_concurrent_allocations_for_same_property(
         assert allocated_plates[0].id == first_result.id
 
     finally:
-        if thread is not None:
-            thread.join(timeout=2)
-
         first_session.rollback()
-        second_session.rollback()
+
+        if thread is not None:
+            thread.join(timeout=5)
+
+        thread_stopped = thread is None or not thread.is_alive()
         first_session.close()
+        assert thread_stopped, "Allocation worker did not stop during teardown"
+
+        second_session.rollback()
         second_session.close()
 
+        cleanup_session = SessionLocal()
+        try:
+            cleanup_installation_test_context(
+                cleanup_session,
+                property_id,
+                [user_id, employee_id],
+                plate_ids=plate_ids,
+            )
+        finally:
+            cleanup_session.close()
 
+
+@pytest.mark.independent_db_transactions
 def test_allocate_plate_serializes_concurrent_allocations_for_same_request(
     db_session,
 ):
@@ -550,11 +570,14 @@ def test_allocate_plate_serializes_concurrent_allocations_for_same_request(
     db_session.add(request)
     db_session.flush()
 
-    create_manufactured_plate(db_session, performed_by=user.id)
-    create_manufactured_plate(db_session, performed_by=user.id)
+    first_plate = create_manufactured_plate(db_session, performed_by=user.id)
+    second_plate = create_manufactured_plate(db_session, performed_by=user.id)
 
     request_id = request.id
     employee_id = employee.id
+    property_id = property.id
+    user_id = user.id
+    plate_ids = [first_plate.id, second_plate.id]
 
     db_session.commit()
 
@@ -640,21 +663,29 @@ def test_allocate_plate_serializes_concurrent_allocations_for_same_request(
         )
         assert fulfilled_request is not None
         assert fulfilled_request.status == "fulfilled"
-
     finally:
-        # Release the first transaction's row lock before waiting for the
-        # competing thread, especially when an assertion fails.
         first_session.rollback()
 
         if thread is not None:
             thread.join(timeout=5)
-            if thread.is_alive():
-                second_session.rollback()
-                thread.join(timeout=2)
+
+        thread_stopped = thread is None or not thread.is_alive()
+        first_session.close()
+        assert thread_stopped, "Allocation worker did not stop during teardown"
 
         second_session.rollback()
-        first_session.close()
         second_session.close()
+
+        cleanup_session = SessionLocal()
+        try:
+            cleanup_installation_test_context(
+                cleanup_session,
+                property_id,
+                [user_id, employee_id],
+                plate_ids=plate_ids,
+            )
+        finally:
+            cleanup_session.close()
 
 
 def test_allocate_plate_rolls_back_when_lifecycle_recording_fails(

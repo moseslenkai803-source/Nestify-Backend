@@ -4,7 +4,6 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.security import create_access_token
-from app.db.session import get_db
 from app.main import app
 from app.models.address_plate import AddressPlate
 from app.models.address_plate_lifecycle_event import (
@@ -126,13 +125,12 @@ def create_approved_request(
 
 @pytest.fixture(name="client")
 def client_fixture(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         with TestClient(app) as test_client:
             yield test_client
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_allocate_address_plate_api_success(

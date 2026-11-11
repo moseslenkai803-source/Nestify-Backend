@@ -883,6 +883,7 @@ def test_verify_installation_rejects_wrong_property(db_session):
         )
 
 
+@pytest.mark.independent_db_transactions
 def test_verify_installation_serializes_concurrent_verification_attempts(
     db_session,
 ):
@@ -1011,28 +1012,37 @@ def test_verify_installation_serializes_concurrent_verification_attempts(
         )
 
     finally:
-        if thread is not None and thread.is_alive():
-            thread.join(timeout=2)
-
         first_session.rollback()
-        second_session.rollback()
-        first_session.close()
-        second_session.close()
 
-        cleanup_session = SessionLocal()
-        try:
-            cleanup_installation_test_context(
-                cleanup_session,
-                property_id,
-                [
-                    landlord_user.id,
-                    installer.id,
-                    reviewer_one.id,
-                    reviewer_two.id,
-                ],
-            )
-        finally:
-            cleanup_session.close()
+        if thread is not None:
+            thread.join(timeout=5)
+
+        thread_stopped = thread is None or not thread.is_alive()
+
+        first_session.close()
+
+        if thread_stopped:
+            second_session.rollback()
+            second_session.close()
+
+            cleanup_session = SessionLocal()
+            try:
+                cleanup_installation_test_context(
+                    cleanup_session,
+                    property_id,
+                    [
+                        landlord_user.id,
+                        installer.id,
+                        reviewer_one.id,
+                        reviewer_two.id,
+                    ],
+                )
+            finally:
+                cleanup_session.close()
+
+        assert thread_stopped, (
+            "Concurrent verification thread did not terminate"
+        )
 
 
 
@@ -1056,6 +1066,13 @@ def _assert_revocation_race_rejects_verification(
     employee_id = employee.id
     property_id = property_record.id
     installation_id = installation.id
+    installer_user_id = installation.installer_id
+    landlord_user_id = (
+        db_session.query(Landlord.user_id)
+        .filter(Landlord.id == property_record.landlord_id)
+        .scalar()
+    )
+    assert landlord_user_id is not None
 
     db_session.commit()
 
@@ -1166,27 +1183,36 @@ def _assert_revocation_race_rejects_verification(
             observer_session.close()
 
     finally:
-        if thread is not None and thread.is_alive():
-            # Release any held locks if an assertion fails before commit.
-            revocation_session.rollback()
-            thread.join(timeout=3)
-
+        # Release any held authorization-row lock before waiting for the worker.
         revocation_session.rollback()
-        verification_session.rollback()
+
+        if thread is not None:
+            thread.join(timeout=5)
+
+        thread_stopped = thread is None or not thread.is_alive()
+
         revocation_session.close()
-        verification_session.close()
 
-        cleanup_session = SessionLocal()
-        try:
-            cleanup_installation_test_context(
-                cleanup_session,
-                property_id,
-                [reviewer_id],
-            )
-        finally:
-            cleanup_session.close()
+        if thread_stopped:
+            verification_session.rollback()
+            verification_session.close()
+
+            cleanup_session = SessionLocal()
+            try:
+                cleanup_installation_test_context(
+                    cleanup_session,
+                    property_id,
+                    [reviewer_id, installer_user_id, landlord_user_id],
+                )
+            finally:
+                cleanup_session.close()
+
+        assert thread_stopped, (
+            "Concurrent verification thread did not terminate"
+        )
 
 
+@pytest.mark.independent_db_transactions
 def test_clearance_revocation_racing_verification_rejects_verification(
     db_session,
 ):
@@ -1207,6 +1233,7 @@ def test_clearance_revocation_racing_verification_rejects_verification(
     )
 
 
+@pytest.mark.independent_db_transactions
 def test_property_access_revocation_racing_verification_rejects_verification(
     db_session,
 ):

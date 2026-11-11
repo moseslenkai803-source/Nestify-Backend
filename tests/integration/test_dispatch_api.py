@@ -161,7 +161,6 @@ def create_manufactured_allocated_plate(
 
 
 def test_create_dispatch_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -217,13 +216,12 @@ def test_create_dispatch_api(db_session):
         assert item.released_at is None
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_dispatch_api_requires_plate_operations_clearance(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -253,11 +251,10 @@ def test_dispatch_api_requires_plate_operations_clearance(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_dispatch_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -306,11 +303,10 @@ def test_get_dispatch_api(db_session):
         assert data["created_by"] == str(employee.id)
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_dispatch_plates_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -361,13 +357,12 @@ def test_get_dispatch_plates_api(db_session):
         assert data[0]["status"] == "unactivated"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_get_dispatch_api_returns_404_for_missing_dispatch(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -387,11 +382,10 @@ def test_get_dispatch_api_returns_404_for_missing_dispatch(
         assert response.json()["detail"] == "Dispatch not found"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_dispatch_api_full_state_flow(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -470,13 +464,12 @@ def test_dispatch_api_full_state_flow(db_session):
         ]
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_dispatch_api_rejects_invalid_transition(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -522,13 +515,12 @@ def test_dispatch_api_rejects_invalid_transition(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_cancel_dispatch_api_releases_plate_assignment(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -582,13 +574,12 @@ def test_cancel_dispatch_api_releases_plate_assignment(
         assert item.released_at is not None
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_create_dispatch_api_rejects_unallocated_plate(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -633,11 +624,10 @@ def test_create_dispatch_api_rejects_unallocated_plate(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_dispatches_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -723,11 +713,10 @@ def test_list_dispatches_api(db_session):
         assert first_item["status"] == "draft"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_dispatches_api_filters_by_status(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -813,13 +802,12 @@ def test_list_dispatches_api_filters_by_status(db_session):
         assert second_code not in dispatches_by_code
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_dispatches_api_requires_plate_operations_clearance(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -843,14 +831,13 @@ def test_list_dispatches_api_requires_plate_operations_clearance(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 
 def test_list_dispatches_api_allows_admin_without_employee_clearance(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)

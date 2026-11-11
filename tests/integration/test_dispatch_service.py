@@ -441,6 +441,7 @@ def test_mark_dispatched_records_lifecycle_events(db_session):
         assert events[2].performed_by == employee.id
 
 
+@pytest.mark.independent_db_transactions
 def test_mark_dispatched_serializes_concurrent_transitions(
     db_session,
 ):
@@ -570,6 +571,7 @@ def test_mark_dispatched_serializes_concurrent_transitions(
         second_session.close()
 
 
+@pytest.mark.independent_db_transactions
 def test_create_dispatch_serializes_concurrent_plate_assignment(
     db_session,
 ):

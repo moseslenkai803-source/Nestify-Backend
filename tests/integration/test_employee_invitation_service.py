@@ -1,3 +1,4 @@
+import pytest
 from threading import Event, Thread
 import uuid
 
@@ -8,6 +9,7 @@ from app.models.user import User
 from app.services.employee_invitation_service import EmployeeInvitationService
 
 
+@pytest.mark.independent_db_transactions
 def test_concurrent_invitation_creation_rejects_duplicate_email(db_session):
     admin = User(
         id=uuid.uuid4(),
@@ -77,6 +79,7 @@ def test_concurrent_invitation_creation_rejects_duplicate_email(db_session):
         first_session.close()
 
 
+@pytest.mark.independent_db_transactions
 def test_concurrent_invitation_creation_rejects_duplicate_employee_number(
     db_session,
 ):
@@ -146,6 +149,7 @@ def test_concurrent_invitation_creation_rejects_duplicate_employee_number(
         first_session.rollback()
         first_session.close()
 
+@pytest.mark.independent_db_transactions
 def test_concurrent_invitation_redemption_allows_only_one_employee(db_session):
     admin = User(
         id=uuid.uuid4(),

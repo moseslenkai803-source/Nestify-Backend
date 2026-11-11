@@ -24,15 +24,29 @@ def cleanup_installation_test_context(
     db: Session,
     property_id,
     user_ids,
+    manufacturing_order_id=None,
+    dispatch_id=None,
+    plate_ids=None,
 ) -> None:
+    plate_ids = list(plate_ids or [])
+    plate_filter = " OR plate_id = ANY(:plate_ids)" if plate_ids else ""
+    plate_record_filter = " OR id = ANY(:plate_ids)" if plate_ids else ""
+
+    cleanup_params = {
+        "property_id": property_id,
+        "manufacturing_order_id": manufacturing_order_id,
+    }
+    if plate_ids:
+        cleanup_params["plate_ids"] = plate_ids
+
     db.execute(
         text(
             "DELETE FROM property_installation_verifications "
             "WHERE installation_id IN ("
             "SELECT id FROM property_installations "
-            "WHERE property_id = :property_id)"
+            "WHERE property_id = :property_id" + plate_filter + ")"
         ),
-        {"property_id": property_id},
+        cleanup_params,
     )
 
     db.execute(
@@ -40,17 +54,27 @@ def cleanup_installation_test_context(
             "DELETE FROM address_plate_lifecycle_events "
             "WHERE plate_id IN ("
             "SELECT id FROM address_plates "
-            "WHERE property_id = :property_id)"
+            "WHERE property_id = :property_id "
+            "OR manufacturing_order_id = :manufacturing_order_id"
+            + plate_record_filter + ")"
         ),
-        {"property_id": property_id},
+        cleanup_params,
     )
 
     db.execute(
         text(
             "DELETE FROM property_installations "
-            "WHERE property_id = :property_id"
+            "WHERE property_id = :property_id" + plate_filter
         ),
-        {"property_id": property_id},
+        cleanup_params,
+    )
+
+    db.execute(
+        text(
+            "DELETE FROM installation_assignments "
+            "WHERE property_id = :property_id" + plate_filter
+        ),
+        cleanup_params,
     )
 
     db.execute(
@@ -71,10 +95,53 @@ def cleanup_installation_test_context(
 
     db.execute(
         text(
-            "DELETE FROM address_plates "
+            "DELETE FROM dispatch_items "
+            "WHERE plate_id IN ("
+            "SELECT id FROM address_plates "
+            "WHERE property_id = :property_id "
+            "OR manufacturing_order_id = :manufacturing_order_id)"
+            + plate_filter + " OR dispatch_id = :dispatch_id"
+        ),
+        {
+            "property_id": property_id,
+            "manufacturing_order_id": manufacturing_order_id,
+            "dispatch_id": dispatch_id,
+            **({"plate_ids": plate_ids} if plate_ids else {}),
+        },
+    )
+
+    db.execute(
+        text(
+            "DELETE FROM dispatches "
+            "WHERE id = :dispatch_id"
+        ),
+        {"dispatch_id": dispatch_id},
+    )
+
+    db.execute(
+        text(
+            "DELETE FROM address_plate_requests "
             "WHERE property_id = :property_id"
         ),
         {"property_id": property_id},
+    )
+
+    db.execute(
+        text(
+            "DELETE FROM address_plates "
+            "WHERE property_id = :property_id "
+            "OR manufacturing_order_id = :manufacturing_order_id"
+            + plate_record_filter
+        ),
+        cleanup_params,
+    )
+
+    db.execute(
+        text(
+            "DELETE FROM manufacturing_orders "
+            "WHERE id = :manufacturing_order_id"
+        ),
+        {"manufacturing_order_id": manufacturing_order_id},
     )
 
     db.execute(

@@ -3,7 +3,6 @@ import uuid
 from fastapi.testclient import TestClient
 
 from app.core.security import create_access_token
-from app.db.session import get_db
 from app.main import app
 from app.models.address_plate import AddressPlate
 from app.models.landlord import Landlord
@@ -116,7 +115,6 @@ def record_lifecycle(db_session, plate, employee, event_type):
 
 
 def test_list_plate_inventory_api(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -193,13 +191,12 @@ def test_list_plate_inventory_api(db_session):
         assert unassigned_record["lifecycle_status"] == "manufactured"
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_plate_inventory_api_requires_plate_operations_clearance(
     db_session,
 ):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -225,11 +222,10 @@ def test_list_plate_inventory_api_requires_plate_operations_clearance(
         )
 
     finally:
-        app.dependency_overrides.clear()
+        pass
 
 
 def test_list_plate_inventory_api_requires_authentication(db_session):
-    app.dependency_overrides[get_db] = lambda: db_session
 
     try:
         client = TestClient(app)
@@ -241,4 +237,4 @@ def test_list_plate_inventory_api_requires_authentication(db_session):
         assert response.status_code == 401
 
     finally:
-        app.dependency_overrides.clear()
+        pass
