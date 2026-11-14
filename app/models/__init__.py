@@ -26,6 +26,8 @@ from app.models.employee import Employee
 from app.models.employee_clearance import EmployeeClearance
 from app.models.employee_invitation import EmployeeInvitation
 from app.models.email_outbox import EmailOutbox
+from app.models.platform_setting import PlatformSetting
+from app.models.platform_setting_audit_log import PlatformSettingAuditLog
 
 __all__ = [
     "Base",
@@ -56,4 +58,6 @@ __all__ = [
     "EmployeeClearance",
     "EmployeeInvitation",
     "EmailOutbox",
+    "PlatformSetting",
+    "PlatformSettingAuditLog",
 ]
