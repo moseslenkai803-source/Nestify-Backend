@@ -499,7 +499,10 @@ def test_production_invitation_rolls_back_when_outbox_insert_fails(
         ).count() == 0
         assert (
             db_session.query(EmailOutbox)
-            .join(EmployeeInvitation)
+            .join(
+                EmployeeInvitation,
+                EmailOutbox.employee_invitation_id == EmployeeInvitation.id,
+            )
             .filter(EmployeeInvitation.email == email)
             .count()
             == 0

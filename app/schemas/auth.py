@@ -53,3 +53,23 @@ class EmployeeInvitationAcceptResponse(BaseModel):
     employee_id: UUID
     email: EmailStr
     message: str = "Employee account created successfully"
+
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    token: str = Field(min_length=32, max_length=256)
+    new_password: str = Field(min_length=12, max_length=128)
+
+
+class PasswordResetRequestResponse(BaseModel):
+    message: str = (
+        "If an account exists for that email, "
+        "password reset instructions will be sent."
+    )
+
+
+class PasswordResetConfirmResponse(BaseModel):
+    message: str = "Your password has been changed successfully."

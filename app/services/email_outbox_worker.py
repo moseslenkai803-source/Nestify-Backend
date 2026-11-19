@@ -22,6 +22,10 @@ INITIAL_RETRY_DELAY = timedelta(seconds=30)
 MAX_RETRY_DELAY = timedelta(hours=1)
 
 
+class NonRetryableOutboxEventError(ValueError):
+    """Raised when an outbox event cannot succeed through retrying."""
+
+
 class EmailOutboxWorker:
     """Claims and delivers encrypted email outbox jobs."""
 
@@ -53,44 +57,59 @@ class EmailOutboxWorker:
         ) = job
 
         try:
-            if event_type != "employee_invitation":
-                raise ValueError("Unsupported outbox event type")
-
             payload_bytes = self.encryption_service.decrypt(
                 key_version,
                 ciphertext,
             )
-            payload = json.loads(payload_bytes.decode("utf-8"))
+            try:
+                payload = json.loads(payload_bytes.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise NonRetryableOutboxEventError(
+                    "Invalid outbox payload encoding"
+                ) from exc
 
-            recipient = payload["recipient"]
-            invitation_url = payload["invitation_url"]
-            expires_at = payload["expires_at"]
+            if not isinstance(payload, dict):
+                raise NonRetryableOutboxEventError(
+                    "Invalid outbox payload structure"
+                )
 
-            if not all(
-                isinstance(value, str) and value.strip()
-                for value in (recipient, invitation_url, expires_at)
-            ):
-                raise ValueError("Invalid invitation payload")
+            handler = {
+                "employee_invitation": self._handle_employee_invitation,
+                "password_reset": self._handle_password_reset,
+                "password_changed": self._handle_password_changed,
+            }.get(event_type)
 
-            invalid_reason = self._invitation_delivery_block_reason(
-                invitation_id
-            )
-            if invalid_reason is not None:
+            if handler is None:
+                raise NonRetryableOutboxEventError(
+                    "Unsupported outbox event type"
+                )
+
+            block_reason = handler(payload, invitation_id)
+            if block_reason is not None:
                 self._record_non_retryable_failure(
-                    job_id, lease_id, invalid_reason
+                    job_id, lease_id, block_reason
                 )
                 logger.info(
                     "Email outbox job suppressed: job_id=%s reason=%s",
                     job_id,
-                    invalid_reason,
+                    block_reason,
                 )
                 return True
 
-            self.email_service.send_employee_invitation(
-                recipient=recipient,
-                invitation_url=invitation_url,
-                expires_at=expires_at,
+        except NonRetryableOutboxEventError:
+            reason = "NonRetryableOutboxEventError"
+            self._record_non_retryable_failure(
+                job_id,
+                lease_id,
+                reason,
             )
+            logger.warning(
+                "Email outbox job rejected: job_id=%s reason=%s",
+                job_id,
+                reason,
+            )
+            return True
+
         except Exception as exc:
             # Persist only the exception type, never payloads, URLs, tokens,
             # recipient addresses, or raw exception messages.
@@ -112,9 +131,78 @@ class EmailOutboxWorker:
             )
         return True
 
+    @staticmethod
+    def _required_payload_strings(
+        payload: dict,
+        fields: tuple[str, ...],
+    ) -> dict[str, str]:
+        values = {}
+        for field in fields:
+            value = payload.get(field)
+            if not isinstance(value, str) or not value.strip():
+                raise NonRetryableOutboxEventError("Invalid email event payload")
+            values[field] = value
+        return values
+
+    def _handle_employee_invitation(
+        self,
+        payload: dict,
+        invitation_id: uuid.UUID | None,
+    ) -> str | None:
+        values = self._required_payload_strings(
+            payload,
+            ("recipient", "invitation_url", "expires_at"),
+        )
+
+        if invitation_id is None:
+            return "InvitationMissing"
+
+        invalid_reason = self._invitation_delivery_block_reason(
+            invitation_id
+        )
+        if invalid_reason is not None:
+            return invalid_reason
+
+        self.email_service.send_employee_invitation(
+            recipient=values["recipient"],
+            invitation_url=values["invitation_url"],
+            expires_at=values["expires_at"],
+        )
+        return None
+
+    def _handle_password_reset(
+        self,
+        payload: dict,
+        invitation_id: uuid.UUID | None,
+    ) -> str | None:
+        values = self._required_payload_strings(
+            payload,
+            ("recipient", "reset_url", "expires_at"),
+        )
+        self.email_service.send_password_reset(
+            recipient=values["recipient"],
+            reset_url=values["reset_url"],
+            expires_at=values["expires_at"],
+        )
+        return None
+
+    def _handle_password_changed(
+        self,
+        payload: dict,
+        invitation_id: uuid.UUID | None,
+    ) -> str | None:
+        values = self._required_payload_strings(
+            payload,
+            ("recipient",),
+        )
+        self.email_service.send_password_changed(
+            recipient=values["recipient"],
+        )
+        return None
+
     def _claim_one(
         self,
-    ) -> tuple[uuid.UUID, uuid.UUID, str, str, str, uuid.UUID] | None:
+    ) -> tuple[uuid.UUID, uuid.UUID, str, str, str, uuid.UUID | None] | None:
         now = datetime.now(UTC)
         lease_id = uuid.uuid4()
 

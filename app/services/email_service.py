@@ -52,18 +52,76 @@ class EmailService:
         invitation_url: str,
         expires_at: str,
     ) -> None:
-        self.validate_configuration()
-
-        message = EmailMessage()
-        message["Subject"] = "Your Nestify employee invitation"
-        message["From"] = settings.smtp_from_email
-        message["To"] = recipient
-        message.set_content(
+        body = (
             "You have been invited to join Nestify as an employee.\n\n"
             f"Accept your invitation using this link:\n{invitation_url}\n\n"
             f"This invitation expires at {expires_at} (UTC).\n"
             "If you were not expecting this invitation, you can ignore this email."
         )
+
+        self.send_email(
+            recipient=recipient,
+            subject="Your Nestify employee invitation",
+            text_body=body,
+        )
+
+    def send_password_reset(
+        self,
+        *,
+        recipient: str,
+        reset_url: str,
+        expires_at: str,
+    ) -> None:
+        body = (
+            "We received a request to reset your Nestify password.\n\n"
+            f"Reset your password using this link:\n{reset_url}\n\n"
+            f"This link expires at {expires_at} (UTC).\n"
+            "If you did not request a password reset, you can ignore this email."
+        )
+        self.send_email(
+            recipient=recipient,
+            subject="Reset your Nestify password",
+            text_body=body,
+        )
+
+    def send_password_changed(self, *, recipient: str) -> None:
+        body = (
+            "Your Nestify password was changed.\n\n"
+            "If you did not make this change, contact Nestify through "
+            "its official support channels."
+        )
+        self.send_email(
+            recipient=recipient,
+            subject="Your Nestify password was changed",
+            text_body=body,
+        )
+
+    def send_email(
+        self,
+        *,
+        recipient: str,
+        subject: str,
+        text_body: str,
+        html_body: str | None = None,
+    ) -> None:
+        """Deliver a generic email using the configured SMTP transport."""
+        self.validate_configuration()
+
+        if not recipient.strip() or not subject.strip() or not text_body.strip():
+            raise EmailDeliveryError(
+                "Recipient, subject, and text body are required"
+            )
+
+        message = EmailMessage()
+        message["Subject"] = subject
+        message["From"] = settings.smtp_from_email
+        message["To"] = recipient
+        message.set_content(text_body)
+
+        if html_body is not None:
+            if not html_body.strip():
+                raise EmailDeliveryError("HTML body cannot be empty")
+            message.add_alternative(html_body, subtype="html")
 
         context = ssl.create_default_context()
 
@@ -88,7 +146,7 @@ class EmailService:
                         server.ehlo()
                     self._authenticate_and_send(server, message)
         except (OSError, smtplib.SMTPException) as exc:
-            raise EmailDeliveryError("Invitation email delivery failed") from exc
+            raise EmailDeliveryError("Email delivery failed") from exc
 
     @staticmethod
     def _authenticate_and_send(

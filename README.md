@@ -794,6 +794,73 @@ This ensures environments can be reproduced consistently.
 
 ---
 
+### 20.1 Database environments and data protection
+
+Nestify uses separate database environments for development, manual QA, and
+automated testing. A database's name alone does not establish its purpose;
+the configured connection target and the process that owns it must also be
+verified.
+
+#### Persistent local databases
+
+| Database | Classification | Purpose | Protection policy |
+| --- | --- | --- | --- |
+| `nestify` | Active | Local backend development | Preserve development and simulated data. Do not use as an automated-test target. |
+| `nestify_qa` | Active | Manual QA and Backend–Control Portal integration | Dedicated QA environment. Created empty with PostGIS installed. Apply reviewed migrations only after verifying the connection target. |
+| `nestify_pytest` | Legacy / review | Previously used shared integration-test database | The current isolated test runner does not use it. Preserve pending historical review. |
+| `nestify_test` | Legacy / review | Previous local test database; current purpose unconfirmed | Do not use, reset, or delete until its dependencies and contents have been reviewed. |
+| `nestify_migration_test` | Legacy / review | Persistent local database; current purpose unconfirmed | Distinct from disposable migration-test databases created inside Testcontainers. Preserve pending review. |
+| `postgres` | System | PostgreSQL administrative database | Infrastructure administration only; not an application database. |
+
+These classifications describe the known local PostgreSQL databases. Revisit
+them when database ownership or test workflows change.
+
+#### Automated test databases
+
+The current automated integration-test runner,
+`scripts/run_isolated_tests.py`, provisions a fresh PostgreSQL/PostGIS
+Testcontainers instance for each run. It creates a uniquely named database
+using the `nestify_test_<uuid>` pattern, verifies the runner-owned database
+identity, applies migrations, runs pytest, and removes the container when the
+run finishes.
+
+Migration tests in `tests/migrations/` also provision disposable Testcontainers
+instances. The name `nestify_migration_test` is used inside those containers;
+it does not identify or authorize a connection to the persistent local
+database with the same name.
+
+Run database-backed integration tests through the isolated runner documented
+in Section 19. Do not point automated tests at `nestify`, `nestify_qa`, or any
+persistent legacy database. Do not bypass the runner's identity checks or
+explicit opt-in requirements.
+
+#### Migration and reset safeguards
+
+Before applying a migration or running a database-changing command:
+
+- Identify the exact database, PostgreSQL server, and application role being
+  targeted. Never infer the target from a database name or shell prompt.
+- Verify the effective connection configuration without printing passwords,
+  tokens, or other secrets.
+- Review the migration and its expected effects before execution.
+- Confirm the target and intended change before running migrations against
+  development, QA, staging, or production.
+- Do not manually modify production schema as a substitute for reviewed
+  Alembic migrations.
+
+Legacy databases must not be dropped, truncated, or repurposed until their
+contents, dependencies, and retention requirements have been reviewed and a
+separate change has been approved.
+
+Simulated development data must be preserved during normal development and
+QA preparation. Before the first real-world field test, prepare a separately
+reviewed and verified clean-slate procedure for the field-test environment.
+That procedure must distinguish operational records from required system
+configuration, access-control records, reference data, and audit
+infrastructure. It does not authorize clearing development or legacy data.
+
+---
+
 ## 21. Environment configuration
 
 The application supports separate environments.
@@ -854,6 +921,47 @@ If SMTP authentication is required, configure both `SMTP_USERNAME` and
   returning an invitation that cannot be delivered.
 - A successful API response confirms that the invitation and email job were
   committed; it does not mean the email has already arrived.
+
+### Password recovery and password-change notifications
+
+Password recovery uses the following endpoints:
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/v1/auth/password-reset` | Request password-reset instructions by email. |
+| `POST` | `/api/v1/auth/password-reset/confirm` | Confirm a reset token and set a new password. |
+
+The request endpoint always returns a generic response so callers cannot
+determine whether an email address belongs to an active account. Reset tokens
+are generated using a cryptographically secure random source, stored only as
+SHA-256 hashes, expire after 30 minutes, and can be used once. Requesting a
+new reset invalidates previously issued outstanding tokens for that account.
+
+The confirmation endpoint requires a token between 32 and 256 characters and
+a new password between 12 and 128 characters. A successful reset consumes
+outstanding reset tokens for the account and queues a password-change
+notification.
+
+Both endpoints use rate limits and require Redis-backed rate limiting; they
+do not use emergency fallback when Redis is unavailable. Reset requests and
+confirmations fail safely if the encrypted notification cannot be queued.
+The API does not send these emails inline.
+
+Reset links use `FRONTEND_BASE_URL` and the frontend route
+`/reset-password?token=...`. The frontend must provide that route and submit
+the token and new password to the confirmation endpoint.
+
+Password-reset and password-change messages use the same encrypted
+transactional email outbox and worker as employee invitations. The worker
+must run separately from FastAPI, with compatible database, SMTP, and
+outbox-encryption configuration. Retain old encryption-key versions while
+queued messages may still require decryption.
+
+**Session security limitation:** changing a password does not currently
+revoke access tokens that were issued before the password change. Existing
+JWTs can remain valid until their normal expiry, currently up to 60 minutes.
+Immediate session invalidation requires a separate token-version or session-
+revocation mechanism and must not be assumed.
 
 #### Running the email outbox worker
 

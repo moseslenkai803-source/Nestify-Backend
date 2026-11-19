@@ -62,16 +62,19 @@ def worker_context(db_session, monkeypatch):
         lease_expires_at=None,
         lease_id=None,
         event_type="employee_invitation",
+        payload=None,
     ):
-        payload = json.dumps(
-            {
+        if payload is None:
+            payload = {
                 "recipient": invitation.email,
                 "invitation_url": "https://example.test/accept?token=test-token",
                 "expires_at": invitation.expires_at.isoformat(),
-            },
+            }
+        serialized_payload = json.dumps(
+            payload,
             separators=(",", ":"),
         ).encode("utf-8")
-        version, ciphertext = encryption_service.encrypt(payload)
+        version, ciphertext = encryption_service.encrypt(serialized_payload)
 
         outbox = EmailOutbox(
             id=uuid.uuid4(),
@@ -138,6 +141,103 @@ def test_worker_sends_email_and_marks_outbox_sent(worker_context):
     call = context["email_service"].send_employee_invitation.call_args.kwargs
     assert call["recipient"] == context["invitation"].email
     assert "token=test-token" in call["invitation_url"]
+
+
+@pytest.mark.independent_db_transactions
+def test_worker_sends_password_reset_email(worker_context):
+    context = worker_context
+    reset_token = "sensitive-reset-token"
+    reset_url = f"https://example.test/reset?token={reset_token}"
+    outbox = context["create_outbox"](
+        event_type="password_reset",
+        payload={
+            "recipient": context["invitation"].email,
+            "reset_url": reset_url,
+            "expires_at": "2026-11-15T13:00:00+00:00",
+        },
+    )
+    assert reset_token not in outbox.encrypted_payload
+
+    worker = EmailOutboxWorker(
+        session_factory=context["session_factory"],
+        email_service=context["email_service"],
+        encryption_service=context["encryption_service"],
+    )
+    assert worker.process_one() is True
+
+    context["db"].refresh(outbox)
+    assert outbox.status == "sent"
+    context["email_service"].send_password_reset.assert_called_once_with(
+        recipient=context["invitation"].email,
+        reset_url=reset_url,
+        expires_at="2026-11-15T13:00:00+00:00",
+    )
+    context["email_service"].send_employee_invitation.assert_not_called()
+
+
+@pytest.mark.independent_db_transactions
+def test_worker_sends_password_changed_email(worker_context):
+    context = worker_context
+    outbox = context["create_outbox"](
+        event_type="password_changed",
+        payload={"recipient": context["invitation"].email},
+    )
+    worker = EmailOutboxWorker(
+        session_factory=context["session_factory"],
+        email_service=context["email_service"],
+        encryption_service=context["encryption_service"],
+    )
+    assert worker.process_one() is True
+
+    context["db"].refresh(outbox)
+    assert outbox.status == "sent"
+    context["email_service"].send_password_changed.assert_called_once_with(
+        recipient=context["invitation"].email,
+    )
+    context["email_service"].send_employee_invitation.assert_not_called()
+
+
+@pytest.mark.independent_db_transactions
+def test_worker_dead_letters_malformed_password_reset_payload(worker_context):
+    context = worker_context
+    outbox = context["create_outbox"](
+        event_type="password_reset",
+        payload={"recipient": context["invitation"].email, "reset_url": " "},
+    )
+    worker = EmailOutboxWorker(
+        session_factory=context["session_factory"],
+        email_service=context["email_service"],
+        encryption_service=context["encryption_service"],
+    )
+    assert worker.process_one() is True
+
+    context["db"].refresh(outbox)
+    assert outbox.status == "dead_letter"
+    assert outbox.last_error == "NonRetryableOutboxEventError"
+    context["email_service"].send_password_reset.assert_not_called()
+
+    assert outbox.attempt_count == 1
+
+
+@pytest.mark.independent_db_transactions
+def test_worker_dead_letters_unsupported_event_type(worker_context):
+    context = worker_context
+    outbox = context["create_outbox"](event_type="unsupported_event")
+    worker = EmailOutboxWorker(
+        session_factory=context["session_factory"],
+        email_service=context["email_service"],
+        encryption_service=context["encryption_service"],
+    )
+    assert worker.process_one() is True
+
+    context["db"].refresh(outbox)
+    assert outbox.status == "dead_letter"
+    assert outbox.last_error == "NonRetryableOutboxEventError"
+    context["email_service"].send_employee_invitation.assert_not_called()
+    context["email_service"].send_password_reset.assert_not_called()
+    context["email_service"].send_password_changed.assert_not_called()
+
+    assert outbox.attempt_count == 1
 
 
 @pytest.mark.independent_db_transactions

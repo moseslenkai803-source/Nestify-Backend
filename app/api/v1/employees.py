@@ -1,4 +1,3 @@
-import json
 from urllib.parse import quote
 from uuid import UUID
 
@@ -8,7 +7,6 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import require_admin
 from app.core.config import settings
 from app.db.session import get_db
-from app.models.email_outbox import EmailOutbox
 from app.models.user import User
 from app.schemas.employee import (
     EmployeeCandidateResponse,
@@ -22,9 +20,9 @@ from app.schemas.employee import (
 from app.services.employee_service import EmployeeService
 from app.services.employee_invitation_service import EmployeeInvitationService
 from app.services.email_service import EmailDeliveryError, EmailService
-from app.services.outbox_encryption import (
+from app.services.email_outbox_enqueue_service import (
+    EmailOutboxEnqueueService,
     OutboxEncryptionError,
-    OutboxEncryptionService,
 )
 
 
@@ -107,28 +105,15 @@ def create_employee_invitation(
 
     if not is_development:
         try:
-            payload = json.dumps(
-                {
+            EmailOutboxEnqueueService(db).enqueue(
+                event_type="employee_invitation",
+                employee_invitation_id=invitation.id,
+                payload={
                     "recipient": invitation.email,
                     "invitation_url": invitation_url,
                     "expires_at": invitation.expires_at.isoformat(),
                 },
-                separators=(",", ":"),
-            ).encode("utf-8")
-
-            key_version, encrypted_payload = (
-                OutboxEncryptionService().encrypt(payload)
             )
-
-            db.add(
-                EmailOutbox(
-                    employee_invitation_id=invitation.id,
-                    event_type="employee_invitation",
-                    encrypted_payload=encrypted_payload,
-                    encryption_key_version=key_version,
-                )
-            )
-            db.flush()
         except OutboxEncryptionError as exc:
             db.rollback()
             raise HTTPException(
