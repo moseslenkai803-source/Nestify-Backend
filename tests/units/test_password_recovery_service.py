@@ -133,6 +133,7 @@ def test_confirm_password_reset_updates_password_consumes_tokens_and_queues_noti
         email="person@example.com",
         is_active=True,
         password_hash="old-hash",
+        token_version=0,
     )
     raw_token = "b" * 43
     reset_token = PasswordResetToken(
@@ -155,6 +156,7 @@ def test_confirm_password_reset_updates_password_consumes_tokens_and_queues_noti
     )
 
     assert user.password_hash == "new-hash"
+    assert user.token_version == 1
     deps.repository.get_by_id_for_update.assert_called_once_with(user.id)
     deps.db.execute.assert_called_once()
     deps.outbox.enqueue.assert_called_once_with(

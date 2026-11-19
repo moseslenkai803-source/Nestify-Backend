@@ -67,6 +67,20 @@ def get_current_user(
             detail="User account is inactive",
         )
 
+    token_version = payload.get("ver")
+
+    if type(token_version) is not int or token_version < 0:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token",
+        )
+
+    if token_version != user.token_version:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or revoked token",
+        )
+
     return user
 
 

@@ -132,6 +132,7 @@ class PasswordRecoveryService:
             raise ValueError("Password reset token is invalid or has expired")
 
         user.password_hash = hash_password(new_password)
+        user.token_version += 1
 
         # Consume this token and invalidate every other outstanding token
         # for the same user as part of the same database transaction.

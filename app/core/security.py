@@ -25,6 +25,7 @@ def verify_password(
 
 def create_access_token(
     subject: str,
+    token_version: int = 0,
 ) -> str:
     expires_at = datetime.now(UTC) + timedelta(
         minutes=settings.access_token_expire_minutes
@@ -32,6 +33,7 @@ def create_access_token(
 
     payload = {
         "sub": subject,
+        "ver": token_version,
         "exp": expires_at,
     }
 

@@ -486,3 +486,118 @@ def test_terminated_employee_is_rejected_even_with_active_account():
 
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "Employee access required"
+
+
+
+def test_access_token_with_matching_version_is_accepted():
+    from unittest.mock import Mock, patch
+
+    user = User(
+        id=uuid.uuid4(),
+        email="versioned-user@example.com",
+        password_hash="test-hash",
+        role="landlord",
+        is_active=True,
+        token_version=2,
+    )
+
+    credentials = Mock()
+    credentials.credentials = "valid-versioned-token"
+    db = Mock()
+
+    with patch(
+        "app.api.dependencies.decode_access_token",
+        return_value={"sub": str(user.id), "ver": 2},
+    ):
+        with patch(
+            "app.api.dependencies.UserRepository",
+        ) as repository_class:
+            repository_class.return_value.get_by_id.return_value = user
+
+            result = get_current_user(
+                credentials=credentials,
+                db=db,
+            )
+
+    assert result is user
+
+
+@pytest.mark.parametrize(
+    "version_claim",
+    [
+        None,
+        "0",
+        -1,
+        True,
+        1.0,
+    ],
+)
+def test_access_token_with_invalid_version_claim_is_rejected(version_claim):
+    from unittest.mock import Mock, patch
+
+    user = User(
+        id=uuid.uuid4(),
+        email="invalid-version@example.com",
+        password_hash="test-hash",
+        role="landlord",
+        is_active=True,
+        token_version=0,
+    )
+
+    credentials = Mock()
+    credentials.credentials = "invalid-version-token"
+    payload = {"sub": str(user.id)}
+    if version_claim is not None:
+        payload["ver"] = version_claim
+
+    with patch(
+        "app.api.dependencies.decode_access_token",
+        return_value=payload,
+    ):
+        with patch(
+            "app.api.dependencies.UserRepository",
+        ) as repository_class:
+            repository_class.return_value.get_by_id.return_value = user
+
+            with pytest.raises(HTTPException) as exc_info:
+                get_current_user(
+                    credentials=credentials,
+                    db=Mock(),
+                )
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Invalid token"
+
+
+def test_access_token_with_stale_version_is_rejected():
+    from unittest.mock import Mock, patch
+
+    user = User(
+        id=uuid.uuid4(),
+        email="stale-version@example.com",
+        password_hash="test-hash",
+        role="landlord",
+        is_active=True,
+        token_version=3,
+    )
+
+    credentials = Mock()
+    credentials.credentials = "stale-version-token"
+
+    with patch(
+        "app.api.dependencies.decode_access_token",
+        return_value={"sub": str(user.id), "ver": 2},
+    ):
+        with patch(
+            "app.api.dependencies.UserRepository",
+        ) as repository_class:
+            repository_class.return_value.get_by_id.return_value = user
+
+            with pytest.raises(HTTPException) as exc_info:
+                get_current_user(
+                    credentials=credentials,
+                    db=Mock(),
+                )
+
+    assert exc_info.value.status_code == 401
+    assert exc_info.value.detail == "Invalid or revoked token"

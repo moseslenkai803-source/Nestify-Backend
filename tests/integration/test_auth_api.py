@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.api.rate_limit import get_rate_limit_service
 from app.services.rate_limit_service import RateLimitDecision
 
-from app.core.security import create_access_token
+from app.core.security import create_access_token, decode_access_token
 from app.db.session import get_db
 from app.main import app
 from app.models.employee import Employee
@@ -192,6 +192,9 @@ def test_login_success(client, db_session):
         assert "access_token" in data
         assert data["access_token"]
         assert data["token_type"] == "bearer"
+
+        token_payload = decode_access_token(data["access_token"])
+        assert token_payload["ver"] == 0
 
     finally:
         pass
@@ -821,6 +824,22 @@ def test_password_reset_confirmation_changes_password_and_rejects_reuse(
     db_session.add(user)
     db_session.flush()
 
+    assert user.token_version == 0
+
+    old_access_token = create_access_token(
+        subject=str(user.id),
+        token_version=user.token_version,
+    )
+    old_headers = {
+        "Authorization": f"Bearer {old_access_token}",
+    }
+
+    before_reset_me = client.get(
+        "/api/v1/auth/me",
+        headers=old_headers,
+    )
+    assert before_reset_me.status_code == 200
+
     monkeypatch.setattr(
         settings,
         "outbox_encryption_keys",
@@ -873,6 +892,35 @@ def test_password_reset_confirmation_changes_password_and_rejects_reuse(
     assert verify_password(new_password, updated_user.password_hash)
     assert not verify_password(old_password, updated_user.password_hash)
     assert reset_record.consumed_at is not None
+    assert updated_user.token_version == 1
+
+    revoked_me = client.get(
+        "/api/v1/auth/me",
+        headers=old_headers,
+    )
+    assert revoked_me.status_code == 401
+    assert revoked_me.json()["detail"] == "Invalid or revoked token"
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": new_password,
+        },
+    )
+    assert login_response.status_code == 200, login_response.text
+
+    fresh_access_token = login_response.json()["access_token"]
+    fresh_payload = decode_access_token(fresh_access_token)
+    assert fresh_payload["ver"] == 1
+
+    fresh_me = client.get(
+        "/api/v1/auth/me",
+        headers={
+            "Authorization": f"Bearer {fresh_access_token}",
+        },
+    )
+    assert fresh_me.status_code == 200
 
     changed_outbox = db_session.query(EmailOutbox).filter_by(
         event_type="password_changed"

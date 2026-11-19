@@ -165,6 +165,7 @@ def login(
 
         access_token = create_access_token(
             subject=str(user.id),
+            token_version=user.token_version,
         )
 
         return TokenResponse(
