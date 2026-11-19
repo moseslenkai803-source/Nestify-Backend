@@ -18,10 +18,16 @@ from app.schemas.auth import (
     LandlordRegistrationResponse,
     LoginRequest,
     TokenResponse,
+    PasswordResetRequest,
+    PasswordResetConfirmRequest,
+    PasswordResetRequestResponse,
+    PasswordResetConfirmResponse,
 )
 from app.services.registration_service import RegistrationService
 from app.services.employee_invitation_service import EmployeeInvitationService
 from app.services.user_service import UserService
+from app.services.password_recovery_service import PasswordRecoveryService
+from app.services.email_outbox_enqueue_service import OutboxEncryptionError
 
 
 router = APIRouter(
@@ -159,6 +165,7 @@ def login(
 
         access_token = create_access_token(
             subject=str(user.id),
+            token_version=user.token_version,
         )
 
         return TokenResponse(
@@ -170,6 +177,78 @@ def login(
             status_code=401,
             detail=str(exc),
         ) from exc
+
+
+@router.post(
+    "/password-reset",
+    response_model=PasswordResetRequestResponse,
+    dependencies=[
+        Depends(rate_limit_dependency(
+            policy_name="auth-password-reset",
+            allow_emergency_fallback=False,
+            limit=5,
+            window_seconds=60,
+        )),
+        Depends(rate_limit_dependency(
+            policy_name="auth-password-reset-account",
+            allow_emergency_fallback=False,
+            limit=3,
+            window_seconds=3600,
+            identity_field="email",
+        )),
+    ],
+)
+def request_password_reset(
+    reset_data: PasswordResetRequest,
+    db: Session = Depends(get_db, scope="function"),
+):
+    try:
+        PasswordRecoveryService(db).request_password_reset(
+            email=reset_data.email,
+        )
+    except OutboxEncryptionError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail="Password reset is temporarily unavailable.",
+        ) from exc
+
+    return PasswordResetRequestResponse()
+
+
+@router.post(
+    "/password-reset/confirm",
+    response_model=PasswordResetConfirmResponse,
+    dependencies=[Depends(rate_limit_dependency(
+        policy_name="auth-password-reset-confirm",
+        allow_emergency_fallback=False,
+        limit=5,
+        window_seconds=60,
+    ))],
+)
+def confirm_password_reset(
+    reset_data: PasswordResetConfirmRequest,
+    db: Session = Depends(get_db, scope="function"),
+):
+    try:
+        PasswordRecoveryService(db).confirm_password_reset(
+            token=reset_data.token,
+            new_password=reset_data.new_password,
+        )
+    except ValueError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="Password reset token is invalid or has expired.",
+        ) from exc
+    except OutboxEncryptionError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail="Password reset is temporarily unavailable.",
+        ) from exc
+
+    return PasswordResetConfirmResponse()
 
 
 @router.get(

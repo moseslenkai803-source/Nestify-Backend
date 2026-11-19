@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.api.rate_limit import get_rate_limit_service
 from app.services.rate_limit_service import RateLimitDecision
 
-from app.core.security import create_access_token
+from app.core.security import create_access_token, decode_access_token
 from app.db.session import get_db
 from app.main import app
 from app.models.employee import Employee
@@ -192,6 +192,9 @@ def test_login_success(client, db_session):
         assert "access_token" in data
         assert data["access_token"]
         assert data["token_type"] == "bearer"
+
+        token_payload = decode_access_token(data["access_token"])
+        assert token_payload["ver"] == 0
 
     finally:
         pass
@@ -623,6 +626,13 @@ class RouteRateLimitTestService:
             },
             ("auth-login", "auth-login-account"),
         ),
+        (
+            "/api/v1/auth/password-reset",
+            {
+                "email": "rate-limit-reset@example.com",
+            },
+            ("auth-password-reset", "auth-password-reset-account"),
+        ),
     ],
 )
 @pytest.mark.parametrize(
@@ -682,6 +692,8 @@ def test_auth_routes_enforce_rate_limit_policies(
         "auth-register-account": (3, 3600),
         "auth-login": (10, 60),
         "auth-login-account": (5, 300),
+        "auth-password-reset": (5, 60),
+        "auth-password-reset-account": (3, 3600),
     }
 
     for call in service.calls:
@@ -692,3 +704,294 @@ def test_auth_routes_enforce_rate_limit_policies(
 
     if target_policy.endswith("-account"):
         assert service.calls[-1]["key"] == payload["email"].strip().lower()
+
+
+# Password recovery API integration tests
+
+
+def test_password_reset_request_is_generic_and_queues_encrypted_event(
+    db_session, client, monkeypatch
+):
+    import hashlib
+    import json
+    from urllib.parse import parse_qs, urlparse
+
+    from cryptography.fernet import Fernet
+
+    from app.core.config import settings
+    from app.core.security import hash_password
+    from app.models.email_outbox import EmailOutbox
+    from app.models.password_reset_token import PasswordResetToken
+    from app.services.outbox_encryption import OutboxEncryptionService
+
+    email = f"password-reset-{uuid4()}@example.com"
+    user = User(
+        email=email,
+        password_hash=hash_password("OriginalPassword123!"),
+        role="landlord",
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    monkeypatch.setattr(
+        settings,
+        "outbox_encryption_keys",
+        {"v1": Fernet.generate_key().decode("ascii")},
+    )
+    monkeypatch.setattr(
+        settings,
+        "outbox_active_encryption_key_version",
+        "v1",
+    )
+
+    existing_response = client.post(
+        "/api/v1/auth/password-reset",
+        json={"email": email},
+    )
+    unknown_response = client.post(
+        "/api/v1/auth/password-reset",
+        json={"email": f"unknown-{uuid4()}@example.com"},
+    )
+
+    assert existing_response.status_code == 200, existing_response.text
+    assert unknown_response.status_code == 200, unknown_response.text
+    assert existing_response.json() == unknown_response.json()
+    assert "If an account exists" in existing_response.json()["message"]
+
+    db_session.expire_all()
+
+    reset_record = db_session.query(PasswordResetToken).filter_by(
+        user_id=user.id
+    ).one()
+    outbox = db_session.query(EmailOutbox).filter_by(
+        event_type="password_reset"
+    ).one()
+
+    assert reset_record.token_hash != ""
+    assert len(reset_record.token_hash) == 64
+    assert reset_record.token_hash not in outbox.encrypted_payload
+    assert email not in outbox.encrypted_payload
+    assert outbox.status == "pending"
+    assert outbox.encryption_key_version == "v1"
+
+    decrypted = OutboxEncryptionService().decrypt(
+        outbox.encryption_key_version,
+        outbox.encrypted_payload,
+    )
+    payload = json.loads(decrypted.decode("utf-8"))
+
+    assert payload["recipient"] == email
+    assert "token=" in payload["reset_url"]
+
+    raw_token = parse_qs(
+        urlparse(payload["reset_url"]).query
+    )["token"][0]
+
+    assert hashlib.sha256(raw_token.encode("utf-8")).hexdigest() == (
+        reset_record.token_hash
+    )
+    assert raw_token not in reset_record.token_hash
+    assert db_session.query(EmailOutbox).filter_by(
+        event_type="password_reset"
+    ).count() == 1
+
+
+def test_password_reset_confirmation_changes_password_and_rejects_reuse(
+    db_session, client, monkeypatch
+):
+    import json
+    from urllib.parse import parse_qs, urlparse
+
+    from cryptography.fernet import Fernet
+
+    from app.core.config import settings
+    from app.core.security import hash_password, verify_password
+    from app.models.email_outbox import EmailOutbox
+    from app.models.password_reset_token import PasswordResetToken
+    from app.services.outbox_encryption import OutboxEncryptionService
+
+    email = f"password-confirm-{uuid4()}@example.com"
+    old_password = "OriginalPassword123!"
+    new_password = "ReplacementPassword456!"
+
+    user = User(
+        email=email,
+        password_hash=hash_password(old_password),
+        role="landlord",
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    assert user.token_version == 0
+
+    old_access_token = create_access_token(
+        subject=str(user.id),
+        token_version=user.token_version,
+    )
+    old_headers = {
+        "Authorization": f"Bearer {old_access_token}",
+    }
+
+    before_reset_me = client.get(
+        "/api/v1/auth/me",
+        headers=old_headers,
+    )
+    assert before_reset_me.status_code == 200
+
+    monkeypatch.setattr(
+        settings,
+        "outbox_encryption_keys",
+        {"v1": Fernet.generate_key().decode("ascii")},
+    )
+    monkeypatch.setattr(
+        settings,
+        "outbox_active_encryption_key_version",
+        "v1",
+    )
+
+    request_response = client.post(
+        "/api/v1/auth/password-reset",
+        json={"email": email},
+    )
+    assert request_response.status_code == 200, request_response.text
+
+    db_session.expire_all()
+    reset_outbox = db_session.query(EmailOutbox).filter_by(
+        event_type="password_reset"
+    ).one()
+
+    payload = json.loads(
+        OutboxEncryptionService().decrypt(
+            reset_outbox.encryption_key_version,
+            reset_outbox.encrypted_payload,
+        ).decode("utf-8")
+    )
+    raw_token = parse_qs(
+        urlparse(payload["reset_url"]).query
+    )["token"][0]
+
+    confirmation_payload = {
+        "token": raw_token,
+        "new_password": new_password,
+    }
+
+    response = client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json=confirmation_payload,
+    )
+    assert response.status_code == 200, response.text
+
+    db_session.expire_all()
+    updated_user = db_session.query(User).filter_by(id=user.id).one()
+    reset_record = db_session.query(PasswordResetToken).filter_by(
+        user_id=user.id
+    ).one()
+
+    assert verify_password(new_password, updated_user.password_hash)
+    assert not verify_password(old_password, updated_user.password_hash)
+    assert reset_record.consumed_at is not None
+    assert updated_user.token_version == 1
+
+    revoked_me = client.get(
+        "/api/v1/auth/me",
+        headers=old_headers,
+    )
+    assert revoked_me.status_code == 401
+    assert revoked_me.json()["detail"] == "Invalid or revoked token"
+
+    login_response = client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": new_password,
+        },
+    )
+    assert login_response.status_code == 200, login_response.text
+
+    fresh_access_token = login_response.json()["access_token"]
+    fresh_payload = decode_access_token(fresh_access_token)
+    assert fresh_payload["ver"] == 1
+
+    fresh_me = client.get(
+        "/api/v1/auth/me",
+        headers={
+            "Authorization": f"Bearer {fresh_access_token}",
+        },
+    )
+    assert fresh_me.status_code == 200
+
+    changed_outbox = db_session.query(EmailOutbox).filter_by(
+        event_type="password_changed"
+    ).one()
+    assert changed_outbox.status == "pending"
+
+    changed_payload = json.loads(
+        OutboxEncryptionService().decrypt(
+            changed_outbox.encryption_key_version,
+            changed_outbox.encrypted_payload,
+        ).decode("utf-8")
+    )
+    assert changed_payload["recipient"] == email
+
+    reuse_response = client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json=confirmation_payload,
+    )
+    assert reuse_response.status_code == 400
+    assert reuse_response.json()["detail"] == (
+        "Password reset token is invalid or has expired."
+    )
+
+
+@pytest.mark.parametrize(
+    "decision,expected_status",
+    [
+        (RateLimitDecision.LIMITED, 429),
+        (RateLimitDecision.UNAVAILABLE, 503),
+    ],
+)
+def test_password_reset_confirmation_enforces_ip_rate_limit(
+    client,
+    monkeypatch,
+    decision,
+    expected_status,
+):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "environment", "development")
+
+    service = RouteRateLimitTestService(
+        "auth-password-reset-confirm",
+        decision,
+    )
+    previous_override = app.dependency_overrides.get(
+        get_rate_limit_service
+    )
+    app.dependency_overrides[get_rate_limit_service] = lambda: service
+
+    try:
+        response = client.post(
+            "/api/v1/auth/password-reset/confirm",
+            json={
+                "token": "a" * 43,
+                "new_password": "ReplacementPassword456!",
+            },
+        )
+    finally:
+        if previous_override is None:
+            app.dependency_overrides.pop(get_rate_limit_service, None)
+        else:
+            app.dependency_overrides[get_rate_limit_service] = (
+                previous_override
+            )
+
+    assert response.status_code == expected_status
+    assert len(service.calls) == 1
+    assert service.calls[0]["policy_name"] == (
+        "auth-password-reset-confirm"
+    )
+    assert service.calls[0]["limit"] == 5
+    assert service.calls[0]["window_seconds"] == 60
+    assert service.calls[0]["allow_emergency_fallback"] is False

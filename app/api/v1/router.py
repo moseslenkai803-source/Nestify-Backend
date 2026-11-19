@@ -16,6 +16,7 @@ from app.api.v1.landlords import router as landlords_router
 from app.api.v1.contractors import router as contractors_router
 from app.api.v1.installation_assignments import router as installation_assignments_router
 from app.api.v1.listings import router as listings_router
+from app.api.v1.settings import router as settings_router
 
 
 router = APIRouter()
@@ -76,4 +77,9 @@ router.include_router(
 )
 router.include_router(
     listings_router,
+)
+
+
+router.include_router(
+    settings_router,
 )

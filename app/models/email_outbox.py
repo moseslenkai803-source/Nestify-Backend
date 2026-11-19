@@ -52,11 +52,9 @@ class EmailOutbox(Base):
         default=uuid.uuid4,
     )
 
-    employee_invitation_id: Mapped[uuid.UUID] = mapped_column(
+    employee_invitation_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,
-        ForeignKey("employee_invitations.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
+        nullable=True,
     )
 
     event_type: Mapped[str] = mapped_column(
