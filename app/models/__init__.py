@@ -29,6 +29,7 @@ from app.models.email_outbox import EmailOutbox
 from app.models.platform_setting import PlatformSetting
 from app.models.platform_setting_audit_log import PlatformSettingAuditLog
 from app.models.password_reset_token import PasswordResetToken
+from app.models.password_reset_otp_challenge import PasswordResetOtpChallenge
 
 __all__ = [
     "Base",
@@ -62,4 +63,5 @@ __all__ = [
     "PlatformSetting",
     "PlatformSettingAuditLog",
     "PasswordResetToken",
+    "PasswordResetOtpChallenge",
 ]

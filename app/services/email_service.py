@@ -1,8 +1,14 @@
-import smtplib
-import ssl
+import base64
 from email.message import EmailMessage
 
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+
 from app.core.config import settings
+
+
+GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send"
+GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 
 class EmailDeliveryError(RuntimeError):
@@ -12,29 +18,19 @@ class EmailDeliveryError(RuntimeError):
 class EmailService:
     @staticmethod
     def validate_configuration() -> None:
-        if not (
-            settings.smtp_host
-            and settings.smtp_from_email
-            and (
-                bool(settings.smtp_username)
-                == bool(settings.smtp_password)
-            )
-        ):
-            raise EmailDeliveryError("Email delivery is not configured")
-
-        if settings.smtp_use_ssl and settings.smtp_starttls:
-            raise EmailDeliveryError(
-                "Configure either implicit SSL or STARTTLS, not both"
-            )
-
-        is_development = (
-            settings.environment.strip().lower() == "development"
+        required_credentials = (
+            settings.gmail_client_id,
+            settings.gmail_client_secret,
+            settings.gmail_refresh_token,
+            settings.gmail_sender_email,
         )
-        if not is_development and not (
-            settings.smtp_use_ssl or settings.smtp_starttls
+
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in required_credentials
         ):
             raise EmailDeliveryError(
-                "Non-development email delivery requires encrypted SMTP"
+                "Gmail API email delivery is not configured"
             )
 
     @classmethod
@@ -104,17 +100,21 @@ class EmailService:
         text_body: str,
         html_body: str | None = None,
     ) -> None:
-        """Deliver a generic email using the configured SMTP transport."""
+        """Deliver an email through the Gmail API."""
         self.validate_configuration()
 
-        if not recipient.strip() or not subject.strip() or not text_body.strip():
+        if (
+            not recipient.strip()
+            or not subject.strip()
+            or not text_body.strip()
+        ):
             raise EmailDeliveryError(
                 "Recipient, subject, and text body are required"
             )
 
         message = EmailMessage()
         message["Subject"] = subject
-        message["From"] = settings.smtp_from_email
+        message["From"] = settings.gmail_sender_email
         message["To"] = recipient
         message.set_content(text_body)
 
@@ -123,41 +123,33 @@ class EmailService:
                 raise EmailDeliveryError("HTML body cannot be empty")
             message.add_alternative(html_body, subtype="html")
 
-        context = ssl.create_default_context()
+        raw_message = base64.urlsafe_b64encode(
+            message.as_bytes()
+        ).decode("ascii")
+
+        credentials = Credentials(
+            token=None,
+            refresh_token=settings.gmail_refresh_token,
+            token_uri=GOOGLE_TOKEN_URI,
+            client_id=settings.gmail_client_id,
+            client_secret=settings.gmail_client_secret,
+            scopes=[GMAIL_SEND_SCOPE],
+        )
 
         try:
-            if settings.smtp_use_ssl:
-                with smtplib.SMTP_SSL(
-                    settings.smtp_host,
-                    settings.smtp_port,
-                    timeout=15,
-                    context=context,
-                ) as server:
-                    self._authenticate_and_send(server, message)
-            else:
-                with smtplib.SMTP(
-                    settings.smtp_host,
-                    settings.smtp_port,
-                    timeout=15,
-                ) as server:
-                    server.ehlo()
-                    if settings.smtp_starttls:
-                        server.starttls(context=context)
-                        server.ehlo()
-                    self._authenticate_and_send(server, message)
-        except (OSError, smtplib.SMTPException) as exc:
-            raise EmailDeliveryError("Email delivery failed") from exc
+            gmail = build(
+                "gmail",
+                "v1",
+                credentials=credentials,
+                cache_discovery=False,
+            )
 
-    @staticmethod
-    def _authenticate_and_send(
-        server: smtplib.SMTP,
-        message: EmailMessage,
-    ) -> None:
-        if settings.smtp_username:
-            if not settings.smtp_password:
-                raise EmailDeliveryError(
-                    "SMTP password is required when a username is configured"
-                )
-            server.login(settings.smtp_username, settings.smtp_password)
+            gmail.users().messages().send(
+                userId="me",
+                body={"raw": raw_message},
+            ).execute()
 
-        server.send_message(message)
+        except Exception as exc:
+            raise EmailDeliveryError(
+                "Email delivery failed"
+            ) from exc

@@ -192,8 +192,8 @@ def login(
         Depends(rate_limit_dependency(
             policy_name="auth-password-reset-account",
             allow_emergency_fallback=False,
-            limit=3,
-            window_seconds=3600,
+            limit=5,
+            window_seconds=900,
             identity_field="email",
         )),
     ],

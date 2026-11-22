@@ -693,7 +693,7 @@ def test_auth_routes_enforce_rate_limit_policies(
         "auth-login": (10, 60),
         "auth-login-account": (5, 300),
         "auth-password-reset": (5, 60),
-        "auth-password-reset-account": (3, 3600),
+        "auth-password-reset-account": (5, 900),
     }
 
     for call in service.calls:
