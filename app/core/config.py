@@ -16,6 +16,7 @@ class Settings(BaseSettings):
         default=5.0, gt=0
     )
     jwt_secret_key: str
+    password_reset_otp_pepper: str | None = None
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
     cors_allowed_origins: list[str] = ["http://localhost:5173"]

@@ -222,9 +222,27 @@ def validate_email_worker_configuration() -> None:
         _validate_outbox_encryption_configuration()
 
 
+def _validate_password_reset_otp_pepper() -> None:
+    """Require a dedicated, sufficiently strong OTP hashing pepper."""
+    pepper = settings.password_reset_otp_pepper
+
+    if (
+        not isinstance(pepper, str)
+        or len(pepper) < 32
+        or pepper != pepper.strip()
+        or any(character.isspace() for character in pepper)
+        or any(marker in pepper.lower() for marker in _PLACEHOLDER_MARKERS)
+    ):
+        raise RuntimeConfigurationError(
+            "PASSWORD_RESET_OTP_PEPPER must be a non-placeholder secret "
+            "of at least 32 characters with no whitespace"
+        )
+
+
 def validate_runtime_configuration() -> None:
     """Reject unknown environments and unsafe staging/production settings."""
     environment = _validate_environment()
+    _validate_password_reset_otp_pepper()
 
     if environment not in _PROTECTED_ENVIRONMENTS:
         return

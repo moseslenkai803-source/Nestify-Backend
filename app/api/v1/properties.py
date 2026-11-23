@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.property_actions import PropertyAction
@@ -14,6 +15,7 @@ from app.api.dependencies import (
 )
 from app.db.session import get_db
 from app.models.landlord import Landlord
+from app.models.property import Property
 from app.models.user import User
 from app.schemas.address_plate import (
     AddressPlateRequestResponse,
@@ -71,6 +73,40 @@ router = APIRouter(
 )
 
 
+def _property_response_data(
+    db: Session,
+    properties: list[Property],
+) -> list[dict]:
+    if not properties:
+        return []
+
+    property_ids = [property.id for property in properties]
+
+    landlord_names = db.execute(
+        select(Property.id, Landlord.display_name)
+        .join(Landlord, Landlord.id == Property.landlord_id)
+        .where(Property.id.in_(property_ids))
+    ).all()
+
+    names_by_property_id = {
+        property_id: display_name
+        for property_id, display_name in landlord_names
+    }
+
+    return [
+        {
+            "id": property.id,
+            "landlord_id": property.landlord_id,
+            "landlord_display_name": names_by_property_id[property.id],
+            "property_code": property.property_code,
+            "name": property.name,
+            "property_type": property.property_type,
+            "status": property.status,
+        }
+        for property in properties
+    ]
+
+
 def _location_review_http_exception(exc: ValueError) -> HTTPException:
     if isinstance(exc, LocationReviewNotFound):
         status_code = 404
@@ -96,11 +132,12 @@ def create_property(
     service = PropertyService(db)
 
     try:
-        return service.create_property(
+        property = service.create_property(
             landlord_id=current_landlord.id,
             name=property_data.name,
             property_type=property_data.property_type,
         )
+        return _property_response_data(db, [property])[0]
     except ValueError as exc:
         raise HTTPException(
             status_code=404,
@@ -117,7 +154,8 @@ def list_property_portfolio(
     db: Session = Depends(get_db, scope='function'),
 ):
     service = PropertyService(db)
-    return service.list_all_properties()
+    properties = service.list_all_properties()
+    return _property_response_data(db, properties)
 
 
 @router.get(
@@ -129,7 +167,8 @@ def list_accessible_properties(
     db: Session = Depends(get_db, scope='function'),
 ):
     service = PropertyAccessService(db)
-    return service.list_accessible_properties(current_employee.id)
+    properties = service.list_accessible_properties(current_employee.id)
+    return _property_response_data(db, properties)
 
 
 @router.post(
@@ -437,9 +476,8 @@ def list_properties(
     service = PropertyService(db)
 
     try:
-        return service.list_properties(
-            current_landlord.id
-        )
+        properties = service.list_properties(current_landlord.id)
+        return _property_response_data(db, properties)
     except ValueError as exc:
         raise HTTPException(
             status_code=404,
@@ -582,7 +620,8 @@ def get_property(
             action=PropertyAction.PROPERTY_MANAGEMENT,
         )
 
-        return service.get_property(property_id)
+        property = service.get_property(property_id)
+        return _property_response_data(db, [property])[0]
 
     except ValueError as exc:
         detail = (

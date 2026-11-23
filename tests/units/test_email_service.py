@@ -195,14 +195,14 @@ def test_gmail_api_failure_raises_delivery_error(gmail_settings):
             )
 
 
-def test_sends_password_reset_email_with_link_and_expiry(gmail_settings):
+def test_sends_password_reset_otp_email_with_expiry(gmail_settings):
     gmail = mock_gmail_api()
-    reset_url = "https://example.com/reset?token=test-reset-token"
+    otp = "482917"
 
     with patch("app.services.email_service.build", return_value=gmail):
-        EmailService().send_password_reset(
+        EmailService().send_password_reset_otp(
             recipient="user@example.com",
-            reset_url=reset_url,
+            otp=otp,
             expires_at="2026-11-15T13:00:00+00:00",
         )
 
@@ -210,8 +210,8 @@ def test_sends_password_reset_email_with_link_and_expiry(gmail_settings):
     body = message.get_content()
 
     assert message["To"] == "user@example.com"
-    assert message["Subject"] == "Reset your Nestify password"
-    assert reset_url in body
+    assert message["Subject"] == "Your Nestify password reset code"
+    assert otp in body
     assert "2026-11-15T13:00:00+00:00" in body
     assert "If you did not request a password reset" in body
     assert "\n" in body

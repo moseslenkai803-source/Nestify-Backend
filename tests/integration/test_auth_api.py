@@ -693,7 +693,7 @@ def test_auth_routes_enforce_rate_limit_policies(
         "auth-login": (10, 60),
         "auth-login-account": (5, 300),
         "auth-password-reset": (5, 60),
-        "auth-password-reset-account": (5, 900),
+        "auth-password-reset-account": (5, 300),
     }
 
     for call in service.calls:
@@ -712,17 +712,17 @@ def test_auth_routes_enforce_rate_limit_policies(
 def test_password_reset_request_is_generic_and_queues_encrypted_event(
     db_session, client, monkeypatch
 ):
-    import hashlib
     import json
-    from urllib.parse import parse_qs, urlparse
+    import re
 
     from cryptography.fernet import Fernet
 
     from app.core.config import settings
     from app.core.security import hash_password
     from app.models.email_outbox import EmailOutbox
-    from app.models.password_reset_token import PasswordResetToken
+    from app.models.password_reset_otp_challenge import PasswordResetOtpChallenge
     from app.services.outbox_encryption import OutboxEncryptionService
+    from app.services.password_recovery_service import PasswordRecoveryService
 
     email = f"password-reset-{uuid4()}@example.com"
     user = User(
@@ -739,11 +739,7 @@ def test_password_reset_request_is_generic_and_queues_encrypted_event(
         "outbox_encryption_keys",
         {"v1": Fernet.generate_key().decode("ascii")},
     )
-    monkeypatch.setattr(
-        settings,
-        "outbox_active_encryption_key_version",
-        "v1",
-    )
+    monkeypatch.setattr(settings, "outbox_active_encryption_key_version", "v1")
 
     existing_response = client.post(
         "/api/v1/auth/password-reset",
@@ -761,16 +757,19 @@ def test_password_reset_request_is_generic_and_queues_encrypted_event(
 
     db_session.expire_all()
 
-    reset_record = db_session.query(PasswordResetToken).filter_by(
+    challenge = db_session.query(PasswordResetOtpChallenge).filter_by(
         user_id=user.id
     ).one()
     outbox = db_session.query(EmailOutbox).filter_by(
-        event_type="password_reset"
+        event_type="password_reset_otp"
     ).one()
 
-    assert reset_record.token_hash != ""
-    assert len(reset_record.token_hash) == 64
-    assert reset_record.token_hash not in outbox.encrypted_payload
+    assert challenge.otp_hash
+    assert len(challenge.otp_hash) == 64
+    assert challenge.attempt_count == 0
+    assert challenge.consumed_at is None
+    assert challenge.expires_at > challenge.created_at
+    assert challenge.otp_hash not in outbox.encrypted_payload
     assert email not in outbox.encrypted_payload
     assert outbox.status == "pending"
     assert outbox.encryption_key_version == "v1"
@@ -782,18 +781,14 @@ def test_password_reset_request_is_generic_and_queues_encrypted_event(
     payload = json.loads(decrypted.decode("utf-8"))
 
     assert payload["recipient"] == email
-    assert "token=" in payload["reset_url"]
-
-    raw_token = parse_qs(
-        urlparse(payload["reset_url"]).query
-    )["token"][0]
-
-    assert hashlib.sha256(raw_token.encode("utf-8")).hexdigest() == (
-        reset_record.token_hash
-    )
-    assert raw_token not in reset_record.token_hash
+    assert re.fullmatch(r"\d{6}", payload["otp"])
+    assert payload["otp"] not in outbox.encrypted_payload
+    assert challenge.otp_hash == PasswordRecoveryService(
+        db_session
+    )._otp_hash(challenge.id, payload["otp"])
+    assert "reset_url" not in payload
     assert db_session.query(EmailOutbox).filter_by(
-        event_type="password_reset"
+        event_type="password_reset_otp"
     ).count() == 1
 
 
@@ -801,14 +796,13 @@ def test_password_reset_confirmation_changes_password_and_rejects_reuse(
     db_session, client, monkeypatch
 ):
     import json
-    from urllib.parse import parse_qs, urlparse
 
     from cryptography.fernet import Fernet
 
     from app.core.config import settings
     from app.core.security import hash_password, verify_password
     from app.models.email_outbox import EmailOutbox
-    from app.models.password_reset_token import PasswordResetToken
+    from app.models.password_reset_otp_challenge import PasswordResetOtpChallenge
     from app.services.outbox_encryption import OutboxEncryptionService
 
     email = f"password-confirm-{uuid4()}@example.com"
@@ -830,14 +824,9 @@ def test_password_reset_confirmation_changes_password_and_rejects_reuse(
         subject=str(user.id),
         token_version=user.token_version,
     )
-    old_headers = {
-        "Authorization": f"Bearer {old_access_token}",
-    }
+    old_headers = {"Authorization": f"Bearer {old_access_token}"}
 
-    before_reset_me = client.get(
-        "/api/v1/auth/me",
-        headers=old_headers,
-    )
+    before_reset_me = client.get("/api/v1/auth/me", headers=old_headers)
     assert before_reset_me.status_code == 200
 
     monkeypatch.setattr(
@@ -845,11 +834,7 @@ def test_password_reset_confirmation_changes_password_and_rejects_reuse(
         "outbox_encryption_keys",
         {"v1": Fernet.generate_key().decode("ascii")},
     )
-    monkeypatch.setattr(
-        settings,
-        "outbox_active_encryption_key_version",
-        "v1",
-    )
+    monkeypatch.setattr(settings, "outbox_active_encryption_key_version", "v1")
 
     request_response = client.post(
         "/api/v1/auth/password-reset",
@@ -859,24 +844,28 @@ def test_password_reset_confirmation_changes_password_and_rejects_reuse(
 
     db_session.expire_all()
     reset_outbox = db_session.query(EmailOutbox).filter_by(
-        event_type="password_reset"
+        event_type="password_reset_otp"
     ).one()
-
-    payload = json.loads(
+    otp_payload = json.loads(
         OutboxEncryptionService().decrypt(
             reset_outbox.encryption_key_version,
             reset_outbox.encrypted_payload,
         ).decode("utf-8")
     )
-    raw_token = parse_qs(
-        urlparse(payload["reset_url"]).query
-    )["token"][0]
+
+    verify_response = client.post(
+        "/api/v1/auth/password-reset/verify",
+        json={"email": email, "otp": otp_payload["otp"]},
+    )
+    assert verify_response.status_code == 200, verify_response.text
+    reset_grant = verify_response.json()["reset_grant"]
+    assert len(reset_grant) >= 32
 
     confirmation_payload = {
-        "token": raw_token,
+        "email": email,
+        "reset_grant": reset_grant,
         "new_password": new_password,
     }
-
     response = client.post(
         "/api/v1/auth/password-reset/confirm",
         json=confirmation_payload,
@@ -885,28 +874,24 @@ def test_password_reset_confirmation_changes_password_and_rejects_reuse(
 
     db_session.expire_all()
     updated_user = db_session.query(User).filter_by(id=user.id).one()
-    reset_record = db_session.query(PasswordResetToken).filter_by(
+    challenge = db_session.query(PasswordResetOtpChallenge).filter_by(
         user_id=user.id
     ).one()
 
     assert verify_password(new_password, updated_user.password_hash)
     assert not verify_password(old_password, updated_user.password_hash)
-    assert reset_record.consumed_at is not None
+    assert challenge.verified_at is not None
+    assert challenge.consumed_at is not None
+    assert challenge.reset_grant_hash
     assert updated_user.token_version == 1
 
-    revoked_me = client.get(
-        "/api/v1/auth/me",
-        headers=old_headers,
-    )
+    revoked_me = client.get("/api/v1/auth/me", headers=old_headers)
     assert revoked_me.status_code == 401
     assert revoked_me.json()["detail"] == "Invalid or revoked token"
 
     login_response = client.post(
         "/api/v1/auth/login",
-        json={
-            "email": email,
-            "password": new_password,
-        },
+        json={"email": email, "password": new_password},
     )
     assert login_response.status_code == 200, login_response.text
 
@@ -916,9 +901,7 @@ def test_password_reset_confirmation_changes_password_and_rejects_reuse(
 
     fresh_me = client.get(
         "/api/v1/auth/me",
-        headers={
-            "Authorization": f"Bearer {fresh_access_token}",
-        },
+        headers={"Authorization": f"Bearer {fresh_access_token}"},
     )
     assert fresh_me.status_code == 200
 
@@ -941,8 +924,74 @@ def test_password_reset_confirmation_changes_password_and_rejects_reuse(
     )
     assert reuse_response.status_code == 400
     assert reuse_response.json()["detail"] == (
-        "Password reset token is invalid or has expired."
+        "Password reset grant is invalid or has expired."
     )
+
+
+def test_password_reset_verification_persists_failed_attempt(
+    db_session, client, monkeypatch
+):
+    import json
+
+    from cryptography.fernet import Fernet
+
+    from app.core.config import settings
+    from app.core.security import hash_password
+    from app.models.email_outbox import EmailOutbox
+    from app.models.password_reset_otp_challenge import PasswordResetOtpChallenge
+    from app.services.outbox_encryption import OutboxEncryptionService
+
+    email = f"password-wrong-otp-{uuid4()}@example.com"
+    user = User(
+        email=email,
+        password_hash=hash_password("OriginalPassword123!"),
+        role="landlord",
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.flush()
+
+    monkeypatch.setattr(
+        settings,
+        "outbox_encryption_keys",
+        {"v1": Fernet.generate_key().decode("ascii")},
+    )
+    monkeypatch.setattr(settings, "outbox_active_encryption_key_version", "v1")
+
+    request_response = client.post(
+        "/api/v1/auth/password-reset",
+        json={"email": email},
+    )
+    assert request_response.status_code == 200
+
+    db_session.expire_all()
+    outbox = db_session.query(EmailOutbox).filter_by(
+        event_type="password_reset_otp"
+    ).one()
+    payload = json.loads(
+        OutboxEncryptionService().decrypt(
+            outbox.encryption_key_version,
+            outbox.encrypted_payload,
+        ).decode("utf-8")
+    )
+
+    wrong_otp = "000000" if payload["otp"] != "000000" else "000001"
+    response = client.post(
+        "/api/v1/auth/password-reset/verify",
+        json={"email": email, "otp": wrong_otp},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "Verification code is invalid or has expired."
+    )
+
+    db_session.expire_all()
+    challenge = db_session.query(PasswordResetOtpChallenge).filter_by(
+        user_id=user.id
+    ).one()
+    assert challenge.attempt_count == 1
+    assert challenge.verified_at is None
 
 
 @pytest.mark.parametrize(
@@ -975,7 +1024,8 @@ def test_password_reset_confirmation_enforces_ip_rate_limit(
         response = client.post(
             "/api/v1/auth/password-reset/confirm",
             json={
-                "token": "a" * 43,
+                "email": "rate-limit-confirm@example.com",
+                "reset_grant": "a" * 43,
                 "new_password": "ReplacementPassword456!",
             },
         )
@@ -995,3 +1045,147 @@ def test_password_reset_confirmation_enforces_ip_rate_limit(
     assert service.calls[0]["limit"] == 5
     assert service.calls[0]["window_seconds"] == 60
     assert service.calls[0]["allow_emergency_fallback"] is False
+
+
+@pytest.mark.independent_db_transactions
+def test_password_reset_grant_can_only_be_redeemed_once_concurrently(
+    db_session, monkeypatch, request
+):
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import UTC, datetime, timedelta
+    from threading import Barrier
+    import secrets
+
+    from cryptography.fernet import Fernet
+
+    from app.core.config import settings
+    from app.core.security import hash_password, verify_password
+    from app.models.email_outbox import EmailOutbox
+    from app.models.password_reset_otp_challenge import PasswordResetOtpChallenge
+    from app.services.password_recovery_service import PasswordRecoveryService
+
+    previous_outbox_ids = {
+        row[0] for row in db_session.query(EmailOutbox.id).all()
+    }
+    user_id = None
+
+    def cleanup():
+        db_session.rollback()
+        db_session.expire_all()
+
+        new_events = db_session.query(EmailOutbox).filter(
+            EmailOutbox.event_type == "password_changed",
+            EmailOutbox.id.notin_(previous_outbox_ids),
+        )
+        new_events.delete(synchronize_session=False)
+
+        if user_id is not None:
+            db_session.query(PasswordResetOtpChallenge).filter_by(
+                user_id=user_id
+            ).delete(synchronize_session=False)
+            db_session.query(User).filter_by(id=user_id).delete(
+                synchronize_session=False
+            )
+
+        db_session.commit()
+
+    request.addfinalizer(cleanup)
+
+    email = f"password-concurrent-{uuid4()}@example.com"
+    old_password = "OriginalPassword123!"
+    new_passwords = [
+        "ConcurrentReplacement123!",
+        "AlternativeReplacement456!",
+    ]
+    reset_grant = secrets.token_urlsafe(32)
+    now = datetime.now(UTC)
+
+    monkeypatch.setattr(
+        settings,
+        "outbox_encryption_keys",
+        {"v1": Fernet.generate_key().decode("ascii")},
+    )
+    monkeypatch.setattr(settings, "outbox_active_encryption_key_version", "v1")
+
+    user = User(
+        email=email,
+        password_hash=hash_password(old_password),
+        role="landlord",
+        is_active=True,
+    )
+    db_session.add(user)
+    db_session.flush()
+    user_id = user.id
+
+    recovery_service = PasswordRecoveryService(db_session)
+    challenge = PasswordResetOtpChallenge(
+        user_id=user.id,
+        otp_hash="0" * 64,
+        expires_at=now + timedelta(minutes=10),
+        verified_at=now,
+        reset_grant_hash=recovery_service._grant_hash(reset_grant),
+        reset_grant_expires_at=now + timedelta(minutes=5),
+    )
+    db_session.add(challenge)
+
+    previous_changed_events = db_session.query(EmailOutbox).filter_by(
+        event_type="password_changed"
+    ).count()
+
+    db_session.commit()
+
+    barrier = Barrier(3)
+
+    def attempt_confirmation(new_password):
+        barrier.wait(timeout=10)
+
+        with TestClient(app) as concurrent_client:
+            response = concurrent_client.post(
+                "/api/v1/auth/password-reset/confirm",
+                json={
+                    "email": email,
+                    "reset_grant": reset_grant,
+                    "new_password": new_password,
+                },
+            )
+
+        return new_password, response.status_code, response.text
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(attempt_confirmation, password)
+            for password in new_passwords
+        ]
+
+        barrier.wait(timeout=10)
+        results = [future.result(timeout=20) for future in futures]
+
+    statuses = [status for _, status, _ in results]
+    assert sorted(statuses) == [200, 400], results
+
+    winning_password = next(
+        password for password, status, _ in results if status == 200
+    )
+
+    db_session.expire_all()
+
+    updated_user = db_session.query(User).filter_by(id=user.id).one()
+    updated_challenge = db_session.query(
+        PasswordResetOtpChallenge
+    ).filter_by(user_id=user.id).one()
+
+    changed_events = db_session.query(EmailOutbox).filter_by(
+        event_type="password_changed"
+    ).count()
+
+    assert updated_user.token_version == 1
+    assert updated_challenge.consumed_at is not None
+    assert verify_password(winning_password, updated_user.password_hash)
+    assert not verify_password(old_password, updated_user.password_hash)
+
+    losing_password = next(
+        password for password in new_passwords if password != winning_password
+    )
+    assert not verify_password(losing_password, updated_user.password_hash)
+
+    assert changed_events == previous_changed_events + 1

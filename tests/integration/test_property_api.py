@@ -137,6 +137,7 @@ def test_create_property_api(db_session: Session):
         data = response.json()
 
         assert data["landlord_id"] == str(landlord.id)
+        assert data["landlord_display_name"] == "API Test Landlord"
         assert data["name"] == "API Test Property"
         assert data["property_type"] == "residential"
         assert data["status"] == "draft"
@@ -442,6 +443,7 @@ def test_get_property_api(db_session: Session):
 
         assert data["id"] == property_id
         assert data["landlord_id"] == str(landlord.id)
+        assert data["landlord_display_name"] == "Get API Test Landlord"
         assert data["name"] == "Retrieval Test Property"
         assert data["property_type"] == "residential"
         assert data["status"] == "draft"
@@ -1705,6 +1707,12 @@ def test_property_portfolio_api_admin_sees_all_landlords(
         data = response.json()
         returned_names = {item["name"] for item in data}
         assert expected_names.issubset(returned_names)
+        returned_landlords = {
+            item["landlord_display_name"]
+            for item in data
+            if item["name"] in expected_names
+        }
+        assert returned_landlords == {"Portfolio Owner 1", "Portfolio Owner 2"}
 
     finally:
         pass
@@ -1864,6 +1872,7 @@ def test_list_accessible_properties_api_returns_active_properties(
         assert len(data) == 1
         assert data[0]["id"] == str(property.id)
         assert data[0]["landlord_id"] == str(landlord.id)
+        assert data[0]["landlord_display_name"] == "Accessible Property Owner"
         assert data[0]["property_code"] == property.property_code
         assert data[0]["name"] == "Accessible Property"
         assert data[0]["property_type"] == "residential"

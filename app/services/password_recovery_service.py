@@ -1,20 +1,26 @@
 import hashlib
+import hmac
 import secrets
+import uuid
 from datetime import UTC, datetime, timedelta
-from urllib.parse import quote
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.security import hash_password
-from app.models.password_reset_token import PasswordResetToken
+from app.models.password_reset_otp_challenge import (
+    PasswordResetOtpChallenge,
+)
 from app.repositories.user_repository import UserRepository
 from app.services.email_outbox_enqueue_service import EmailOutboxEnqueueService
 
 
 class PasswordRecoveryService:
-    RESET_TOKEN_LIFETIME = timedelta(minutes=30)
+    OTP_LIFETIME = timedelta(minutes=10)
+    OTP_RESEND_COOLDOWN = timedelta(seconds=60)
+    OTP_MAX_ATTEMPTS = 5
+    RESET_GRANT_LIFETIME = timedelta(minutes=5)
 
     def __init__(self, db: Session):
         self.db = db
@@ -26,10 +32,6 @@ class PasswordRecoveryService:
         return email.strip().lower()
 
     @staticmethod
-    def _hash_token(token: str) -> str:
-        return hashlib.sha256(token.encode("utf-8")).hexdigest()
-
-    @staticmethod
     def _utc_now() -> datetime:
         return datetime.now(UTC)
 
@@ -39,6 +41,31 @@ class PasswordRecoveryService:
             return value.replace(tzinfo=UTC)
         return value.astimezone(UTC)
 
+    @staticmethod
+    def _keyed_hash(value: str, *, purpose: str) -> str:
+        pepper = settings.password_reset_otp_pepper
+        if not isinstance(pepper, str) or len(pepper) < 32:
+            raise RuntimeError("Password reset OTP pepper is not configured")
+
+        message = f"nestify:{purpose}:v1:{value}".encode("utf-8")
+        return hmac.new(
+            pepper.encode("utf-8"),
+            message,
+            hashlib.sha256,
+        ).hexdigest()
+
+    def _otp_hash(self, challenge_id: uuid.UUID, otp: str) -> str:
+        return self._keyed_hash(
+            f"{challenge_id}:{otp}",
+            purpose="password-reset-otp",
+        )
+
+    def _grant_hash(self, reset_grant: str) -> str:
+        return self._keyed_hash(
+            reset_grant,
+            purpose="password-reset-grant",
+        )
+
     def request_password_reset(self, *, email: str) -> bool:
         normalized_email = self._normalize_email(email)
         user = self.user_repository.get_by_email(normalized_email)
@@ -46,105 +73,169 @@ class PasswordRecoveryService:
         if user is None or not user.is_active:
             return False
 
-        # Serialize reset requests for this account before invalidating
-        # previously issued tokens and creating a replacement.
+        # Always lock the account before locking any recovery challenge.
         user = self.user_repository.get_by_id_for_update(user.id)
         if user is None or not user.is_active:
             return False
 
         now = self._utc_now()
+
+        latest_challenge = self.db.scalar(
+            select(PasswordResetOtpChallenge)
+            .where(PasswordResetOtpChallenge.user_id == user.id)
+            .order_by(PasswordResetOtpChallenge.created_at.desc())
+            .limit(1)
+            .with_for_update()
+        )
+
+        if latest_challenge is not None:
+            created_at = self._as_utc(latest_challenge.created_at)
+            if now < created_at + self.OTP_RESEND_COOLDOWN:
+                return False
+
+        # Supersede every previously active challenge for this account.
         self.db.execute(
-            update(PasswordResetToken)
+            update(PasswordResetOtpChallenge)
             .where(
-                PasswordResetToken.user_id == user.id,
-                PasswordResetToken.consumed_at.is_(None),
+                PasswordResetOtpChallenge.user_id == user.id,
+                PasswordResetOtpChallenge.consumed_at.is_(None),
             )
             .values(consumed_at=now)
             .execution_options(synchronize_session=False)
         )
 
-        raw_token = secrets.token_urlsafe(32)
-        expires_at = now + self.RESET_TOKEN_LIFETIME
+        challenge_id = uuid.uuid4()
+        otp = f"{secrets.randbelow(1_000_000):06d}"
+        expires_at = now + self.OTP_LIFETIME
 
-        reset_token = PasswordResetToken(
+        challenge = PasswordResetOtpChallenge(
+            id=challenge_id,
             user_id=user.id,
-            token_hash=self._hash_token(raw_token),
+            otp_hash=self._otp_hash(challenge_id, otp),
             expires_at=expires_at,
+            attempt_count=0,
         )
-        self.db.add(reset_token)
+        self.db.add(challenge)
         self.db.flush()
 
-        reset_url = (
-            f"{settings.frontend_base_url.rstrip('/')}"
-            f"/reset-password?token={quote(raw_token, safe='')}"
-        )
-
         self.outbox.enqueue(
-            event_type="password_reset",
+            event_type="password_reset_otp",
             payload={
                 "recipient": user.email,
-                "reset_url": reset_url,
+                "otp": otp,
                 "expires_at": expires_at.isoformat(),
             },
         )
         return True
 
-    def confirm_password_reset(
+    def verify_password_reset_otp(
         self,
         *,
-        token: str,
-        new_password: str,
-    ) -> None:
-        if not 12 <= len(new_password) <= 128:
-            raise ValueError("Password must be between 12 and 128 characters")
+        email: str,
+        otp: str,
+    ) -> str | None:
+        normalized_email = self._normalize_email(email)
+        user = self.user_repository.get_by_email(normalized_email)
 
-        token_hash = self._hash_token(token)
-
-        # Find the account first, then always acquire locks in the same order:
-        # user row followed by token row. This serializes different reset
-        # tokens issued for the same account.
-        user_id = self.db.scalar(
-            select(PasswordResetToken.user_id).where(
-                PasswordResetToken.token_hash == token_hash
-            )
-        )
-        if user_id is None:
-            raise ValueError("Password reset token is invalid or has expired")
-
-        user = self.user_repository.get_by_id_for_update(user_id)
         if user is None or not user.is_active:
-            raise ValueError("Password reset token is invalid or has expired")
+            return None
 
-        reset_token = self.db.scalar(
-            select(PasswordResetToken)
-            .where(PasswordResetToken.token_hash == token_hash)
+        user = self.user_repository.get_by_id_for_update(user.id)
+        if user is None or not user.is_active:
+            return None
+
+        challenge = self.db.scalar(
+            select(PasswordResetOtpChallenge)
+            .where(
+                PasswordResetOtpChallenge.user_id == user.id,
+                PasswordResetOtpChallenge.consumed_at.is_(None),
+            )
+            .order_by(PasswordResetOtpChallenge.created_at.desc())
+            .limit(1)
             .with_for_update()
             .execution_options(populate_existing=True)
         )
 
         now = self._utc_now()
         if (
-            reset_token is None
-            or reset_token.user_id != user.id
-            or reset_token.consumed_at is not None
-            or self._as_utc(reset_token.expires_at) <= now
+            challenge is None
+            or challenge.verified_at is not None
+            or self._as_utc(challenge.expires_at) <= now
+            or challenge.attempt_count >= self.OTP_MAX_ATTEMPTS
         ):
-            raise ValueError("Password reset token is invalid or has expired")
+            return None
+
+        expected_hash = self._otp_hash(challenge.id, otp)
+        if not hmac.compare_digest(challenge.otp_hash, expected_hash):
+            challenge.attempt_count += 1
+            self.db.flush()
+            return None
+
+        reset_grant = secrets.token_urlsafe(32)
+        challenge.verified_at = now
+        challenge.reset_grant_hash = self._grant_hash(reset_grant)
+        challenge.reset_grant_expires_at = (
+            now + self.RESET_GRANT_LIFETIME
+        )
+        self.db.flush()
+
+        return reset_grant
+
+    def confirm_password_reset(
+        self,
+        *,
+        email: str,
+        reset_grant: str,
+        new_password: str,
+    ) -> None:
+        if not 12 <= len(new_password) <= 128:
+            raise ValueError("Password must be between 12 and 128 characters")
+
+        grant_hash = self._grant_hash(reset_grant)
+
+        # Identify the account first, then lock user followed by challenge.
+        candidate = self.db.scalar(
+            select(PasswordResetOtpChallenge).where(
+                PasswordResetOtpChallenge.reset_grant_hash == grant_hash
+            )
+        )
+        if candidate is None:
+            raise ValueError("Password reset grant is invalid or has expired")
+
+        user = self.user_repository.get_by_id_for_update(candidate.user_id)
+        if (
+            user is None
+            or not user.is_active
+            or self._normalize_email(user.email) != self._normalize_email(email)
+        ):
+            raise ValueError("Password reset grant is invalid or has expired")
+
+        challenge = self.db.scalar(
+            select(PasswordResetOtpChallenge)
+            .where(PasswordResetOtpChallenge.id == candidate.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+
+        now = self._utc_now()
+        if (
+            challenge is None
+            or challenge.user_id != user.id
+            or challenge.consumed_at is not None
+            or challenge.verified_at is None
+            or challenge.reset_grant_hash is None
+            or not hmac.compare_digest(
+                challenge.reset_grant_hash,
+                grant_hash,
+            )
+            or challenge.reset_grant_expires_at is None
+            or self._as_utc(challenge.reset_grant_expires_at) <= now
+        ):
+            raise ValueError("Password reset grant is invalid or has expired")
 
         user.password_hash = hash_password(new_password)
         user.token_version += 1
-
-        # Consume this token and invalidate every other outstanding token
-        # for the same user as part of the same database transaction.
-        self.db.execute(
-            update(PasswordResetToken)
-            .where(
-                PasswordResetToken.user_id == user.id,
-                PasswordResetToken.consumed_at.is_(None),
-            )
-            .values(consumed_at=now)
-            .execution_options(synchronize_session=False)
-        )
+        challenge.consumed_at = now
 
         self.outbox.enqueue(
             event_type="password_changed",

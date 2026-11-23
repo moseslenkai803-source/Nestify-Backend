@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user
@@ -19,6 +20,8 @@ from app.schemas.auth import (
     LoginRequest,
     TokenResponse,
     PasswordResetRequest,
+    PasswordResetVerifyRequest,
+    PasswordResetVerifyResponse,
     PasswordResetConfirmRequest,
     PasswordResetRequestResponse,
     PasswordResetConfirmResponse,
@@ -193,7 +196,7 @@ def login(
             policy_name="auth-password-reset-account",
             allow_emergency_fallback=False,
             limit=5,
-            window_seconds=900,
+            window_seconds=300,
             identity_field="email",
         )),
     ],
@@ -217,14 +220,58 @@ def request_password_reset(
 
 
 @router.post(
-    "/password-reset/confirm",
-    response_model=PasswordResetConfirmResponse,
+    "/password-reset/verify",
+    response_model=PasswordResetVerifyResponse,
     dependencies=[Depends(rate_limit_dependency(
-        policy_name="auth-password-reset-confirm",
+        policy_name="auth-password-reset-verify",
         allow_emergency_fallback=False,
-        limit=5,
+        limit=10,
         window_seconds=60,
     ))],
+)
+def verify_password_reset_otp(
+    reset_data: PasswordResetVerifyRequest,
+    db: Session = Depends(get_db, scope="function"),
+):
+    try:
+        reset_grant = PasswordRecoveryService(db).verify_password_reset_otp(
+            email=reset_data.email,
+            otp=reset_data.otp,
+        )
+    except OutboxEncryptionError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail="Password reset is temporarily unavailable.",
+        ) from exc
+
+    if reset_grant is None:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Verification code is invalid or has expired."},
+        )
+
+    return PasswordResetVerifyResponse(reset_grant=reset_grant)
+
+
+@router.post(
+    "/password-reset/confirm",
+    response_model=PasswordResetConfirmResponse,
+    dependencies=[
+        Depends(rate_limit_dependency(
+            policy_name="auth-password-reset-confirm",
+            allow_emergency_fallback=False,
+            limit=5,
+            window_seconds=60,
+        )),
+        Depends(rate_limit_dependency(
+            policy_name="auth-password-reset-confirm-account",
+            allow_emergency_fallback=False,
+            limit=5,
+            window_seconds=300,
+            identity_field="email",
+        )),
+    ],
 )
 def confirm_password_reset(
     reset_data: PasswordResetConfirmRequest,
@@ -232,14 +279,15 @@ def confirm_password_reset(
 ):
     try:
         PasswordRecoveryService(db).confirm_password_reset(
-            token=reset_data.token,
+            email=reset_data.email,
+            reset_grant=reset_data.reset_grant,
             new_password=reset_data.new_password,
         )
     except ValueError as exc:
         db.rollback()
         raise HTTPException(
             status_code=400,
-            detail="Password reset token is invalid or has expired.",
+            detail="Password reset grant is invalid or has expired.",
         ) from exc
     except OutboxEncryptionError as exc:
         db.rollback()

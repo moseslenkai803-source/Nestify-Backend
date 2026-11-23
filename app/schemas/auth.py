@@ -59,15 +59,26 @@ class PasswordResetRequest(BaseModel):
     email: EmailStr
 
 
+class PasswordResetVerifyRequest(BaseModel):
+    email: EmailStr
+    otp: str = Field(pattern=r"^\d{6}$")
+
+
+class PasswordResetVerifyResponse(BaseModel):
+    reset_grant: str
+    message: str = "Verification successful."
+
+
 class PasswordResetConfirmRequest(BaseModel):
-    token: str = Field(min_length=32, max_length=256)
+    email: EmailStr
+    reset_grant: str = Field(min_length=32, max_length=256)
     new_password: str = Field(min_length=12, max_length=128)
 
 
 class PasswordResetRequestResponse(BaseModel):
     message: str = (
         "If an account exists for that email, "
-        "password reset instructions will be sent."
+        "a verification code will be sent."
     )
 
 

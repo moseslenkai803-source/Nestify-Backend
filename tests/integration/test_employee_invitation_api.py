@@ -287,27 +287,38 @@ def test_failed_employee_creation_rolls_back_invited_user(db_session, monkeypatc
         pass
 
 
-def test_invitation_creation_blocked_outside_development(db_session, monkeypatch):
+def test_production_invitation_fails_without_email_configuration(
+    db_session, monkeypatch
+):
+    from unittest.mock import Mock
+
+    from app.services.email_service import EmailDeliveryError, EmailService
+
     monkeypatch.setattr(settings, "environment", "production")
+    validate_email = Mock(
+        side_effect=EmailDeliveryError("Email delivery is not configured")
+    )
+    monkeypatch.setattr(EmailService, "validate_configuration", validate_email)
+
     email = f"blocked-{uuid.uuid4()}@example.com"
-    try:
-        admin = make_user(db_session, "admin")
-        token = create_access_token(subject=str(admin.id))
-        response = TestClient(app).post(
-            "/api/v1/employees/invitations",
-            headers={"Authorization": f"Bearer {token}"},
-            json={
-                "email": email,
-                "employee_number": f"INV-{uuid.uuid4().hex[:12]}",
-                "department": "Operations",
-                "position": "Officer",
-                "clearances": ["plate_operations"],
-            },
-        )
-        assert response.status_code == 503, response.text
-        assert db_session.query(EmployeeInvitation).filter_by(email=email).count() == 0
-    finally:
-        pass
+    admin = make_user(db_session, "admin")
+    token = create_access_token(subject=str(admin.id))
+
+    response = TestClient(app).post(
+        "/api/v1/employees/invitations",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "email": email,
+            "employee_number": f"INV-{uuid.uuid4().hex[:12]}",
+            "department": "Operations",
+            "position": "Officer",
+            "clearances": ["plate_operations"],
+        },
+    )
+
+    assert response.status_code == 503, response.text
+    validate_email.assert_called_once_with()
+    assert db_session.query(EmployeeInvitation).filter_by(email=email).count() == 0
 
 
 def test_production_invitation_queues_encrypted_email_without_returning_url(

@@ -24,6 +24,11 @@ def safe_production_settings(monkeypatch):
     )
     monkeypatch.setattr(
         settings,
+        "password_reset_otp_pepper",
+        "test-only-dedicated-otp-pepper-value-123456",
+    )
+    monkeypatch.setattr(
+        settings,
         "outbox_encryption_keys",
         {"v1": Fernet.generate_key().decode("ascii")},
     )
@@ -39,6 +44,48 @@ def test_valid_production_configuration_passes(safe_production_settings):
     validate_runtime_configuration()
 
 
+@pytest.mark.parametrize(
+    "pepper",
+    [
+        None,
+        "",
+        "short",
+        "replace_with_a_dedicated_random_secret",
+        "pepper with embedded whitespace and enough length",
+        " " + "x" * 40,
+        "x" * 40 + " ",
+    ],
+)
+def test_runtime_rejects_missing_or_weak_otp_pepper(
+    safe_production_settings, monkeypatch, pepper
+):
+    monkeypatch.setattr(settings, "password_reset_otp_pepper", pepper)
+
+    with pytest.raises(
+        RuntimeConfigurationError,
+        match="PASSWORD_RESET_OTP_PEPPER",
+    ):
+        validate_runtime_configuration()
+
+
+def test_runtime_accepts_valid_otp_pepper(safe_production_settings):
+    validate_runtime_configuration()
+
+
+@pytest.mark.parametrize("environment", ["development", "test"])
+def test_non_production_runtime_still_requires_otp_pepper(
+    monkeypatch, environment
+):
+    monkeypatch.setattr(settings, "environment", environment)
+    monkeypatch.setattr(settings, "password_reset_otp_pepper", None)
+
+    with pytest.raises(
+        RuntimeConfigurationError,
+        match="PASSWORD_RESET_OTP_PEPPER",
+    ):
+        validate_runtime_configuration()
+
+
 @pytest.mark.parametrize("environment", ["development", "test"])
 def test_non_production_environment_skips_production_only_checks(
     monkeypatch, environment
@@ -47,6 +94,11 @@ def test_non_production_environment_skips_production_only_checks(
     monkeypatch.setattr(settings, "debug", True)
     monkeypatch.setattr(settings, "jwt_secret_key", "short")
     monkeypatch.setattr(settings, "outbox_encryption_keys", {})
+    monkeypatch.setattr(
+        settings,
+        "password_reset_otp_pepper",
+        "test-only-dedicated-otp-pepper-value-123456",
+    )
     validate_runtime_configuration()
 
 
@@ -64,6 +116,11 @@ def test_environment_name_is_normalized(monkeypatch):
     monkeypatch.setattr(settings, "debug", True)
     monkeypatch.setattr(settings, "jwt_secret_key", "short")
     monkeypatch.setattr(settings, "outbox_encryption_keys", {})
+    monkeypatch.setattr(
+        settings,
+        "password_reset_otp_pepper",
+        "test-only-dedicated-otp-pepper-value-123456",
+    )
 
     validate_runtime_configuration()
 
@@ -332,5 +389,14 @@ def test_email_worker_does_not_require_api_only_runtime_settings(
     monkeypatch.setattr(settings, "frontend_base_url", "not-a-valid-url")
     monkeypatch.setattr(settings, "jwt_secret_key", "short")
     monkeypatch.setattr(settings, "cors_allowed_origins", [])
+
+    validate_email_worker_configuration()
+
+
+
+def test_email_worker_does_not_require_otp_pepper(
+    safe_production_settings, monkeypatch
+):
+    monkeypatch.setattr(settings, "password_reset_otp_pepper", None)
 
     validate_email_worker_configuration()

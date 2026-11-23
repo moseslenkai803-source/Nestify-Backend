@@ -144,19 +144,19 @@ def test_worker_sends_email_and_marks_outbox_sent(worker_context):
 
 
 @pytest.mark.independent_db_transactions
-def test_worker_sends_password_reset_email(worker_context):
+def test_worker_sends_password_reset_otp_email(worker_context):
     context = worker_context
-    reset_token = "sensitive-reset-token"
-    reset_url = f"https://example.test/reset?token={reset_token}"
+    otp = "482916"
+    expires_at = "2026-11-15T13:00:00+00:00"
     outbox = context["create_outbox"](
-        event_type="password_reset",
+        event_type="password_reset_otp",
         payload={
             "recipient": context["invitation"].email,
-            "reset_url": reset_url,
-            "expires_at": "2026-11-15T13:00:00+00:00",
+            "otp": otp,
+            "expires_at": expires_at,
         },
     )
-    assert reset_token not in outbox.encrypted_payload
+    assert otp not in outbox.encrypted_payload
 
     worker = EmailOutboxWorker(
         session_factory=context["session_factory"],
@@ -167,10 +167,10 @@ def test_worker_sends_password_reset_email(worker_context):
 
     context["db"].refresh(outbox)
     assert outbox.status == "sent"
-    context["email_service"].send_password_reset.assert_called_once_with(
+    context["email_service"].send_password_reset_otp.assert_called_once_with(
         recipient=context["invitation"].email,
-        reset_url=reset_url,
-        expires_at="2026-11-15T13:00:00+00:00",
+        otp=otp,
+        expires_at=expires_at,
     )
     context["email_service"].send_employee_invitation.assert_not_called()
 
@@ -198,29 +198,32 @@ def test_worker_sends_password_changed_email(worker_context):
 
 
 @pytest.mark.independent_db_transactions
-def test_worker_dead_letters_malformed_password_reset_payload(worker_context):
+def test_worker_preserves_legacy_password_reset_event(worker_context):
     context = worker_context
     outbox = context["create_outbox"](
         event_type="password_reset",
-        payload={"recipient": context["invitation"].email, "reset_url": " "},
+        payload={
+            "recipient": context["invitation"].email,
+            "reset_url": "https://example.test/reset?token=legacy-token",
+        },
     )
     worker = EmailOutboxWorker(
         session_factory=context["session_factory"],
         email_service=context["email_service"],
         encryption_service=context["encryption_service"],
     )
-    assert worker.process_one() is True
+    assert worker.process_one() is False
 
     context["db"].refresh(outbox)
-    assert outbox.status == "dead_letter"
-    assert outbox.last_error == "NonRetryableOutboxEventError"
-    context["email_service"].send_password_reset.assert_not_called()
-
-    assert outbox.attempt_count == 1
+    assert outbox.status == "pending"
+    assert outbox.last_error is None
+    context["email_service"].send_password_reset_otp.assert_not_called()
+    context["email_service"].send_employee_invitation.assert_not_called()
+    assert outbox.attempt_count == 0
 
 
 @pytest.mark.independent_db_transactions
-def test_worker_dead_letters_unsupported_event_type(worker_context):
+def test_worker_preserves_unsupported_event_type(worker_context):
     context = worker_context
     outbox = context["create_outbox"](event_type="unsupported_event")
     worker = EmailOutboxWorker(
@@ -228,16 +231,16 @@ def test_worker_dead_letters_unsupported_event_type(worker_context):
         email_service=context["email_service"],
         encryption_service=context["encryption_service"],
     )
-    assert worker.process_one() is True
+    assert worker.process_one() is False
 
     context["db"].refresh(outbox)
-    assert outbox.status == "dead_letter"
-    assert outbox.last_error == "NonRetryableOutboxEventError"
+    assert outbox.status == "pending"
+    assert outbox.last_error is None
     context["email_service"].send_employee_invitation.assert_not_called()
-    context["email_service"].send_password_reset.assert_not_called()
+    context["email_service"].send_password_reset_otp.assert_not_called()
     context["email_service"].send_password_changed.assert_not_called()
 
-    assert outbox.attempt_count == 1
+    assert outbox.attempt_count == 0
 
 
 @pytest.mark.independent_db_transactions

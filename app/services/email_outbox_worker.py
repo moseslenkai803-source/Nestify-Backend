@@ -21,6 +21,12 @@ LEASE_DURATION = timedelta(seconds=60)
 INITIAL_RETRY_DELAY = timedelta(seconds=30)
 MAX_RETRY_DELAY = timedelta(hours=1)
 
+SUPPORTED_EVENT_TYPES = (
+    "employee_invitation",
+    "password_reset_otp",
+    "password_changed",
+)
+
 
 class NonRetryableOutboxEventError(ValueError):
     """Raised when an outbox event cannot succeed through retrying."""
@@ -75,7 +81,7 @@ class EmailOutboxWorker:
 
             handler = {
                 "employee_invitation": self._handle_employee_invitation,
-                "password_reset": self._handle_password_reset,
+                "password_reset_otp": self._handle_password_reset_otp,
                 "password_changed": self._handle_password_changed,
             }.get(event_type)
 
@@ -170,18 +176,18 @@ class EmailOutboxWorker:
         )
         return None
 
-    def _handle_password_reset(
+    def _handle_password_reset_otp(
         self,
         payload: dict,
         invitation_id: uuid.UUID | None,
     ) -> str | None:
         values = self._required_payload_strings(
             payload,
-            ("recipient", "reset_url", "expires_at"),
+            ("recipient", "otp", "expires_at"),
         )
-        self.email_service.send_password_reset(
+        self.email_service.send_password_reset_otp(
             recipient=values["recipient"],
-            reset_url=values["reset_url"],
+            otp=values["otp"],
             expires_at=values["expires_at"],
         )
         return None
@@ -212,6 +218,7 @@ class EmailOutboxWorker:
             db.execute(
                 update(EmailOutbox)
                 .where(
+                    EmailOutbox.event_type.in_(SUPPORTED_EVENT_TYPES),
                     EmailOutbox.status == "processing",
                     EmailOutbox.lease_expires_at <= now,
                     EmailOutbox.attempt_count >= MAX_ATTEMPTS,
@@ -227,6 +234,7 @@ class EmailOutboxWorker:
             statement = (
                 select(EmailOutbox)
                 .where(
+                    EmailOutbox.event_type.in_(SUPPORTED_EVENT_TYPES),
                     EmailOutbox.attempt_count < MAX_ATTEMPTS,
                     or_(
                         (

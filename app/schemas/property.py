@@ -13,6 +13,7 @@ class PropertyResponse(BaseModel):
 
     id: UUID
     landlord_id: UUID
+    landlord_display_name: str
     property_code: str
     name: str
     property_type: str

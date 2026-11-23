@@ -61,22 +61,23 @@ class EmailService:
             text_body=body,
         )
 
-    def send_password_reset(
+    def send_password_reset_otp(
         self,
         *,
         recipient: str,
-        reset_url: str,
+        otp: str,
         expires_at: str,
     ) -> None:
         body = (
             "We received a request to reset your Nestify password.\n\n"
-            f"Reset your password using this link:\n{reset_url}\n\n"
-            f"This link expires at {expires_at} (UTC).\n"
+            f"Your password reset verification code is: {otp}\n\n"
+            f"This code expires at {expires_at} (UTC).\n"
+            "You can use this code only once. "
             "If you did not request a password reset, you can ignore this email."
         )
         self.send_email(
             recipient=recipient,
-            subject="Reset your Nestify password",
+            subject="Your Nestify password reset code",
             text_body=body,
         )
 
